@@ -11,11 +11,11 @@
 address = "127.0.0.1"
 
 [theme]
-base = "light"
-primaryColor = "#0F6E4F"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F4F7F6"
-textColor = "#14231E"
+base = "dark"
+primaryColor = "#14D9B0"
+backgroundColor = "#0A0D11"
+secondaryBackgroundColor = "#141922"
+textColor = "#E8ECEF"
 font = "sans serif"
 
 [client]

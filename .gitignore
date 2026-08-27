@@ -16,9 +16,15 @@ venv/
 *.db-shm
 *.db-journal
 
-# Generated reports / caches
+# Generated reports / caches — refreshed live by the backend at runtime, not
+# source; committing them just ships stale data and noisy diffs
 reports_out/
 *.log
+backend/news_signals.json
+backend/news_raw_24h.json
+
+# Scratch/audit scripts — not part of the deployed app
+tmp/
 
 # Backups and one-off snapshots — keep these in git history via real commits,
 # not as *.backup / *_backup*.py files sitting next to the source they shadow
