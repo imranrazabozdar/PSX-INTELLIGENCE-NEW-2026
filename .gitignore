@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# SQLite databases — psx_v2.db is 80MB+ of backfilled OHLCV/scan/backtest
+# data and grows with every backfill; it does not belong in git history
+# (no Git LFS configured, and SQLite files don't diff — every write would
+# re-commit the whole file). Deploy it by copying the file directly onto the
+# backend host's persistent disk, per DEPLOYMENT.md — never via git.
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Generated reports / caches
+reports_out/
+*.log
+
+# Backups and one-off snapshots — keep these in git history via real commits,
+# not as *.backup / *_backup*.py files sitting next to the source they shadow
+*.backup
+*_backup_*.py
+*.tar.gz
+
+# Android build output
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.apk
+android/**/*.apk
+
+# Editor/OS cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- usesCleartextTraffic is required because BACKEND (MainActivity.java)
+         points at a plain-HTTP server on the local/home network — this app is
+         a personal research client for a self-hosted backend, not a public
+         app talking to arbitrary servers, so a full TLS setup for the local
+         backend is unwarranted overhead. The two remote endpoints this app
+         also calls (dps.psx.com.pk, query1.finance.yahoo.com) are HTTPS.
+         android:label kept in sync with build.gradle's versionName below —
+         update both together, they had drifted apart (V2 vs 4.4). -->
+    <application android:theme="@style/AppTheme" android:label="PSX Intelligence V4.4" android:usesCleartextTraffic="true">
+        <activity android:name=".MainActivity" android:screenOrientation="portrait" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

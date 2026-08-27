@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: psx-intelligence-backend
+    runtime: python
+    plan: starter
+    # Starter (paid) plan is required, not the free tier — the free tier has
+    # NO persistent disk, so psx_v2.db (542K+ backfilled OHLCV rows, months
+    # of history) would be wiped on every redeploy/restart. This app is only
+    # useful with a real disk attached.
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    disk:
+      name: psx-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PSX_DB
+        value: /var/data/psx_v2.db
+      - key: PSX_ADMIN_TOKEN
+        sync: false
+        # Set this in the Render dashboard (Environment tab), not here — it's
+        # a secret. REQUIRED before going live: without it, _require_admin()
+        # only trusts literal localhost callers, and once this is deployed
+        # publicly nothing is "localhost" anymore, so every admin-gated
+        # endpoint (force rescans, backfills) will just be refused with no
+        # way to authorize them from the deployed Streamlit app.

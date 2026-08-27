@@ -1,0 +1,4038 @@
+===== backend/app.py =====
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from datetime import datetime, timezone
+import io, json, math, os, sqlite3, statistics, requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+app = FastAPI(title="PSX Intelligence V2 API", version="3.3-real-intelligence")
+DB=os.getenv("PSX_DB","psx_v2.db")
+PSX="https://dps.psx.com.pk"
+MIN_VOLUME=50_000
+HEAD={"User-Agent":"PSX-Intelligence-V2/2.0 private-research"}
+
+def db():
+    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row
+    c.executescript("""
+    CREATE TABLE IF NOT EXISTS snapshots(ts TEXT,symbol TEXT,sector TEXT,listed TEXT,ldcp REAL,o REAL,h REAL,l REAL,p REAL,ch REAL,pct REAL,vol REAL,score REAL,setup TEXT,shariah INTEGER);
+    CREATE INDEX IF NOT EXISTS ix_snap ON snapshots(symbol,ts);
+    CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,fetched_at TEXT,source TEXT,title TEXT,link TEXT,published TEXT,direction TEXT,materiality TEXT,symbols TEXT);
+    CREATE TABLE IF NOT EXISTS predictions(id INTEGER PRIMARY KEY AUTOINCREMENT,ts TEXT,symbol TEXT,signal TEXT,score REAL,entry REAL,stop REAL,target REAL,model_version TEXT,outcome TEXT);
+    """); return c
+
+def num(x):
+    try:return float(str(x).replace(",","").replace("%","").strip())
+    except:return 0.0
+
+def market_watch():
+    r=requests.get(PSX+"/market-watch",headers=HEAD,timeout=15);r.raise_for_status()
+    soup=BeautifulSoup(r.text,"html.parser"); out=[]
+    for tr in soup.select("tr"):
+        x=[td.get_text(" ",strip=True) for td in tr.select("td")]
+        if len(x)<11: continue
+        s=x[0].replace(" NC","").strip(); sector=x[1]; listed=x[2]
+        ldcp,o,h,l,p,ch,pct,vol=map(num,x[3:11]); sh="KMIALLSHR" in listed
+        rng=max(.00001,h-l); loc=(p-l)/rng; liq=min(20,math.log10(max(vol,1))*3)
+        mom=max(-20,min(20,pct*2.2)); strength=(loc-.5)*24
+        score=max(0,min(100,50+mom+strength+liq/2))
+        setup="Momentum breakout" if pct>3 and loc>.8 else "Strong close" if loc>.72 else "Pullback / watch" if pct<0 and loc>.45 else "Neutral"
+        out.append(dict(symbol=s,sector=sector,listed=listed,ldcp=ldcp,open=o,high=h,low=l,price=p,change=ch,pct=pct,volume=vol,score=round(score,1),setup=setup,shariah=sh,eligible=vol>=MIN_VOLUME))
+    return out
+
+def save_snapshot(rows):
+    ts=datetime.now(timezone.utc).isoformat()
+    with db() as c:
+        c.executemany("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(ts,x["symbol"],x["sector"],x["listed"],x["ldcp"],x["open"],x["high"],x["low"],x["price"],x["change"],x["pct"],x["volume"],x["score"],x["setup"],int(x["shariah"])) for x in rows])
+        c.commit()
+
+def eod(symbol):
+    r=requests.get(f"{PSX}/timeseries/eod/{symbol}",headers=HEAD,timeout=15);r.raise_for_status()
+    raw=r.json(); a=raw.get("data") or raw.get("timeseries") or []
+    out=[]
+    for z in a:
+        if isinstance(z,list) and len(z)>=2: out.append({"time":z[0],"close":z[1],"volume":z[2] if len(z)>2 else None})
+        elif isinstance(z,dict): out.append(z)
+    return out
+
+
+def yahoo_ohlcv(symbol, range_="2y"):
+    ticker=f"{symbol.upper()}.KA"
+    url=f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    r=requests.get(url,params={"range":range_,"interval":"1d","includePrePost":"false","events":"div,splits"},headers=HEAD,timeout=15)
+    r.raise_for_status(); root=r.json()["chart"]; results=root.get("result") or []
+    if not results:return []
+    q=results[0]; ts=q.get("timestamp") or []; quote=((q.get("indicators") or {}).get("quote") or [{}])[0]
+    out=[]
+    for i,t in enumerate(ts):
+        try:
+            close=quote["close"][i]
+            if close is None:continue
+            out.append({"time":int(t)*1000,"open":quote["open"][i],"high":quote["high"][i],
+                        "low":quote["low"][i],"close":close,"volume":quote["volume"][i] or 0,
+                        "source":f"Yahoo Finance {ticker}"})
+        except: pass
+    return out
+
+def best_history(symbol):
+    try:
+        x=eod(symbol)
+        if len(x)>=30:return x,"PSX EOD"
+    except: pass
+    try:
+        x=yahoo_ohlcv(symbol)
+        if len(x)>=30:return x,f"Yahoo Finance {symbol.upper()}.KA"
+    except: pass
+    return [],"Unavailable"
+
+def structure(rows):
+    closes=[num(x.get("close",x.get("price"))) for x in rows if num(x.get("close",x.get("price")))>0]
+    if len(closes)<20:return {"state":"Insufficient history","trend":"Unknown"}
+    ma20=sum(closes[-20:])/20; last=closes[-1]
+    hi=max(closes[-20:]); lo=min(closes[-20:])
+    trend="Bullish" if last>ma20 else "Bearish"
+    return {"state":"Above 20-bar mean" if last>ma20 else "Below 20-bar mean","trend":trend,"ma20":round(ma20,2),"range20":[round(lo,2),round(hi,2)]}
+
+def wyckoff(rows):
+    closes=[num(x.get("close",x.get("price"))) for x in rows if num(x.get("close",x.get("price")))>0]
+    if len(closes)<40:return {"label":"UNCONFIRMED","confidence":0,"reason":"Need >=40 historical observations"}
+    recent=closes[-30:]; rng=max(recent)-min(recent); last=closes[-1]; pos=(last-min(recent))/max(.0001,rng)
+    slope=(statistics.mean(closes[-5:])-statistics.mean(closes[-15:-10]))/max(.0001,statistics.mean(closes[-15:-10]))
+    if pos>.78 and slope>0.02:return {"label":"SOS / possible Phase D","confidence":62,"reason":"Upper-range acceptance with improving short-term mean"}
+    if pos<.22 and slope>0:return {"label":"Spring/Test hypothesis","confidence":55,"reason":"Lower-range location with improving short-term mean"}
+    if pos>.75 and slope<0:return {"label":"Upthrust/Distribution watch","confidence":52,"reason":"Upper-range location with weakening mean"}
+    return {"label":"Trading range / unresolved","confidence":45,"reason":"No high-confidence phase event"}
+
+@app.get("/health")
+def health(): return {"ok":True,"time":datetime.now(timezone.utc).isoformat(),"min_volume":MIN_VOLUME,
+"market_data":"PSX Data Portal","freshness":"5-minute delayed unless PSX indicates otherwise",
+"policy":"private research; do not redistribute PSX market data without appropriate rights"}
+
+@app.get("/market")
+def market(min_volume:int=0, shariah:bool=False):
+    rows=market_watch(); save_snapshot(rows)
+    return [x for x in rows if x["volume"]>=min_volume and (not shariah or x["shariah"])]
+
+@app.get("/opportunities")
+def opportunities(min_volume:int=MIN_VOLUME, shariah:bool=False, limit:int=50):
+    rows=market_watch()
+    rows=[x for x in rows if x["volume"]>=min_volume and (not shariah or x["shariah"])]
+    rows.sort(key=lambda x:x["score"],reverse=True); return rows[:limit]
+
+@app.get("/stock/{symbol}")
+def stock(symbol:str):
+    rows=market_watch(); q=next((x for x in rows if x["symbol"]==symbol.upper()),None)
+    hist,source=best_history(symbol.upper()); return {"quote":q,"history":hist[-180:],"history_source":source,"structure":structure(hist),"wyckoff":wyckoff(hist)}
+
+@app.get("/breadth")
+def breadth():
+    rows=market_watch(); adv=sum(x["pct"]>0 for x in rows); dec=sum(x["pct"]<0 for x in rows)
+    return {"advancing":adv,"declining":dec,"unchanged":len(rows)-adv-dec,"breadth_pct":round(100*adv/max(1,adv+dec),1)}
+
+@app.get("/sectors")
+def sectors():
+    rows=market_watch(); d={}
+    for x in rows:
+        a=d.setdefault(x["sector"],{"sector":x["sector"],"n":0,"adv":0,"pct_sum":0,"volume":0})
+        a["n"]+=1;a["adv"]+=x["pct"]>0;a["pct_sum"]+=x["pct"];a["volume"]+=x["volume"]
+    out=[]
+    for a in d.values():a["avg_pct"]=round(a.pop("pct_sum")/a["n"],2);out.append(a)
+    return sorted(out,key=lambda x:x["avg_pct"],reverse=True)
+
+@app.get("/news")
+def news(symbol:str|None=None,hours:int=48):
+    with db() as c:
+        q="SELECT * FROM news";args=[]
+        if symbol:q+=" WHERE symbols LIKE ?";args=[f"%{symbol.upper()}%"]
+        q+=" ORDER BY fetched_at DESC LIMIT 200"
+        return [dict(x) for x in c.execute(q,args)]
+
+@app.get("/predictions")
+def predictions(symbol:str|None=None):
+    with db() as c:
+        q="SELECT * FROM predictions";args=[]
+        if symbol:q+=" WHERE symbol=?";args=[symbol.upper()]
+        q+=" ORDER BY ts DESC LIMIT 500";return [dict(x) for x in c.execute(q,args)]
+
+@app.get("/export.xlsx")
+def export_excel():
+    rows=market_watch(); eligible=[x for x in rows if x["volume"]>=MIN_VOLUME]
+    bio=io.BytesIO()
+    with pd.ExcelWriter(bio,engine="openpyxl") as w:
+        pd.DataFrame(rows).to_excel(w,index=False,sheet_name="Full PSX")
+        pd.DataFrame(eligible).sort_values("score",ascending=False).to_excel(w,index=False,sheet_name="Shortlist 50K")
+        pd.DataFrame([x for x in eligible if x["shariah"]]).sort_values("score",ascending=False).to_excel(w,index=False,sheet_name="Shariah 50K")
+        pd.DataFrame(breadth(),index=[0]).to_excel(w,index=False,sheet_name="Breadth")
+        pd.DataFrame(sectors()).to_excel(w,index=False,sheet_name="Sectors")
+    bio.seek(0);return StreamingResponse(bio,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":"attachment; filename=psx_v2.xlsx"})
+
+@app.websocket("/ws/market")
+async def ws_market(ws:WebSocket):
+    import asyncio
+    await ws.accept()
+    try:
+        while True:
+            rows=market_watch()
+            await ws.send_text(json.dumps({"ts":datetime.now(timezone.utc).isoformat(),"rows":rows}))
+            await asyncio.sleep(300)
+    except: pass
+
+@app.get("/fundamentals/{symbol}")
+def fundamentals(symbol:str):
+    """Fetch the official PSX company page and return only fields actually present."""
+    from bs4 import BeautifulSoup
+    r=requests.get(f"{PSX}/company/{symbol.upper()}",headers=HEAD,timeout=15);r.raise_for_status()
+    soup=BeautifulSoup(r.text,"html.parser")
+    text=soup.get_text("\n",strip=True)
+    def nearby(label):
+        import re
+        m=re.search(rf"{re.escape(label)}(?: \(%\))?\s*\n?\s*([^\n]{{1,80}})",text,re.I)
+        return m.group(1).strip() if m else None
+    return {
+      "symbol":symbol.upper(),"source":f"{PSX}/company/{symbol.upper()}",
+      "sales":nearby("Sales"),"profit_after_tax":nearby("Profit after Taxation"),
+      "eps":nearby("EPS"),"gross_profit_margin":nearby("Gross Profit Margin"),
+      "net_profit_margin":nearby("Net Profit Margin"),"eps_growth":nearby("EPS Growth"),
+      "peg":nearby("PEG"),"raw_available":bool(text)
+    }
+
+def _closes(hist):
+    vals=[]
+    for x in hist:
+        try:
+            v=float(x.get("close",x.get("price")))
+            if v>0: vals.append(v)
+        except: pass
+    return vals
+
+def _ema(v,n):
+    if len(v)<n:return None
+    k=2/(n+1); e=v[-n]
+    for x in v[-n+1:]:e=x*k+e*(1-k)
+    return e
+
+def _rsi(v,n=14):
+    if len(v)<n+1:return None
+    d=[v[i]-v[i-1] for i in range(len(v)-n,len(v))]
+    up=sum(max(x,0) for x in d)/n; dn=sum(max(-x,0) for x in d)/n
+    return 100 if dn==0 else 100-100/(1+up/dn)
+
+@app.get("/technicals/{symbol}")
+def technicals(symbol:str):
+    hist,source=best_history(symbol.upper()); v=_closes(hist)
+    if len(v)<30:return {"symbol":symbol.upper(),"status":"insufficient_history","observations":len(v)}
+    ma20=sum(v[-20:])/20; ma50=sum(v[-50:])/50 if len(v)>=50 else None
+    r=_rsi(v); e12=_ema(v,12); e26=_ema(v,26); macd=(e12-e26) if e12 is not None and e26 is not None else None
+    sd=(sum((x-ma20)**2 for x in v[-20:])/20)**0.5
+    return {"symbol":symbol.upper(),"observations":len(v),"last":v[-1],"sma20":ma20,"sma50":ma50,
+            "rsi14":r,"macd_proxy":macd,"bollinger_upper":ma20+2*sd,"bollinger_lower":ma20-2*sd,
+            "history_source":source,"ohlc_limitation":None if any(x.get("high") is not None for x in hist) else "True OHLC unavailable from current source."}
+
+# ---- V2.4 true-OHLC intelligence layer ----
+def ensure_ohlc():
+    with db() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS daily_ohlc(
+          symbol TEXT, trade_date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL,
+          source TEXT, PRIMARY KEY(symbol,trade_date))"""); c.commit()
+
+def ohlc_rows(symbol,limit=260):
+    ensure_ohlc()
+    with db() as c:
+        a=c.execute("SELECT * FROM daily_ohlc WHERE symbol=? ORDER BY trade_date DESC LIMIT ?",
+                    (symbol.upper(),limit)).fetchall()
+    return [dict(x) for x in reversed(a)]
+
+def tr_values(a):
+    out=[]
+    for i in range(1,len(a)):
+        h,l,pc=a[i]["high"],a[i]["low"],a[i-1]["close"]
+        out.append(max(h-l,abs(h-pc),abs(l-pc)))
+    return out
+
+def atr14(a):
+    t=tr_values(a)
+    return sum(t[-14:])/14 if len(t)>=14 else None
+
+def pivots(a,n=2):
+    hi=[];lo=[]
+    for i in range(n,len(a)-n):
+        if all(a[i]["high"]>=a[j]["high"] for j in range(i-n,i+n+1)):hi.append((i,a[i]["high"]))
+        if all(a[i]["low"]<=a[j]["low"] for j in range(i-n,i+n+1)):lo.append((i,a[i]["low"]))
+    return hi,lo
+
+def structure_ohlc(a):
+    if len(a)<20:return {"status":"insufficient_history"}
+    hi,lo=pivots(a)
+    trend="UNRESOLVED";bos=None
+    if len(hi)>=2 and len(lo)>=2:
+        hh=hi[-1][1]>hi[-2][1]; hl=lo[-1][1]>lo[-2][1]
+        lh=hi[-1][1]<hi[-2][1]; ll=lo[-1][1]<lo[-2][1]
+        trend="HH/HL UPTREND" if hh and hl else "LH/LL DOWNTREND" if lh and ll else "RANGE / TRANSITION"
+        last=a[-1]["close"]
+        if last>hi[-1][1]:bos="BULLISH BOS"
+        elif last<lo[-1][1]:bos="BEARISH BOS"
+    return {"trend":trend,"bos":bos,"last_swing_high":hi[-1][1] if hi else None,
+            "last_swing_low":lo[-1][1] if lo else None}
+
+def candle_patterns(a):
+    if len(a)<2:return []
+    x,p=a[-1],a[-2]; body=abs(x["close"]-x["open"]); rng=max(.0001,x["high"]-x["low"])
+    upper=x["high"]-max(x["open"],x["close"]); lower=min(x["open"],x["close"])-x["low"]
+    out=[]
+    if body/rng<.1:out.append("Doji")
+    if lower>2*max(body,.0001) and upper<body:out.append("Hammer-like")
+    if upper>2*max(body,.0001) and lower<body:out.append("Shooting-star-like")
+    if x["close"]>x["open"] and p["close"]<p["open"] and x["open"]<=p["close"] and x["close"]>=p["open"]:
+        out.append("Bullish engulfing")
+    if x["close"]<x["open"] and p["close"]>p["open"] and x["open"]>=p["close"] and x["close"]<=p["open"]:
+        out.append("Bearish engulfing")
+    return out
+
+def wyckoff_ohlc(a):
+    if len(a)<50:return {"label":"UNCONFIRMED","confidence":0,"reason":"Need >=50 true OHLC sessions"}
+    r=a[-40:]; hi=max(x["high"] for x in r); lo=min(x["low"] for x in r); last=r[-1]["close"]
+    pos=(last-lo)/max(.0001,hi-lo)
+    avgv=sum(x["volume"] for x in r[-20:])/20
+    vr=r[-1]["volume"]/max(1,avgv)
+    if pos>.8 and vr>1.3:return {"label":"SOS / Phase-D candidate","confidence":68,"reason":"Upper-range acceptance + volume expansion"}
+    if pos<.2 and r[-1]["low"]<min(x["low"] for x in r[-10:-1]) and last>r[-1]["low"]:
+        return {"label":"Spring hypothesis","confidence":58,"reason":"Range undercut with recovery; test still required"}
+    return {"label":"Range / unresolved","confidence":45,"reason":"No high-confidence event"}
+
+@app.post("/ohlc/{symbol}")
+def ingest_ohlc(symbol:str, rows:list[dict]):
+    """Private research ingestion endpoint for genuine daily OHLCV rows."""
+    ensure_ohlc(); good=[]
+    for x in rows:
+        try:
+            good.append((symbol.upper(),str(x["date"]),float(x["open"]),float(x["high"]),float(x["low"]),
+                         float(x["close"]),float(x.get("volume",0)),str(x.get("source","PSX Historical Data"))))
+        except: pass
+    with db() as c:
+        c.executemany("INSERT OR REPLACE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)",good);c.commit()
+    return {"symbol":symbol.upper(),"stored":len(good)}
+
+@app.get("/ohlc/{symbol}")
+def get_ohlc(symbol:str,limit:int=260): return ohlc_rows(symbol,limit)
+
+@app.get("/intelligence/{symbol}")
+def intelligence(symbol:str):
+    a=ohlc_rows(symbol,300)
+    if not a:return {"symbol":symbol.upper(),"status":"awaiting_true_ohlc_backfill",
+                     "source":"PSX Historical Data","message":"No OHLC rows stored; no OHLC-dependent indicators are fabricated."}
+    return {"symbol":symbol.upper(),"sessions":len(a),"atr14":atr14(a),
+            "structure":structure_ohlc(a),"candles":candle_patterns(a),"wyckoff":wyckoff_ohlc(a)}
+
+@app.get("/ohlc-coverage")
+def ohlc_coverage():
+    ensure_ohlc()
+    with db() as c:
+        rows=c.execute("""SELECT symbol,COUNT(*) sessions,MIN(trade_date) first_date,MAX(trade_date) last_date
+                          FROM daily_ohlc GROUP BY symbol ORDER BY sessions DESC""").fetchall()
+    return [dict(x) for x in rows]
+
+@app.get("/data-quality/{symbol}")
+def data_quality(symbol:str):
+    a=ohlc_rows(symbol,10000)
+    if not a:return {"symbol":symbol.upper(),"status":"missing"}
+    bad=sum(1 for x in a if not (x["low"]<=min(x["open"],x["close"])<=max(x["open"],x["close"])<=x["high"]))
+    return {"symbol":symbol.upper(),"sessions":len(a),"first":a[0]["trade_date"],"last":a[-1]["trade_date"],
+            "invalid_ohlc_rows":bad,"status":"ok" if bad==0 else "review"}
+
+# ---- V2.6 explainable unified conviction engine ----
+def clamp(v,a=0,b=100): return max(a,min(b,v))
+
+def unified_components(q, hist, ohlc):
+    # Scores are transparent heuristics, not probabilities.
+    liquidity=clamp(20 + 16*math.log10(max(q.get("volume",1),1))) if q else 0
+    momentum=clamp(50 + (q.get("pct",0) if q else 0)*6)
+    trend=50; structure_score=50; wy=50
+    if hist:
+        v=_closes(hist)
+        if len(v)>=20:
+            ma20=sum(v[-20:])/20; trend += 20 if v[-1]>ma20 else -20
+        if len(v)>=50:
+            ma50=sum(v[-50:])/50; trend += 15 if v[-1]>ma50 else -15
+        r=_rsi(v)
+        if r is not None:
+            trend += 10 if 50<=r<=70 else -8 if r<35 else 0
+    if ohlc:
+        st=structure_ohlc(ohlc); t=st.get("trend","")
+        structure_score=75 if "UPTREND" in t else 25 if "DOWNTREND" in t else 50
+        w=wyckoff_ohlc(ohlc); wy=clamp(w.get("confidence",45))
+        if "SOS" in w.get("label","") or "Spring" in w.get("label",""): wy=clamp(wy+10)
+    return {"liquidity":round(liquidity,1),"momentum":round(momentum,1),
+            "trend":round(clamp(trend),1),"structure":round(structure_score,1),"wyckoff":round(wy,1)}
+
+def conviction(q,hist,ohlc):
+    c=unified_components(q,hist,ohlc)
+    # Fundamentals/news intentionally excluded until reliably normalized.
+    weights={"liquidity":.20,"momentum":.20,"trend":.30,"structure":.20,"wyckoff":.10}
+    score=round(sum(c[k]*weights[k] for k in weights),1)
+    reasons=[]
+    for k,v in sorted(c.items(),key=lambda kv:kv[1],reverse=True):
+        if v>=65: reasons.append(f"{k.title()} supportive ({v:.0f}/100)")
+        elif v<=35: reasons.append(f"{k.title()} weak ({v:.0f}/100)")
+    label="HIGH CONVICTION WATCH" if score>=75 else "CONSTRUCTIVE" if score>=62 else "NEUTRAL / WAIT" if score>=45 else "WEAK / AVOID"
+    return {"score":score,"label":label,"components":c,"reasons":reasons,
+            "meaning":"Explainable heuristic ranking score, not a probability of profit."}
+
+@app.get("/conviction/{symbol}")
+def conviction_symbol(symbol:str):
+    rows=market_watch(); q=next((x for x in rows if x["symbol"]==symbol.upper()),None)
+    if not q:return {"symbol":symbol.upper(),"status":"not_found"}
+    hist=eod(symbol.upper()); oh=ohlc_rows(symbol,300)
+    x=conviction(q,hist,oh)
+    x.update({"symbol":symbol.upper(),"eligible":q["volume"]>=MIN_VOLUME,
+              "liquidity_gate":MIN_VOLUME,"quote":q,
+              "data_status":{"market":"PSX portal / delayed","ohlc_sessions":len(oh)}})
+    return x
+
+@app.get("/ranked-opportunities")
+def ranked_opportunities(min_volume:int=MIN_VOLUME,shariah:bool=False,limit:int=30):
+    rows=market_watch(); out=[]
+    for q in rows:
+        if q["volume"]<min_volume or (shariah and not q["shariah"]): continue
+        try: hist=eod(q["symbol"])
+        except: hist=[]
+        oh=ohlc_rows(q["symbol"],300)
+        x=conviction(q,hist,oh)
+        out.append({"symbol":q["symbol"],"sector":q["sector"],"price":q["price"],"pct":q["pct"],
+                    "volume":q["volume"],"shariah":q["shariah"],**x})
+    out.sort(key=lambda z:z["score"],reverse=True)
+    return out[:limit]
+
+# ---- V2.7 market + sector intelligence ----
+@app.get("/market-regime")
+def market_regime():
+    rows=market_watch()
+    elig=[x for x in rows if x["volume"]>=MIN_VOLUME]
+    adv=sum(x["pct"]>0 for x in elig); dec=sum(x["pct"]<0 for x in elig)
+    breadth=100*adv/max(1,adv+dec)
+    avg=sum(x["pct"] for x in elig)/max(1,len(elig))
+    # Membership-aware breadth for major index universes.
+    universes={}
+    for idx in ["KSE100","KMI30","ALLSHR","KMIALLSHR"]:
+        a=[x for x in rows if idx in x.get("listed","")]
+        ia=sum(x["pct"]>0 for x in a); idc=sum(x["pct"]<0 for x in a)
+        universes[idx]={"members":len(a),"adv":ia,"dec":idc,
+                        "breadth_pct":round(100*ia/max(1,ia+idc),1),
+                        "avg_change_pct":round(sum(x["pct"] for x in a)/max(1,len(a)),2)}
+    score=clamp(.6*breadth + .4*clamp(50+avg*10))
+    label="RISK-ON" if score>=65 else "CONSTRUCTIVE" if score>=55 else "MIXED" if score>=45 else "RISK-OFF"
+    return {"label":label,"score":round(score,1),"eligible_stocks":len(elig),
+            "breadth_pct":round(breadth,1),"avg_change_pct":round(avg,2),"indices":universes,
+            "note":"Breadth/regime heuristic from current PSX market-watch constituents; not a forecast."}
+
+@app.get("/sector-rotation")
+def sector_rotation():
+    rows=market_watch(); d={}
+    for x in rows:
+        if x["volume"]<MIN_VOLUME: continue
+        a=d.setdefault(x["sector"],{"sector":x["sector"],"n":0,"adv":0,"pct":0.0,"volume":0.0,"leaders":[]})
+        a["n"]+=1;a["adv"]+=x["pct"]>0;a["pct"]+=x["pct"];a["volume"]+=x["volume"]
+        a["leaders"].append((x["pct"],x["symbol"]))
+    out=[]
+    for a in d.values():
+        breadth=100*a["adv"]/max(1,a["n"]); avg=a["pct"]/max(1,a["n"])
+        strength=clamp(.55*breadth+.45*clamp(50+avg*10))
+        leaders=[s for _,s in sorted(a["leaders"],reverse=True)[:3]]
+        out.append({"sector":a["sector"],"eligible_members":a["n"],"breadth_pct":round(breadth,1),
+                    "avg_change_pct":round(avg,2),"volume":a["volume"],"strength":round(strength,1),
+                    "leaders":leaders})
+    return sorted(out,key=lambda z:z["strength"],reverse=True)
+
+@app.get("/relative-strength/{symbol}")
+def relative_strength(symbol:str):
+    rows=market_watch(); q=next((x for x in rows if x["symbol"]==symbol.upper()),None)
+    if not q:return {"status":"not_found"}
+    sector=[x for x in rows if x["sector"]==q["sector"] and x["volume"]>=MIN_VOLUME]
+    secavg=sum(x["pct"] for x in sector)/max(1,len(sector))
+    kse=[x for x in rows if "KSE100" in x.get("listed","")]
+    kavg=sum(x["pct"] for x in kse)/max(1,len(kse))
+    return {"symbol":q["symbol"],"stock_change_pct":q["pct"],"sector":q["sector"],
+            "vs_sector_pct":round(q["pct"]-secavg,2),"vs_kse100_constituents_pct":round(q["pct"]-kavg,2),
+            "note":"Current-session relative strength proxy; multi-session RS requires historical benchmark series."}
+
+# ---- V2.8 announcements intelligence + grounded AI-ready synthesis ----
+POS=["dividend","bonus","right issue","contract","award","growth","increase","profit","approval","expansion"]
+NEG=["loss","decline","decrease","suspension","default","penalty","adverse","termination","shutdown"]
+HIGH=["material information","financial results","dividend","merger","acquisition","right issue","bonus","default","suspension"]
+
+def classify_headline(title):
+    t=(title or "").lower()
+    pos=sum(x in t for x in POS); neg=sum(x in t for x in NEG)
+    direction="POSITIVE" if pos>neg else "NEGATIVE" if neg>pos else "NEUTRAL / REVIEW"
+    materiality="HIGH" if any(x in t for x in HIGH) else "MEDIUM"
+    return {"direction":direction,"materiality":materiality}
+
+@app.get("/announcement-intelligence/{symbol}")
+def announcement_intelligence(symbol:str):
+    # Company pages expose Financial Results / Board Meetings / Others.
+    url=f"{PSX}/company/{symbol.upper()}"
+    r=requests.get(url,headers=HEAD,timeout=15);r.raise_for_status()
+    from bs4 import BeautifulSoup
+    soup=BeautifulSoup(r.text,"html.parser")
+    items=[]
+    # Conservative extraction: classify only visible titles; never invent document contents.
+    for tr in soup.select("tr"):
+        cells=[x.get_text(" ",strip=True) for x in tr.select("td")]
+        if len(cells)>=2 and any(k in cells[1].lower() for k in
+            ["financial","material","board","dividend","report","meeting","appointment","change","notice","result"]):
+            title=cells[1][:240]
+            items.append({"date":cells[0][:40],"title":title,**classify_headline(title)})
+    return {"symbol":symbol.upper(),"source":url,"items":items[:30],
+            "warning":"Classification uses headline text only; open the official document before acting."}
+
+@app.get("/ai-brief/{symbol}")
+def ai_brief(symbol:str):
+    # Grounded deterministic brief. A remote LLM can later rewrite this evidence, but may not alter facts.
+    cv=conviction_symbol(symbol)
+    if cv.get("status")=="not_found":return cv
+    try: anns=announcement_intelligence(symbol).get("items",[])[:5]
+    except: anns=[]
+    try: rs=relative_strength(symbol)
+    except: rs={}
+    try: regime=market_regime()
+    except: regime={}
+    bull=[];bear=[];confirm=[];invalidate=[]
+    comp=cv.get("components",{})
+    if comp.get("trend",50)>=65:bull.append("Historical trend evidence is supportive.")
+    if comp.get("structure",50)>=65:bull.append("Stored OHLC structure is constructive.")
+    if comp.get("liquidity",0)>=65:bull.append("Liquidity evidence is adequate.")
+    if comp.get("trend",50)<=35:bear.append("Historical trend evidence is weak.")
+    if comp.get("structure",50)<=35:bear.append("Stored OHLC structure is bearish.")
+    if rs.get("vs_sector_pct",0)>0:bull.append("Stock is outperforming its sector today.")
+    elif rs.get("vs_sector_pct",0)<0:bear.append("Stock is underperforming its sector today.")
+    if regime.get("label")=="RISK-OFF":bear.append("Broad market regime is risk-off.")
+    elif regime.get("label") in ["RISK-ON","CONSTRUCTIVE"]:bull.append("Broad market context is supportive.")
+    if anns: confirm.append("Review the latest official PSX disclosures before taking a position.")
+    confirm.append("Require price/volume confirmation; a high evidence score is not a profit probability.")
+    invalidate.append("Reassess if structure/trend components deteriorate or new material disclosures contradict the thesis.")
+    return {"symbol":symbol.upper(),"evidence_score":cv.get("score"),"label":cv.get("label"),
+            "bull_case":bull,"bear_case":bear,"confirmation":confirm,"invalidation":invalidate,
+            "latest_announcements":anns,
+            "llm_policy":"Any future LLM layer must summarize this grounded evidence and cite sources; it may not invent prices, indicators, filings or probabilities."}
+
+# ---- V3.0 Wyckoff Pro: conservative event/quality engine ----
+def _avg(xs): return sum(xs)/len(xs) if xs else 0
+def _spread(x): return max(0.000001, x["high"]-x["low"])
+def _close_pos(x): return (x["close"]-x["low"])/_spread(x)
+
+def effort_result(a, lookback=20):
+    if len(a)<lookback+2:return {"status":"insufficient_history"}
+    recent=a[-lookback:]
+    avgv=_avg([x["volume"] for x in recent[:-1]])
+    avgs=_avg([_spread(x) for x in recent[:-1]])
+    x=recent[-1]
+    vr=x["volume"]/max(1,avgv); sr=_spread(x)/max(.000001,avgs)
+    progress=abs(x["close"]-recent[-2]["close"])/max(.000001,avgs)
+    if vr>=1.5 and progress<.5: state="HIGH EFFORT / LOW RESULT — possible absorption or supply"
+    elif vr>=1.2 and sr>=1.2: state="EFFORT & RESULT IN HARMONY"
+    elif vr<.8 and progress>=1.0: state="LOW EFFORT / LARGE RESULT — low opposing supply/demand"
+    else: state="BALANCED / INCONCLUSIVE"
+    return {"volume_ratio":round(vr,2),"spread_ratio":round(sr,2),"progress_ratio":round(progress,2),"state":state}
+
+def trading_range(a, window=40):
+    if len(a)<window:return None
+    r=a[-window:]
+    hi=max(x["high"] for x in r[:-3]); lo=min(x["low"] for x in r[:-3])
+    width=(hi-lo)/max(.000001,(hi+lo)/2)
+    return {"support":lo,"resistance":hi,"width_pct":round(width*100,2),"bars":window}
+
+def spring_quality(a):
+    tr=trading_range(a)
+    if not tr or len(a)<45:return {"status":"UNRESOLVED"}
+    sup=tr["support"]; cand=None
+    for k in range(max(0,len(a)-8),len(a)):
+        x=a[k]
+        if x["low"]<sup and x["close"]>sup:
+            cand=k
+    if cand is None:return {"status":"NOT DETECTED"}
+    x=a[cand]; prev=a[max(0,cand-20):cand]
+    avgv=_avg([q["volume"] for q in prev]); penetration=(sup-x["low"])/max(.000001,sup)*100
+    recovery=0
+    for k in range(cand,min(len(a),cand+4)):
+        if a[k]["close"]>sup: recovery=k-cand+1;break
+    test=None
+    for k in range(cand+1,min(len(a),cand+8)):
+        if a[k]["low"]>x["low"] and a[k]["volume"]<x["volume"]:
+            test=k;break
+    sos=False
+    for k in range(cand+1,len(a)):
+        if a[k]["close"]>tr["resistance"] and a[k]["volume"]>max(1,avgv):
+            sos=True;break
+    pts=0;criteria={}
+    criteria["closed_back_in_range"]=x["close"]>sup; pts+=20 if criteria["closed_back_in_range"] else 0
+    criteria["recovery_1_3_bars"]=1<=recovery<=3; pts+=20 if criteria["recovery_1_3_bars"] else 0
+    criteria["volume_not_extreme"]=x["volume"]<=avgv*1.5 if avgv else False; pts+=15 if criteria["volume_not_extreme"] else 0
+    criteria["successful_test"]=test is not None; pts+=20 if test is not None else 0
+    criteria["sos_confirmed"]=sos; pts+=25 if sos else 0
+    stage="CONFIRMED" if sos and test is not None else "TESTED" if test is not None else "CANDIDATE"
+    evidence="HIGH" if pts>=75 else "MEDIUM" if pts>=50 else "LOW"
+    return {"status":stage,"evidence":evidence,"quality_score":pts,"penetration_pct":round(penetration,2),
+            "recovery_bars":recovery or None,"criteria":criteria,"support":sup,"resistance":tr["resistance"],
+            "note":"Evidence score is not a probability of profit."}
+
+def upthrust_quality(a):
+    tr=trading_range(a)
+    if not tr or len(a)<45:return {"status":"UNRESOLVED"}
+    res=tr["resistance"]; cand=None
+    for k in range(max(0,len(a)-8),len(a)):
+        x=a[k]
+        if x["high"]>res and x["close"]<res:cand=k
+    if cand is None:return {"status":"NOT DETECTED"}
+    x=a[cand]; prev=a[max(0,cand-20):cand]; avgv=_avg([q["volume"] for q in prev])
+    penetration=(x["high"]-res)/max(.000001,res)*100
+    sow=False
+    for k in range(cand+1,len(a)):
+        if a[k]["close"]<tr["support"] and a[k]["volume"]>max(1,avgv):sow=True;break
+    pts=20 + (20 if x["volume"]>=avgv else 5) + (25 if sow else 0)
+    prompt=(cand==len(a)-1 or any(a[k]["close"]<res for k in range(cand,min(len(a),cand+3))))
+    pts+=20 if prompt else 0
+    criteria={"closed_back_in_range":True,"prompt_rejection":prompt,"elevated_volume":x["volume"]>=avgv,"sow_confirmed":sow}
+    stage="CONFIRMED" if sow else "CANDIDATE"
+    return {"status":stage,"evidence":"HIGH" if pts>=75 else "MEDIUM" if pts>=50 else "LOW",
+            "quality_score":min(100,pts),"penetration_pct":round(penetration,2),"criteria":criteria,
+            "support":tr["support"],"resistance":res,"note":"UT/UTAD distinction requires broader phase context."}
+
+def wyckoff_pro(a):
+    if len(a)<50:return {"phase":"UNRESOLVED","reason":"Need >=50 genuine OHLCV sessions"}
+    tr=trading_range(a); er=effort_result(a); sp=spring_quality(a); ut=upthrust_quality(a); st=structure_ohlc(a)
+    phase="UNRESOLVED"
+    if sp.get("status")=="CONFIRMED":phase="ACCUMULATION — Phase D candidate"
+    elif sp.get("status") in ("CANDIDATE","TESTED"):phase="ACCUMULATION — Phase C hypothesis"
+    elif ut.get("status")=="CONFIRMED":phase="DISTRIBUTION — Phase D candidate"
+    elif ut.get("status")=="CANDIDATE":phase="DISTRIBUTION — Phase C hypothesis"
+    elif "UPTREND" in st.get("trend",""):phase="MARKUP / RE-ACCUMULATION context"
+    elif "DOWNTREND" in st.get("trend",""):phase="MARKDOWN / RE-DISTRIBUTION context"
+    return {"phase":phase,"trading_range":tr,"effort_vs_result":er,"spring":sp,"upthrust":ut,
+            "structure":st,"principle":"Conservative labeling: unresolved when classic criteria are not met."}
+
+@app.get("/wyckoff-pro/{symbol}")
+def wyckoff_pro_endpoint(symbol:str):
+    a=ohlc_rows(symbol,400)
+    if not a:return {"symbol":symbol.upper(),"status":"awaiting_true_ohlcv"}
+    return {"symbol":symbol.upper(),"sessions":len(a),**wyckoff_pro(a)}
+
+===== backend/backtester.py =====
+"""backtester.py — Two jobs:
+
+1. OUTCOME TRACKER (the learning loop): for every stored run, fill in real
+   prices after the next run, 1, 3, and 7 days, then judge whether the
+   signal 'worked'. Buy/Strong Buy works if price moved toward target
+   before stop; Avoid/Exit works if price fell. Results feed
+   indicator_accuracy and signal_accuracy, which adjust future CONFIDENCE.
+
+2. BACKTEST MODE: replay the EOD history with the technical module to show
+   how score-based signals would have behaved. This is in-sample and
+   explicitly labelled with overfitting warnings — it is evidence, not proof.
+"""
+
+import json
+import logging
+from datetime import datetime, timedelta
+
+import pandas as pd
+
+import config
+import database as db
+import data_fetcher
+import technical_analyzer
+
+log = logging.getLogger("backtester")
+
+
+# ---------------------------------------------------------------------------
+# Benchmark cache — real KMI30 EOD as the "market" for grading Avoid/Exit. Far
+# more honest than the cohort-median proxy (which is the engine's own filtered
+# universe), but the cohort median stays as a fallback when the index isn't
+# fetchable (offline / 403). Cached once per process; never fabricated.
+# ---------------------------------------------------------------------------
+_BENCH_CACHE = {"eod": None, "tried": False}
+
+
+def _benchmark_eod():
+    if not _BENCH_CACHE["tried"]:
+        try:
+            import market_regime
+            eod, _ = market_regime.fetch_index()
+            _BENCH_CACHE["eod"] = eod
+        except Exception as e:
+            log.warning("Benchmark index fetch failed for grading: %s", e)
+        _BENCH_CACHE["tried"] = True
+    return _BENCH_CACHE["eod"]
+
+
+def _benchmark_forward_move(start_date, days=3):
+    """Real benchmark (KMI30) % move from start_date over `days` calendar days.
+    None when the index data isn't reachable or doesn't span the window."""
+    eod = _benchmark_eod()
+    if eod is None or len(eod) == 0:
+        return None
+    eod_sorted = eod.sort_values("date")
+    start = pd.Timestamp(start_date).normalize()
+    sub0 = eod_sorted[eod_sorted["date"] >= start]
+    if sub0.empty:
+        return None
+    p0 = float(sub0["close"].iloc[0])
+    sub1 = eod_sorted[eod_sorted["date"] >= start + pd.Timedelta(days=days)]
+    if sub1.empty:
+        return None
+    p1 = float(sub1["close"].iloc[0])
+    return (p1 / p0 - 1) * 100
+
+
+# ---------------------------------------------------------------------------
+# Outcome tracking
+# ---------------------------------------------------------------------------
+def _price_on_or_after(eod, when):
+    # EOD timestamps sit at midnight; run_time carries an intraday time. Without
+    # normalising, "3 days after a 15:17 run" skips that day's midnight EOD and
+    # lands a session late. Compare on calendar date so the horizon is exact.
+    sub = eod[eod["date"] >= pd.Timestamp(when).normalize()]
+    return float(sub["close"].iloc[0]) if len(sub) else None
+
+
+def update_outcomes():
+    """Fill pending forward prices from real EOD data and grade signals."""
+    pend = db.pending_outcomes()
+    if not pend:
+        return 0
+    eod_cache = {}
+    updated = 0
+    for run in pend:
+        sym = run["symbol"]
+        if sym not in eod_cache:
+            eod_cache[sym], _ = data_fetcher.fetch_eod(sym)
+        eod = eod_cache[sym]
+        if eod is None:
+            continue
+        t0 = datetime.fromisoformat(run["run_time"])
+        for field, days in (("price_1d", 1), ("price_3d", 3), ("price_7d", 7)):
+            if run[field] is None and datetime.now() >= t0 + timedelta(days=days):
+                p = _price_on_or_after(eod, t0 + timedelta(days=days))
+                if p:
+                    db.update_outcome(run["id"], field, p)
+                    run[field] = p
+                    updated += 1
+        # grade once 3-day price exists
+        if run["outcome"] is None and run["price_3d"] is not None and run["price"]:
+            _grade_and_attribute(run)
+        # 7-day grade: a LEAD signal (early watch) needs room to play out, so it
+        # is judged on the longer horizon. Stored separately — it never touches
+        # `outcome`, the 3-day grade the Buy/Avoid stats are built on.
+        if run["price_7d"] is not None and run["price"] and \
+                _col(run, "outcome_7d") is None:
+            db.update_outcome(run["id"], "outcome_7d",
+                              "worked" if _beat_market_7d(run) else "failed")
+    log.info("Outcome tracker updated %d fields", updated)
+    return updated
+
+
+def _col(run, name):
+    """sqlite3.Row has no .get(); a column added by a later migration may be
+    absent in an older row object."""
+    try:
+        return run[name]
+    except (IndexError, KeyError):
+        return None
+
+
+def _beat_market_7d(run):
+    """Did this name beat the market over 7 days? Same honest benchmark chain as
+    the 3-day grade (real KMI30 -> cohort median -> 0). Used for the early-watch
+    tier, whose whole point is lead time: 3 days is too short to judge it."""
+    chg = (run["price_7d"] / run["price"] - 1) * 100
+    market = _benchmark_forward_move(run["run_time"][:10], days=7)
+    if market is None:
+        market = db.cohort_forward_move(run["run_time"][:10],
+                                        exclude_symbol=run["symbol"], days=7)
+    return chg > (market if market is not None else 0.0)
+
+
+def _signal_worked(run):
+    """Did the signal call play out? Real, rule-based — no fabrication.
+
+      * Buy/Strong Buy — BEAT the real benchmark (KMI30) 3-day forward move
+                         without breaching the stop. Was an absolute ">1% in 3
+                         days", which mostly measured the market: it scored 22%
+                         against a 38% base rate for "any symbol rose >1%", so a
+                         Buy could "fail" in a down market while still being the
+                         right relative call (and vice versa). Same benchmark →
+                         cohort-median → "did not fall" fallback chain as
+                         Avoid/Exit, so Buy and Avoid are finally comparable.
+      * Avoid/Exit     — RELATIVE to the REAL benchmark (KMI30) forward move:
+                         the stock underperformed the actual market index. Falls
+                         back to the cohort median (engine's own universe) when
+                         the index isn't reachable, then to "did not rise" when
+                         even the cohort is too thin to benchmark. Three honest
+                         fallbacks — never fabricated.
+      * Watch/Hold     — graded loosely: didn't lose more than 3%.
+    """
+    chg = (run["price_3d"] / run["price"] - 1) * 100
+    sig = run["signal"]
+    if sig in ("Buy", "Strong Buy", "Avoid", "Exit"):
+        market = _benchmark_forward_move(run["run_time"][:10], days=3)
+        if market is None:
+            market = db.cohort_forward_move(run["run_time"][:10],
+                                            exclude_symbol=run["symbol"])
+        bar = market if market is not None else 0.0
+        if sig in ("Avoid", "Exit"):
+            return chg < bar
+        # A Buy is right when it OUTPERFORMS the market and the stop held. The
+        # stop condition stays absolute: a stopped-out trade is a real loss no
+        # matter what the index did.
+        return chg > bar and (run["stop_loss"] is None
+                              or run["price_3d"] > run["stop_loss"])
+    return chg > -3.0
+
+
+def _grade_and_attribute(run):
+    """Grade one run and credit/blame the sections + sub-indicators that drove it."""
+    worked = _signal_worked(run)
+    sym = run["symbol"]
+    db.update_outcome(run["id"], "outcome", "worked" if worked else "failed")
+    # credit/blame the dominant section (section-level)
+    b = {"technical": run["technical_score"],
+         "sentiment": run["sentiment_score"],
+         "macro_news": run["macro_news_score"]}
+    dominant = max(b, key=lambda k: b[k] or 0)
+    db.bump_indicator(dominant, sym, worked)
+    # sub-indicator attribution: each bullish flag earns a hit or miss
+    # so scoring_engine can later boost/penalise per-indicator confidence.
+    if run.get("tech_flags"):
+        try:
+            for ind, bullish in json.loads(run["tech_flags"]).items():
+                if bullish is True:
+                    db.bump_indicator(f"tech_{ind}", sym, worked)
+        except Exception:
+            pass
+    return worked
+
+
+def regrade_all():
+    """One-time / maintenance: re-grade EVERY completed run under the current
+    rules and rebuild indicator_accuracy from scratch. Needed whenever the
+    grading logic changes (e.g. Avoid moving from absolute to relative), since
+    update_outcomes only ever grades rows whose outcome is still NULL."""
+    db.reset_indicator_accuracy()
+    runs = db.gradeable_runs()
+    flipped = 0
+    for run in runs:
+        before = run["outcome"]
+        worked = _grade_and_attribute(run)
+        if before is not None and before != ("worked" if worked else "failed"):
+            flipped += 1
+    log.info("Re-graded %d runs (%d outcomes changed)", len(runs), flipped)
+    return {"regraded": len(runs), "flipped": flipped}
+
+
+# ---------------------------------------------------------------------------
+# Historical backtest (technical-only replay; macro/sentiment history is not
+# reconstructable honestly, so we do not pretend to backtest it)
+#
+# Tier 2 #8 — the replay now reports the metrics that actually predict whether
+# an edge is real and tradeable: expectancy, profit factor, max drawdown, plus
+# an out-of-sample tail + rolling walk-forward folds to flag overfitting.
+# ---------------------------------------------------------------------------
+def _generate_trades(symbol, eod, hold_days, entry_score, start_i=60):
+    """Replay the window bar-by-bar. At each bar the technical module sees ONLY
+    data up to that bar (no lookahead); a qualifying setup opens a trade held
+    `hold_days` bars or until the close breaches the stop. Returns trade dicts
+    carrying their bar index `i` so they can be split for walk-forward."""
+    trades = []
+    i, n = start_i, len(eod)
+    while i < n - hold_days:
+        window = eod.iloc[: i + 1]
+        quote = {"price": float(window["close"].iloc[-1]),
+                 "volume": float(window["volume"].iloc[-1])}
+        t = technical_analyzer.analyze(symbol, window, quote)
+        if t["score"] is not None and t["score"] >= entry_score and not t.get("breakdown"):
+            entry = quote["price"]
+            exit_p = float(eod["close"].iloc[i + hold_days])
+            stopped = any(float(eod["close"].iloc[j]) <= t["stop_loss"]
+                          for j in range(i + 1, i + hold_days + 1))
+            pnl = ((t["stop_loss"] if stopped else exit_p) / entry - 1) * 100
+            trades.append({"i": i, "date": str(eod['date'].iloc[i].date()),
+                           "entry": round(entry, 2), "pnl_pct": round(pnl, 2),
+                           "stopped": stopped})
+            i += hold_days
+        i += 1
+    return trades
+
+
+def trade_metrics(trades):
+    """Profit-oriented metrics from a list of trades (each with `pnl_pct`).
+
+      * expectancy_pct  — average % you can expect PER TRADE (win%·avgWin −
+                          loss%·avgLoss). The single most important number: a
+                          positive expectancy is the whole game.
+      * profit_factor   — gross profit / gross loss. >1.5 healthy, <1 = losing.
+      * max_drawdown_pct— worst peak-to-trough dip of a compounded equity curve
+                          (1 unit risked per trade). Governs survivability.
+      * payoff_ratio    — avg win / avg loss size.
+    """
+    pnls = [t["pnl_pct"] for t in trades]
+    n = len(pnls)
+    if n == 0:
+        return {"trades": 0}
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p <= 0]
+    win_rate = len(wins) / n
+    avg_win = sum(wins) / len(wins) if wins else 0.0
+    avg_loss = sum(losses) / len(losses) if losses else 0.0      # <= 0
+    expectancy = win_rate * avg_win + (1 - win_rate) * avg_loss
+    gross_profit = sum(wins)
+    gross_loss = -sum(losses)                                    # positive magnitude
+    if gross_loss > 0:
+        profit_factor = round(gross_profit / gross_loss, 2)
+    else:
+        profit_factor = None if gross_profit == 0 else float("inf")
+    payoff = round(avg_win / -avg_loss, 2) if avg_loss < 0 else None
+    # compounded equity curve -> max drawdown + total return
+    equity, peak, max_dd = 1.0, 1.0, 0.0
+    curve = []
+    for p in pnls:
+        equity *= (1 + p / 100)
+        peak = max(peak, equity)
+        max_dd = min(max_dd, equity / peak - 1)
+        curve.append(round(equity, 4))
+    return {"trades": n,
+            "win_rate_pct": round(win_rate * 100, 1),
+            "avg_win_pct": round(avg_win, 2),
+            "avg_loss_pct": round(avg_loss, 2),
+            "expectancy_pct": round(expectancy, 2),
+            "profit_factor": profit_factor,
+            "payoff_ratio": payoff,
+            "max_drawdown_pct": round(max_dd * 100, 1),
+            "total_return_pct": round((equity - 1) * 100, 1),
+            "equity_curve": curve}
+
+
+def _walk_forward(trades, n_bars, folds):
+    """Split the window into `folds` sequential time slices and report metrics
+    per slice. A real edge holds up across folds; one that only works in a single
+    slice is a red flag for overfitting/luck."""
+    if folds < 2 or not trades:
+        return []
+    step = n_bars / folds
+    out = []
+    for k in range(folds):
+        lo, hi = int(k * step), int((k + 1) * step)
+        ft = [t for t in trades if lo <= t["i"] < hi]
+        m = trade_metrics(ft)
+        out.append({"fold": k + 1, "trades": m["trades"],
+                    "expectancy_pct": m.get("expectancy_pct"),
+                    "profit_factor": m.get("profit_factor"),
+                    "win_rate_pct": m.get("win_rate_pct")})
+    return out
+
+
+def _verdict(oos, walk):
+    """Plain-English read on whether the edge survives out-of-sample."""
+    if not oos or oos.get("trades", 0) < 3:
+        return "Inconclusive — too few out-of-sample trades to judge."
+    pf = oos.get("profit_factor")
+    pf_ok = pf is not None and (pf == float("inf") or pf >= 1.2)
+    profitable_folds = sum(1 for f in walk
+                           if (f.get("expectancy_pct") or 0) > 0)
+    if oos.get("expectancy_pct", 0) > 0 and pf_ok:
+        if walk and profitable_folds >= max(2, len(walk) - 1):
+            return "Edge HOLDS out-of-sample and is consistent across folds."
+        return "Edge holds out-of-sample, but consistency across folds is mixed."
+    return ("Edge does NOT hold out-of-sample — likely in-sample overfit; "
+            "treat as evidence against, not for.")
+
+
+def backtest(symbol, lookback=None, hold_days=None, entry_score=None,
+             oos_fraction=None, folds=None):
+    cfg = config.BACKTEST
+    lookback = lookback or cfg["lookback"]
+    hold_days = hold_days or cfg["hold_days"]
+    entry_score = cfg["entry_score"] if entry_score is None else entry_score
+    oos_fraction = cfg["oos_fraction"] if oos_fraction is None else oos_fraction
+    folds = folds or cfg["walk_forward_folds"]
+
+    eod, meta = data_fetcher.fetch_eod(symbol)
+    if eod is None or len(eod) < 80:
+        return {"symbol": symbol, "error": "insufficient history", "meta": meta}
+    eod = eod.tail(lookback).reset_index(drop=True)
+    n = len(eod)
+    trades = _generate_trades(symbol, eod, hold_days, entry_score)
+    if not trades:
+        return {"symbol": symbol, "trades": 0,
+                "note": "No qualifying setups in window."}
+
+    # split by ENTRY bar: the in-sample head vs the held-out out-of-sample tail
+    split_i = int(n * (1 - oos_fraction))
+    is_trades = [t for t in trades if t["i"] < split_i]
+    oos_trades = [t for t in trades if t["i"] >= split_i]
+
+    full = trade_metrics(trades)
+    oos = trade_metrics(oos_trades)
+    walk = _walk_forward(trades, n, folds)
+    detail = [{k: t[k] for k in ("date", "entry", "pnl_pct", "stopped")}
+              for t in trades]
+    return {"symbol": symbol,
+            "window": {"bars": n, "from": str(eod["date"].iloc[0].date()),
+                       "to": str(eod["date"].iloc[-1].date())},
+            "params": {"hold_days": hold_days, "entry_score": entry_score,
+                       "oos_fraction": oos_fraction},
+            **full,
+            "in_sample": trade_metrics(is_trades),
+            "out_of_sample": oos,
+            "walk_forward": walk,
+            "verdict": _verdict(oos, walk),
+            "detail": detail,
+            "warning": ("Technical-only replay on a SMALL sample; stops use "
+                        "close (no intraday H/L). Evidence, not proof — past "
+                        "performance ≠ future results.")}
+
+
+def backtest_portfolio(symbols=None, **kw):
+    """Run the backtest across the whole universe and aggregate into one book of
+    trades, so you see the strategy's portfolio-wide expectancy, profit factor
+    and max drawdown — not just one symbol at a time."""
+    symbols = symbols or config.STOCKS
+    per_symbol, all_trades, errors = {}, [], []
+    for s in symbols:
+        r = backtest(s, **kw)
+        if r.get("error"):
+            errors.append(s)
+            continue
+        if not r.get("trades"):
+            continue
+        per_symbol[s] = {k: r.get(k) for k in
+                         ("trades", "win_rate_pct", "expectancy_pct",
+                          "profit_factor", "max_drawdown_pct",
+                          "total_return_pct")}
+        per_symbol[s]["verdict"] = r.get("verdict")
+        all_trades += [{"symbol": s, **t} for t in r["detail"]]
+    # combined equity curve in chronological order across all names
+    all_trades.sort(key=lambda t: t["date"])
+    agg = trade_metrics(all_trades)
+    return {"symbols_traded": len(per_symbol), "errors": errors,
+            "aggregate": agg, "per_symbol": per_symbol,
+            "warning": ("Aggregate of independent per-symbol replays; assumes "
+                        "you could have taken every signal. Evidence, not proof.")}
+
+===== backend/fundamentals_analyzer.py =====
+"""fundamentals_analyzer.py — Scores a stock's audited fundamentals to 0-100.
+
+Reads ratios from config.FUNDAMENTALS (a manually maintained table — same honest
+pattern as MACRO_ANCHORS). The engine NEVER invents fundamentals: any symbol with
+no entry scores a neutral 50 and is flagged low_confidence so the weight-aware
+confidence penalty kicks in. Fill the table from the latest quarterly/annual
+report to activate this layer.
+
+Per-symbol dict keys (all optional): pe, eps_growth (%), roe (%),
+de (debt/equity ratio), div_yield (%).
+"""
+
+import json
+import os
+from collections import defaultdict
+
+import config
+
+log_neutral = 50.0
+_METRICS = ("pe", "eps_growth", "roe", "de", "div_yield")
+_MIN_PEERS = 3            # sector-relative needs at least this many peers w/ a metric
+
+# Auto-fetched ratios cache (written by fundamentals_fetcher.py). Manual entries
+# in config.FUNDAMENTALS override anything here.
+_CACHE_PATH = os.path.join(os.path.dirname(__file__), "fundamentals.json")
+
+
+def _load_cache():
+    try:
+        with open(_CACHE_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"data": {}, "as_of": None}
+
+
+_CACHE = _load_cache()
+
+
+_SECTOR_VALUES = None
+
+
+def _sector_peer_values():
+    """{sector: {metric: [peer values]}} from the merged cache+config, memoized.
+    Lets each ratio be scored relative to its sector, not just absolute bands."""
+    global _SECTOR_VALUES
+    if _SECTOR_VALUES is not None:
+        return _SECTOR_VALUES
+    cache = _CACHE.get("data", {})
+    cfg = getattr(config, "FUNDAMENTALS", {}) or {}
+    sv = defaultdict(lambda: defaultdict(list))
+    for sym in set(cache) | set(cfg):
+        d = dict(cache.get(sym, {})); d.update(cfg.get(sym, {}))
+        sec = config.SECTORS.get(sym, "?")
+        for m in _METRICS:
+            v = d.get(m)
+            if v is not None:
+                sv[sec][m].append(float(v))
+    _SECTOR_VALUES = {s: dict(mv) for s, mv in sv.items()}
+    return _SECTOR_VALUES
+
+
+def _rel_pct(values, x, lower_is_better):
+    """Score x's standing among its sector peers, 20-100 (best=100). None if too
+    few peers. Percentile-rank based, so it's robust to outliers/small n."""
+    n = len(values)
+    if n < _MIN_PEERS:
+        return None
+    beats = (sum(1 for v in values if v > x) if lower_is_better
+             else sum(1 for v in values if v < x))      # peers x is better than
+    frac = beats / (n - 1) if n > 1 else 0.5            # exclude self
+    return 20 + max(0.0, min(1.0, frac)) * 80
+
+
+def _lin(x, lo, hi, lo_score, hi_score):
+    """Linear map x in [lo,hi] -> [lo_score,hi_score], clamped."""
+    if x is None:
+        return None
+    if hi == lo:
+        return hi_score
+    t = (x - lo) / (hi - lo)
+    t = max(0.0, min(1.0, t))
+    return lo_score + t * (hi_score - lo_score)
+
+
+def analyze(symbol):
+    # Merge auto-fetched cache with manual config overrides (config wins).
+    data = dict(_CACHE.get("data", {}).get(symbol, {}))
+    data.update((getattr(config, "FUNDAMENTALS", {}) or {}).get(symbol, {}))
+    as_of = (getattr(config, "FUNDAMENTALS_AS_OF", "") or _CACHE.get("as_of")
+             or "n/a")
+    if not data:
+        return {"symbol": symbol, "score": log_neutral, "low_confidence": True,
+                "as_of": as_of, "have": [],
+                "notes": ["No fundamentals data — neutral 50. Run "
+                          "`python fundamentals_fetcher.py` or add "
+                          f"config.FUNDAMENTALS['{symbol}']."]}
+
+    # Each ratio: absolute band score, blended 50/50 with a sector-relative
+    # percentile when the sector has >= _MIN_PEERS peers for that ratio. So
+    # "cheap P/E" is judged vs sector norms, not one universal band.
+    sv = _sector_peer_values().get(config.SECTORS.get(symbol, "?"), {})
+    parts, have, notes = [], [], []
+    rel_used = [False]
+
+    def metric(key, lo, hi, lo_s, hi_s, lower_better, label, suffix=""):
+        x = data.get(key)
+        if x is None or (key == "pe" and x <= 0):
+            return
+        a = _lin(x, lo, hi, lo_s, hi_s)
+        r = _rel_pct(sv.get(key, []), x, lower_better)
+        if r is not None:
+            parts.append(round(0.5 * a + 0.5 * r, 1)); rel_used[0] = True
+        else:
+            parts.append(a)
+        have.append(f"{label} {x}{suffix}")
+
+    metric("pe", 5, 25, 100, 20, True, "P/E")
+    metric("eps_growth", -10, 25, 10, 100, False, "EPSg", "%")
+    metric("roe", 5, 25, 20, 100, False, "ROE", "%")
+    metric("de", 0.3, 2.0, 100, 20, True, "D/E")
+    metric("div_yield", 0, 8, 40, 100, False, "DY", "%")
+
+    parts = [p for p in parts if p is not None]
+    if not parts:
+        return {"symbol": symbol, "score": log_neutral, "low_confidence": True,
+                "as_of": as_of, "have": [],
+                "notes": ["Fundamentals entry present but no usable ratios — "
+                          "neutral 50."]}
+
+    score = round(sum(parts) / len(parts), 1)
+    thin = len(parts) < 2                         # 1 ratio = thin, low confidence
+    notes.append(f"Fundamentals ({as_of}): " + ", ".join(have)
+                 + (" [sector-relative blend]" if rel_used[0] else "")
+                 + ". Verify against the latest quarterly before acting.")
+    return {"symbol": symbol, "score": score, "low_confidence": thin,
+            "as_of": as_of, "have": have, "notes": notes}
+
+===== backend/fundamentals_fetcher.py =====
+"""fundamentals_fetcher.py — Pull public fundamental ratios for the stock
+universe from stockanalysis.com and cache them to fundamentals.json (which
+fundamentals_analyzer reads).
+
+Public, login-free, server-rendered data only — no scraping behind any gate.
+Ratios change quarterly, so this is meant to be re-run occasionally (manually
+or via `python main.py fundamentals`), NOT on every engine cycle.
+
+Fields collected per symbol (whatever the page exposes):
+    pe, roe (%), de (debt/equity), div_yield (%), eps_growth (%)
+
+    python fundamentals_fetcher.py        # refresh all config.STOCKS
+"""
+
+import json
+import re
+import time
+import logging
+from datetime import date
+
+import ssl_compat
+ssl_compat.enable()          # OS trust store for HTTPS (this laptop intercepts TLS)
+import requests
+
+import config
+
+log = logging.getLogger("fundamentals_fetcher")
+
+UA = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                     "AppleWebKit/537.36 (KHTML, like Gecko) "
+                     "Chrome/124.0 Safari/537.36")}
+BASE = "https://stockanalysis.com/quote/psx/{sym}/"
+CACHE_PATH = "fundamentals.json"
+
+# stockanalysis "statistics" page exposes these as
+#   {id:"<sid>",title:"...",value:"<v>",hover:"..."}
+_STAT_FIELDS = [("pe", "pe"), ("roe", "roe"),
+                ("debtEquity", "de"), ("dividendYield", "div_yield")]
+
+
+def _num(s):
+    """Parse a stockanalysis value string to float, or None if not usable."""
+    if s is None:
+        return None
+    s = s.strip().replace(",", "").replace("%", "")
+    if s in ("", "-", "N/A", "n/a", "null", "None"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def fetch(symbol, session):
+    """Return a dict of available ratios for one symbol (may be partial/empty)."""
+    out = {}
+    # --- statistics page: pe, roe, debtEquity (de), dividendYield
+    try:
+        st = session.get(BASE.format(sym=symbol) + "statistics/", timeout=30).text
+        for sid, key in _STAT_FIELDS:
+            m = re.search(r'id:"%s",[^}]*?value:"([^"]*)"' % re.escape(sid), st)
+            if m:
+                v = _num(m.group(1))
+                if v is not None:
+                    out[key] = v
+    except Exception as e:                       # network/parse failure is non-fatal
+        log.warning("%s: statistics page failed: %s", symbol, e)
+    # --- main quote page: epsGrowth (%)
+    try:
+        mn = session.get(BASE.format(sym=symbol), timeout=30).text
+        m = re.search(r"epsGrowth:(-?[\d.]+)", mn)
+        if m:
+            v = _num(m.group(1))
+            if v is not None:
+                out["eps_growth"] = round(v, 2)
+    except Exception as e:
+        log.warning("%s: main page failed: %s", symbol, e)
+    return out
+
+
+def fetch_all(symbols=None):
+    """Fetch every symbol, write fundamentals.json, return the payload."""
+    symbols = symbols or config.STOCKS
+    s = requests.Session()
+    s.headers.update(UA)
+    data = {}
+    for sym in symbols:
+        d = fetch(sym, s)
+        if d:
+            data[sym] = d
+        log.info("%-7s -> %s", sym, d or "no data")
+        time.sleep(0.5)                          # be polite to the source
+    payload = {"as_of": date.today().isoformat(),
+               "source": "stockanalysis.com (PSX)", "data": data}
+    with open(CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    return payload
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    p = fetch_all()
+    n = len(p["data"])
+    fields = sum(len(v) for v in p["data"].values())
+    print(f"\nWrote {CACHE_PATH}: {n}/{len(config.STOCKS)} stocks have data, "
+          f"{fields} ratios total, as_of {p['as_of']}")
+
+===== backend/historical_import.py =====
+"""
+PSX Intelligence V2.5 historical OHLCV importer.
+
+Use with daily historical/market-summary CSV files that you are authorized to use.
+This deliberately does not bypass the PSX website or automate prohibited scraping.
+"""
+import argparse, sqlite3, pandas as pd
+from pathlib import Path
+
+ALIASES={
+ "symbol":["SYMBOL","SCRIP","TICKER"],
+ "date":["DATE","TRADE_DATE","TRADE DATE"],
+ "open":["OPEN","OPEN PRICE"],
+ "high":["HIGH","HIGH PRICE"],
+ "low":["LOW","LOW PRICE"],
+ "close":["CLOSE","CLOSE PRICE","PRICE"],
+ "volume":["VOLUME","TURNOVER","SHARES"]
+}
+def col(df,n):
+    up={str(c).strip().upper():c for c in df.columns}
+    for a in ALIASES[n]:
+        if a in up:return up[a]
+    return None
+
+def import_file(path,db_path="psx_v2.db",source="Authorized PSX historical file"):
+    df=pd.read_csv(path)
+    cols={k:col(df,k) for k in ALIASES}
+    need=["symbol","date","open","high","low","close"]
+    missing=[k for k in need if cols[k] is None]
+    if missing: raise ValueError("Missing columns: "+", ".join(missing))
+    c=sqlite3.connect(db_path)
+    c.execute("""CREATE TABLE IF NOT EXISTS daily_ohlc(
+      symbol TEXT, trade_date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL,
+      source TEXT, PRIMARY KEY(symbol,trade_date))""")
+    n=0
+    for _,r in df.iterrows():
+        try:
+            row=(str(r[cols["symbol"]]).strip().upper(),str(r[cols["date"]]).strip(),
+                 float(str(r[cols["open"]]).replace(",","")),float(str(r[cols["high"]]).replace(",","")),
+                 float(str(r[cols["low"]]).replace(",","")),float(str(r[cols["close"]]).replace(",","")),
+                 float(str(r[cols["volume"]]).replace(",","")) if cols["volume"] else 0.0,source)
+            c.execute("INSERT OR REPLACE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)",row); n+=1
+        except Exception: pass
+    c.commit();c.close();return n
+
+if __name__=="__main__":
+    p=argparse.ArgumentParser()
+    p.add_argument("files",nargs="+")
+    p.add_argument("--db",default="psx_v2.db")
+    args=p.parse_args()
+    total=0
+    for f in args.files:
+        n=import_file(f,args.db);total+=n;print(f"{f}: {n} rows")
+    print("Total imported:",total)
+
+===== backend/intelligence_engine.py =====
+"""Explainable PSX intelligence primitives. No fabricated probabilities."""
+from dataclasses import dataclass
+from typing import List, Dict
+
+@dataclass
+class Candle:
+    o: float; h: float; l: float; c: float; v: float = 0
+
+def candlestick_patterns(bars: List[Candle]) -> List[Dict]:
+    if not bars: return []
+    x=bars[-1]; rng=max(x.h-x.l,1e-9); body=abs(x.c-x.o); upper=x.h-max(x.o,x.c); lower=min(x.o,x.c)-x.l
+    out=[]
+    def add(name,bias,evidence): out.append({'pattern':name,'bias':bias,'evidence':evidence})
+    if body/rng <= .10: add('Doji','neutral','Body <=10% of candle range; context required')
+    if lower/rng >= .55 and body/rng <= .35: add('Hammer-like rejection','bullish-context','Long lower rejection; only meaningful near support/downtrend exhaustion')
+    if upper/rng >= .55 and body/rng <= .35: add('Shooting-star-like rejection','bearish-context','Long upper rejection; only meaningful near resistance/uptrend exhaustion')
+    if len(bars)>=2:
+        p=bars[-2]
+        if p.c<p.o and x.c>x.o and x.o<=p.c and x.c>=p.o: add('Bullish engulfing','bullish-context','Current real body engulfs prior bearish body')
+        if p.c>p.o and x.c<x.o and x.o>=p.c and x.c<=p.o: add('Bearish engulfing','bearish-context','Current real body engulfs prior bullish body')
+    return out
+
+def market_structure(closes: List[float]) -> Dict:
+    if len(closes)<20:return {'trend':'unconfirmed','reason':'Need at least 20 observations'}
+    ma20=sum(closes[-20:])/20; last=closes[-1]
+    recent=closes[-10:]
+    return {'trend':'bullish' if last>ma20 else 'bearish','ma20':round(ma20,2),'last':round(last,2),
+            'range10':[round(min(recent),2),round(max(recent),2)],
+            'reason':'Price relative to 20-observation mean; swing-point BOS/CHoCH requires OHLC swing extraction'}
+
+def ai_evidence_packet(symbol:str, quote:dict, structure:dict, wyckoff:dict, patterns:list, news:list=None, fundamentals:dict=None)->dict:
+    return {'symbol':symbol,'quote':quote,'structure':structure,'wyckoff':wyckoff,'candlesticks':patterns,
+            'news':news or [],'fundamentals':fundamentals or {},
+            'instruction':'Explain bull case, bear case, confirmation, invalidation, catalysts, risks and conflicts. Never invent missing data or call confidence a probability.'}
+
+===== backend/legacy_adapter.py =====
+"""Compatibility layer for porting validated V1 analytics into V2.
+The copied V1 modules are retained verbatim for auditability. This adapter
+normalizes V2 data before invoking them. Do not silently change V1 thresholds.
+"""
+import pandas as pd
+
+def eod_frame(rows):
+    rec=[]
+    for z in rows:
+        if isinstance(z,(list,tuple)):
+            rec.append({'ts':z[0],'close':z[1],'volume':z[2] if len(z)>2 else 0,'open':z[3] if len(z)>3 else None})
+        else:
+            rec.append({'ts':z.get('time',z.get('timestamp')),'close':z.get('close',z.get('price')),'volume':z.get('volume',0),'open':z.get('open')})
+    df=pd.DataFrame(rec)
+    if len(df):
+        df['date']=pd.to_datetime(df['ts'],unit='s',errors='coerce')
+        df=df.sort_values('date').reset_index(drop=True)
+    return df
+
+===== backend/macro_news_analyzer.py =====
+"""macro_news_analyzer.py — Computes the 40% macro / industry / fundamentals
+/ news score and builds the written explanation per stock.
+
+Inputs:
+  * Macro anchors from config (policy rate, CPI, USD/PKR, reserves) — manually
+    maintained with as-of dates; stale or empty anchors lower confidence.
+  * Public news headlines (macro, sector, company) scored by keyword/polarity.
+  * A per-sector driver map so the explanation is sector-aware.
+
+The module NEVER invents fundamentals. Where audited financials are not
+wired in, it says so and relies on news + macro context, flagging the gap.
+"""
+
+import logging
+from datetime import datetime
+
+import config
+import database as db
+import news_feed
+from sentiment_analyzer import _polarity  # reuse polarity engine
+
+log = logging.getLogger("macro")
+
+MACRO_KEYWORDS = {
+    "rates": ["policy rate", "interest rate", "monetary policy", "sbp", "mpc"],
+    "inflation": ["inflation", "cpi"],
+    "fx": ["rupee", "usd", "exchange rate", "pkr"],
+    "reserves": ["reserves", "foreign exchange reserves"],
+    "imf": ["imf", "bailout", "programme review", "tranche"],
+    "policy": ["budget", "tax", "subsidy", "tariff", "psdp", "circular debt"],
+}
+
+SECTOR_DRIVERS = {
+    "Oil Marketing": ["oil price", "petroleum levy", "circular debt", "fuel demand", "margins"],
+    "Islamic Banking": ["policy rate", "deposit growth", "advances", "adr", "islamic banking"],
+    "Technology/IT Exports": ["it exports", "remote work", "dollar revenue", "rupee depreciation"],
+    "Technology/Telecom Devices": ["smartphone", "import duty", "assembly", "lc restrictions"],
+    "Cement/Conglomerate": ["cement dispatches", "construction", "coal price", "psdp"],
+    "Fertilizer": ["urea", "gas price", "offtake", "subsidy", "agriculture"],
+    "Oil & Gas Exploration": ["oil price", "gas price", "wellhead", "exploration", "circular debt"],
+    "Diversified/Consumer": ["consumer demand", "raw material", "margins"],
+}
+
+
+def _anchor_status():
+    notes, stale = [], 0
+    for k, v in config.MACRO_ANCHORS.items():
+        if v["value"] is None:
+            notes.append(f"Macro anchor '{k}' not set — update config.MACRO_ANCHORS "
+                         f"from {v['source']}.")
+            stale += 1
+        elif v["as_of"]:
+            try:
+                age = (datetime.now() - datetime.fromisoformat(v["as_of"])).days
+                if age > config.MACRO_STALE_DAYS:
+                    notes.append(f"Macro anchor '{k}' is {age} days old — refresh it.")
+                    stale += 1
+            except Exception:
+                pass
+    return notes, stale
+
+
+def _clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def _anchor_score():
+    """Convert the macro anchors into a 0-100 'macro environment' score where
+    higher = more equity-supportive. Level-based (a snapshot of the economy),
+    blended into the macro component so the macro WEIGHT rests on real economic
+    conditions rather than headline polarity alone.
+
+    Three drivers with a clear 'lower/higher is better' reading:
+      * policy rate  — lower rates ease equity discount rates & leverage cost.
+      * CPI YoY      — lower inflation = less tightening pressure, real returns.
+      * FX reserves  — higher reserves = lower external-default / import risk.
+    USD/PKR is kept as an informational anchor only: a single level without a
+    trend is not scoreable; rupee momentum is a later add (we already store EOD).
+
+    Returns (score or None if no usable anchors, note string, parts list).
+    """
+    a = config.MACRO_ANCHORS
+    subs, parts = [], []
+
+    rate = a.get("policy_rate_pct", {}).get("value")
+    if rate is not None:                       # 7%→90 ... 22%→20
+        s = _clamp(90 - (rate - 7) * 70 / 15, 20, 90)
+        subs.append(s); parts.append(f"policy rate {rate}%")
+
+    cpi = a.get("cpi_yoy_pct", {}).get("value")
+    if cpi is not None:                        # 7%→85 ... 25%→20
+        s = _clamp(85 - (cpi - 7) * 65 / 18, 20, 85)
+        subs.append(s); parts.append(f"CPI {cpi}%")
+
+    res = a.get("fx_reserves_usd_bn", {}).get("value")
+    if res is not None:                        # $5bn→25 ... $20bn→85
+        s = _clamp(25 + (res - 5) * 60 / 15, 25, 85)
+        subs.append(s); parts.append(f"reserves ${res}bn")
+
+    if not subs:
+        return None, "", []
+    return round(sum(subs) / len(subs), 1), \
+        "Macro anchors: " + ", ".join(parts), parts
+
+
+def analyze(symbol, news_items):
+    """Returns dict: score (0-100), explanation, components, notes."""
+    sector = config.SECTORS.get(symbol, "Unknown")
+    notes, components = [], {}
+
+    anchor_notes, stale_count = _anchor_status()
+    notes += anchor_notes
+
+    all_titles = [n["title"] for n in news_items] + \
+                 [n["title"] for n in db.recent_news(72)]
+    all_titles = list(dict.fromkeys(all_titles))
+
+    # ---- 1) Macro environment score (0-100): anchor fundamentals + headlines.
+    # The anchors (rates/CPI/reserves) set the structural backdrop; macro news
+    # nudges it for live developments. When anchors are set they lead (0.6),
+    # news adjusts (0.4); with no anchors we fall back to news-only as before.
+    # Themes in play (for the written explanation). VADER-scored only when the
+    # legacy fallback is enabled; otherwise we don't keyword-score noisy RSS.
+    macro_hits, macro_pol = [], []
+    for t in all_titles:
+        low = t.lower()
+        for theme, kws in MACRO_KEYWORDS.items():
+            if any(k in low for k in kws):
+                macro_hits.append((theme, t))
+                if config.NEWS_FALLBACK_VADER:
+                    macro_pol.append(_polarity(t))
+                break
+    anchor_macro, anchor_note, _ = _anchor_score()
+    news_macro = 50 + (sum(macro_pol) / len(macro_pol)) * 40 if macro_pol else 50
+    if anchor_macro is not None and config.NEWS_FALLBACK_VADER:
+        macro_score = round(0.6 * anchor_macro + 0.4 * news_macro, 1)
+        notes.append(anchor_note + f" → backdrop {anchor_macro}/100.")
+    elif anchor_macro is not None:
+        macro_score = float(anchor_macro)          # anchors only — no RSS/VADER
+        notes.append(anchor_note + f" → backdrop {anchor_macro}/100.")
+    elif config.NEWS_FALLBACK_VADER:
+        macro_score = news_macro
+    else:
+        macro_score = 50.0
+    components["macro_environment"] = round(macro_score, 1)
+
+    # ---- 2) Sector score — neutral unless the legacy VADER fallback is on.
+    if config.NEWS_FALLBACK_VADER:
+        drivers = SECTOR_DRIVERS.get(sector, [])
+        sector_pol = [_polarity(t) for t in all_titles
+                      if any(d in t.lower() for d in drivers)]
+        sector_score = 50 + (sum(sector_pol) / len(sector_pol)) * 40 if sector_pol else 50
+    else:
+        sector_score = 50.0
+    components["sector"] = round(sector_score, 1)
+
+    # ---- 3) Company news — authentic verdict if present, else NEUTRAL (no VADER).
+    comp_titles = [n["title"] for n in db.recent_news(96, symbol)]
+    av = news_feed.get(symbol)
+    if av and av.get("score") is not None:
+        comp_score = float(av["score"])
+    elif config.NEWS_FALLBACK_VADER:
+        comp_pol = [_polarity(t) for t in comp_titles]
+        comp_score = 50 + (sum(comp_pol) / len(comp_pol)) * 45 if comp_pol else 50
+    else:
+        comp_score = 50.0
+        notes.append(f"No authentic news for {symbol} — company news neutral.")
+    components["company_news"] = round(comp_score, 1)
+
+    # ---- 4) Fundamentals placeholder honesty
+    notes.append("Audited fundamentals (revenue/profit growth, margins, debt, "
+                 "cash flow, dividends) are not auto-ingested in this version. "
+                 "Review the latest quarterly report on PSX before any Buy. "
+                 "Score relies on macro + sector + news components.")
+
+    # Weighted blend: macro 35%, sector 30%, company news 35%
+    score = round(0.35 * macro_score + 0.30 * sector_score + 0.35 * comp_score, 1)
+
+    # ---- "Material" bad-news test (was: ANY headline < -0.4, which let a single
+    # noisy Google-News result hard-convert a high-scoring Buy into Avoid).
+    # Now a veto requires EITHER a strongly negative headline (< -0.6, i.e. real
+    # distress words like default/crash/loss) OR at least two negatives that
+    # clearly outweigh the positive flow. A lone mildly-negative headline amid
+    # neutral/positive coverage no longer hides a strong technical setup.
+    # Veto fires on the authentic feed's materiality call (an LLM read the
+    # article). With VADER disabled, a missing verdict means NO veto — we never
+    # block a setup on keyword noise. (`av` is fetched above for company news.)
+    if av and av.get("materiality") in ("material_negative", "material_positive", "normal"):
+        material_bad = av.get("materiality") == "material_negative"
+        bad_news = ([av.get("summary")] if material_bad and av.get("summary")
+                    else (av.get("headlines") or [])[:2] if material_bad else [])
+    elif config.NEWS_FALLBACK_VADER:
+        neg = [t for t in comp_titles if _polarity(t) < -0.4]
+        strong_neg = [t for t in comp_titles if _polarity(t) < -0.6]
+        pos = [t for t in comp_titles if _polarity(t) > 0.4]
+        material_bad = bool(strong_neg) or (len(neg) >= 2 and len(neg) > len(pos))
+        bad_news = strong_neg or neg
+    else:
+        material_bad, bad_news = False, []
+    explanation = _explain(symbol, sector, components, macro_hits[:5],
+                           comp_titles[:5], bad_news if material_bad else [])
+
+    return {"symbol": symbol, "score": score, "components": components,
+            "explanation": explanation, "notes": notes,
+            "bad_news_flag": material_bad, "bad_news": bad_news[:3],
+            # With anchors set the macro backdrop is grounded, so absent news
+            # alone no longer marks the section low-confidence.
+            "low_confidence": stale_count >= 3 or
+                              (anchor_macro is None and not macro_pol and not comp_titles),
+            "sources": "Public RSS feeds (Business Recorder, Dawn, Profit, "
+                       "Mettis) + config macro anchors"}
+
+
+def _explain(symbol, sector, comp, macro_hits, comp_titles, bad_news):
+    lines = [f"{symbol} ({sector}): macro environment component "
+             f"{comp['macro_environment']}/100, sector component "
+             f"{comp['sector']}/100, company news component "
+             f"{comp['company_news']}/100."]
+    if macro_hits:
+        themes = ", ".join(sorted({t for t, _ in macro_hits}))
+        lines.append(f"Macro themes in play: {themes}.")
+    if comp_titles:
+        lines.append("Recent company headlines: " +
+                     " | ".join(t[:90] for t in comp_titles[:3]))
+    if bad_news:
+        lines.append("⚠ Negative company news detected — treated as a risk "
+                     "override candidate.")
+    if not macro_hits and not comp_titles:
+        lines.append("Limited news flow this run; assessment is neutral by "
+                     "construction, not by conviction.")
+    return " ".join(lines)
+
+===== backend/market_regime.py =====
+"""market_regime.py — Tier 2 market context, driven by the benchmark index
+(config.BENCHMARK_INDEX) fetched from the same public PSX DPS endpoint as stocks.
+
+Two jobs:
+  1. REGIME GATE — is the market risk-on? The index must be above its own EMA
+     (config.REGIME_EMA_SPAN). Buying individual stocks while the index is below
+     its 50-EMA is a top way to lose money, so signal_generator softens Buys to
+     Watch when the regime is risk-off.
+  2. RELATIVE STRENGTH — is a stock OUTPERFORMING the index over 1/3/6 months?
+     Profit comes from owning leaders, not laggards, so RS feeds the technical
+     score and the ranking.
+
+Honest by design: if the index can't be fetched, regime is "unknown" (the gate
+fails OPEN — we never block trades on missing data) and RS is skipped (no
+fabricated number).
+"""
+
+import logging
+
+import config
+import data_fetcher
+
+log = logging.getLogger("market_regime")
+
+
+def fetch_index():
+    """Return (DataFrame[date, open, close, volume], meta) for the benchmark."""
+    return data_fetcher.fetch_eod(config.BENCHMARK_INDEX)
+
+
+def assess_regime(index_eod=None):
+    """Risk-on / risk-off from the index vs its EMA. Returns a dict; regime is
+    'unknown' (gate disabled) when the index is missing or too short."""
+    if index_eod is None:
+        index_eod, _ = fetch_index()
+    if index_eod is None or len(index_eod) < config.REGIME_EMA_SPAN:
+        return {"regime": "unknown", "index": config.BENCHMARK_INDEX,
+                "level": None, "ema": None, "pct_above": None,
+                "note": f"{config.BENCHMARK_INDEX} unavailable — regime gate off this run."}
+    close = index_eod["close"].astype(float)
+    ema = close.ewm(span=config.REGIME_EMA_SPAN, adjust=False).mean()
+    level, ema_last = float(close.iloc[-1]), float(ema.iloc[-1])
+    pct_above = (level / ema_last - 1) * 100
+    regime = "risk-on" if level >= ema_last else "risk-off"
+    note = (f"{config.BENCHMARK_INDEX} {level:,.0f} is {abs(pct_above):.1f}% "
+            f"{'above' if regime == 'risk-on' else 'below'} its "
+            f"{config.REGIME_EMA_SPAN}-EMA ({ema_last:,.0f}) -> {regime}.")
+    return {"regime": regime, "index": config.BENCHMARK_INDEX, "level": level,
+            "ema": ema_last, "pct_above": round(pct_above, 2), "note": note}
+
+
+def _ret(series, window):
+    if len(series) <= window:
+        return None
+    return float(series.iloc[-1]) / float(series.iloc[-1 - window]) - 1
+
+
+def relative_strength(stock_eod, index_eod=None):
+    """Stock return minus index return over the configured windows, blended to a
+    0-100 RS score (50 = tracks the index; >50 = outperforming). None if data is
+    insufficient — never fabricated."""
+    if index_eod is None:
+        index_eod, _ = fetch_index()
+    if stock_eod is None or index_eod is None:
+        return None
+    sc, ic = stock_eod["close"].astype(float), index_eod["close"].astype(float)
+    rels, num, used_w = {}, 0.0, 0.0
+    for name, w in config.RS_LOOKBACKS.items():
+        sr, ir = _ret(sc, w), _ret(ic, w)
+        if sr is None or ir is None:
+            continue
+        rel = sr - ir
+        rels[name] = round(rel * 100, 1)
+        wt = config.RS_WEIGHTS.get(name, 0)
+        num += wt * rel
+        used_w += wt
+    if used_w == 0:
+        return None
+    blended = num / used_w                          # weighted avg outperformance
+    rs_score = max(0.0, min(100.0, 50 + blended * 200))   # ±25% blend -> 0/100
+    return {"rs_score": round(rs_score, 1), "outperforming": blended > 0,
+            "rel": rels, "blended_pct": round(blended * 100, 1)}
+
+===== backend/news_feed.py =====
+"""news_feed.py — Reads the authentic news feed produced by the daily Claude
+news routine (news_signals.json) and exposes per-symbol verdicts to the engine.
+
+The routine (see news_routine.md) reads real articles from an allowlist of
+authentic PSX/financial sources, judges each stock's news, and writes a verdict
+WITH source URLs. This module only READS that file — it never fetches news
+itself, so the 15-min engine loop stays fast and offline-safe.
+
+Freshness contract: if the file is missing, malformed, or older than
+config.NEWS_SIGNALS_MAX_AGE_HOURS, get() returns None for every symbol and the
+caller falls back to RSS/VADER scoring. Authentic-but-absent is never faked.
+
+Per-symbol verdict schema (values the engine relies on):
+    score        float 0-100  (50 = neutral; >50 positive, <50 negative)
+    direction    "positive" | "negative" | "neutral"
+    materiality  "normal" | "material_negative" | "material_positive"
+    confidence   "high" | "medium" | "low"
+    summary      str   one-line plain-English reason
+    headlines    list[str]
+    sources      list[str]  (URLs — authenticity is traceable, not asserted)
+"""
+
+import json
+import logging
+import os
+from datetime import datetime, timezone
+
+import config
+
+log = logging.getLogger("news_feed")
+
+_CACHE = {"mtime": None, "data": None}
+
+
+def _parse_as_of(s):
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def load_signals():
+    """Return (signals_dict, meta) where signals_dict maps SYMBOL -> verdict.
+    Returns ({}, meta) when the file is missing, malformed, or stale."""
+    path = config.NEWS_SIGNALS_PATH
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return {}, {"status": "absent"}
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("news_signals.json unreadable (%s) — using RSS/VADER fallback", e)
+        return {}, {"status": "malformed"}
+
+    as_of = _parse_as_of(raw.get("as_of"))
+    if as_of is not None:
+        age_h = (datetime.now(timezone.utc) - as_of).total_seconds() / 3600
+        if age_h > config.NEWS_SIGNALS_MAX_AGE_HOURS:
+            log.warning("news_signals.json is %.1fh old (> %dh) — RSS/VADER fallback",
+                        age_h, config.NEWS_SIGNALS_MAX_AGE_HOURS)
+            return {}, {"status": "stale", "age_hours": round(age_h, 1)}
+
+    signals = {k.upper(): v for k, v in (raw.get("signals") or {}).items()}
+    return signals, {"status": "ok", "as_of": raw.get("as_of"),
+                     "count": len(signals)}
+
+
+def get(symbol):
+    """Per-symbol authentic verdict dict, or None if unavailable/stale."""
+    signals, _ = load_signals()
+    return signals.get(symbol.upper())
+
+
+def status_line():
+    """One-line health string for reports/logs."""
+    _, meta = load_signals()
+    if meta["status"] == "ok":
+        return f"Authentic news feed: {meta['count']} symbols, as of {meta['as_of']}."
+    return f"Authentic news feed unavailable ({meta['status']}) — RSS/VADER fallback."
+
+
+# --------------------------------------------------------------------------
+# RAW headline window (UNSCORED). Reads news_raw_24h.json — the auto-fetched
+# last-24h headlines that news.yml collects on a schedule (no manual routine,
+# no LLM judgment). Used purely to SHOW real, source-linked headlines per
+# symbol so the user can cross-verify by eye. Never feeds the score.
+# --------------------------------------------------------------------------
+_RAW_CACHE = {"mtime": None, "data": None}
+
+
+def _publisher(item):
+    """Best-effort clean publisher name. Google News titles arrive as
+    'Headline - Business Recorder'; prefer the explicit macro `source`, else
+    the suffix after the last ' - '."""
+    src = (item.get("source") or "").strip()
+    if src and src != "google_news_rss":
+        return src
+    title = item.get("title") or ""
+    if " - " in title:
+        return title.rsplit(" - ", 1)[1].strip()
+    return "source"
+
+
+def _clean_title(item):
+    title = item.get("title") or ""
+    return title.rsplit(" - ", 1)[0].strip() if " - " in title else title
+
+
+def load_raw():
+    """Return (payload, meta). Empty when the raw file is missing/malformed."""
+    path = getattr(config, "NEWS_RAW_PATH", None)
+    if not path:
+        import os
+        path = os.path.join(config.BASE_DIR, "news_raw_24h.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}, {"status": "absent"}
+    fetched = _parse_as_of(raw.get("fetched_at"))
+    age_h = None
+    if fetched is not None:
+        age_h = round((datetime.now(timezone.utc) - fetched).total_seconds() / 3600, 1)
+    return raw, {"status": "ok", "fetched_at": raw.get("fetched_at"),
+                 "age_hours": age_h, "count": raw.get("count", 0)}
+
+
+def raw_headlines(symbol, limit=5):
+    """List of {title, url, publisher, published} for this symbol's last-24h
+    headlines (deduped by cleaned title). Empty list if none / file absent.
+    UNSCORED — for manual cross-verification only."""
+    raw, meta = load_raw()
+    if meta["status"] != "ok":
+        return []
+    credible = [p.lower() for p in getattr(config, "NEWS_DISPLAY_PUBLISHERS", [])]
+    sym = symbol.upper()
+    out, seen = [], set()
+    for it in raw.get("items", []):
+        if (it.get("symbol") or "").upper() != sym:
+            continue
+        # Relevance gate: drop loosely-matched headlines that don't actually name
+        # this company (cleans raw files fetched before the fetch-time gate too).
+        if not config.headline_matches_company(sym, it.get("title"), it.get("summary")):
+            continue
+        t = _clean_title(it)
+        key = t.lower()
+        if not t or key in seen:
+            continue
+        pub = _publisher(it)
+        # Display filter: only credible desks (the fetch-time host allowlist is
+        # bypassed by Google News redirect links). Skip if no allowlist set.
+        if credible and not any(c in pub.lower() for c in credible):
+            continue
+        seen.add(key)
+        out.append({"title": t, "url": it.get("url", ""),
+                    "publisher": pub, "published": it.get("published")})
+        if len(out) >= limit:
+            break
+    return out
+
+
+# --------------------------------------------------------------------------
+# GLM ratings (news_glm_ratings.json) — a SECOND OPINION from GLM-4.5-flash
+# on the last-24h headlines. Zero score weight; shown next to the engine's
+# signal so the user can see whether the LLM agrees. Missing/stale file →
+# returns None for every symbol.
+# --------------------------------------------------------------------------
+def load_glm_ratings():
+    path = os.path.join(config.BASE_DIR, "news_glm_ratings.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}, {"status": "absent"}
+    as_of = _parse_as_of(raw.get("as_of"))
+    age_h = None
+    if as_of is not None:
+        age_h = round((datetime.now(timezone.utc) - as_of).total_seconds() / 3600, 1)
+        if age_h > config.NEWS_SIGNALS_MAX_AGE_HOURS:
+            return {}, {"status": "stale", "age_hours": age_h}
+    ratings = {k.upper(): v for k, v in (raw.get("ratings") or {}).items()}
+    return ratings, {"status": "ok", "as_of": raw.get("as_of"),
+                     "age_hours": age_h, "count": len(ratings),
+                     "model": raw.get("model")}
+
+
+def glm_rating(symbol):
+    """Per-symbol GLM rating dict {rating, reason} or None."""
+    ratings, _ = load_glm_ratings()
+    return ratings.get(symbol.upper())
+
+
+def glm_status_line():
+    _, meta = load_glm_ratings()
+    if meta["status"] != "ok":
+        return f"GLM news rating unavailable ({meta['status']})."
+    age = meta.get("age_hours")
+    age_s = f"{age:.1f}h old" if age is not None else "age unknown"
+    return (f"GLM news rating ({meta.get('model') or 'glm'}): "
+            f"{meta['count']} symbols, {age_s} — second opinion, unweighted.")
+
+
+def raw_status_line():
+    _, meta = load_raw()
+    if meta["status"] != "ok":
+        return "Raw news window unavailable (not fetched yet)."
+    age = meta.get("age_hours")
+    age_s = f"{age:.1f}h old" if age is not None else "age unknown"
+    return f"Raw news window: {meta['count']} headlines, {age_s} (unscored)."
+
+===== backend/news_fetcher.py =====
+"""news_fetcher.py — Fetch raw last-24h headlines for every symbol in
+config.STOCKS plus the macro Pakistan-press feeds. Writes news_raw_24h.json.
+
+Triggered by the daily 'Run the repo news' workflow (.github/workflows/news.yml).
+This module ONLY collects raw headlines — it does NOT judge them. Claude reads
+the raw JSON, applies the news_routine.md rules, and writes news_signals.json
+(the file the engine actually consumes via news_feed.py).
+
+Split exists because the sandbox where Claude runs can't reach Pakistani news
+hosts (403 host_not_allowed); GitHub Actions can. So fetch runs in CI, judgment
+runs in the session.
+"""
+
+import json
+import logging
+import os
+import re
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from urllib.parse import quote_plus
+from xml.etree import ElementTree as ET
+
+import requests
+
+import config
+
+log = logging.getLogger("news_fetcher")
+
+# Default daily window is 24h (the routine's standing spec). Override via env
+# NEWS_WINDOW_HOURS for one-off backfills (e.g. 96 for a 4-day rebuild).
+WINDOW_HOURS = int(os.environ.get("NEWS_WINDOW_HOURS") or "24")  # "" (cron) → 24
+TIMEOUT = 15
+UA = {"User-Agent": "Mozilla/5.0 (psx-engine news-routine; +github)"}
+
+# Macro feeds — used to surface market-wide stories not tied to a single stock.
+MACRO_FEEDS = [
+    ("Business Recorder", "https://www.brecorder.com/feeds/latest-news"),
+    ("Dawn Business",     "https://www.dawn.com/feeds/business"),
+    ("Profit Pakistan Today", "https://profit.pakistantoday.com.pk/feed/"),
+]
+
+
+def _parse_pub(s):
+    if not s:
+        return None
+    try:
+        dt = parsedate_to_datetime(s)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _strip_html(s):
+    return re.sub(r"<[^>]+>", "", s or "").strip()
+
+
+def _allowed(url):
+    return any(host in (url or "") for host in config.NEWS_SOURCE_ALLOWLIST)
+
+
+def _fetch_rss(url):
+    r = requests.get(url, headers=UA, timeout=TIMEOUT)
+    r.raise_for_status()
+    return ET.fromstring(r.content)
+
+
+def _items_from_rss(root, cutoff):
+    """Yield (title, link, published_iso, summary) for items newer than cutoff."""
+    for item in root.iter("item"):
+        title = _strip_html(item.findtext("title", ""))
+        link = (item.findtext("link", "") or "").strip()
+        pub = _parse_pub(item.findtext("pubDate", ""))
+        if not title or not link or not pub:
+            continue
+        if pub < cutoff:
+            continue
+        summary = _strip_html(item.findtext("description", ""))[:400]
+        yield title, link, pub.isoformat(), summary
+
+
+def fetch_for_symbol(symbol, cutoff):
+    """Google News RSS query, allowlist-filtered, last-24h."""
+    query = config.COMPANY_NEWS_QUERY.get(symbol, f"{symbol} PSX Pakistan")
+    url = config.GOOGLE_NEWS_RSS.format(query=quote_plus(query))
+    out = []
+    try:
+        root = _fetch_rss(url)
+    except Exception as e:
+        log.warning("Google News RSS failed for %s: %s", symbol, e)
+        return out
+    for title, link, pub_iso, summary in _items_from_rss(root, cutoff):
+        if not config.headline_matches_company(symbol, title, summary):
+            # Google News token-matches the query loosely (a "National Foods"
+            # story matches the "National Refinery" query); require the headline
+            # to actually name this company before attributing it to the symbol.
+            continue
+        if not _allowed(link) and not _allowed(summary):
+            # Google News wraps the source URL inside the description; if neither
+            # the link nor the description names an allowlisted host, skip.
+            continue
+        out.append({"symbol": symbol, "title": title, "url": link,
+                    "published": pub_iso, "summary": summary,
+                    "source": "google_news_rss"})
+    return out
+
+
+def fetch_macro(cutoff):
+    out = []
+    for name, url in MACRO_FEEDS:
+        try:
+            root = _fetch_rss(url)
+        except Exception as e:
+            log.warning("macro feed %s failed: %s", name, e)
+            continue
+        for title, link, pub_iso, summary in _items_from_rss(root, cutoff):
+            out.append({"symbol": "_macro", "title": title, "url": link,
+                        "published": pub_iso, "summary": summary,
+                        "source": name})
+    return out
+
+
+def run(output_path="news_raw_24h.json"):
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=WINDOW_HOURS)
+    items = []
+    for sym in config.STOCKS:
+        items.extend(fetch_for_symbol(sym, cutoff))
+    items.extend(fetch_macro(cutoff))
+    items.sort(key=lambda x: x["published"], reverse=True)
+    payload = {"fetched_at": now.isoformat(),
+               "window_hours": WINDOW_HOURS,
+               "cutoff": cutoff.isoformat(),
+               "universe": config.STOCKS,
+               "allowlist": config.NEWS_SOURCE_ALLOWLIST,
+               "count": len(items),
+               "items": items}
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    log.info("Wrote %s with %d items", output_path, len(items))
+    return payload
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    run()
+
+===== backend/notify.py =====
+"""notify.py — Email the run report + Excel via SMTP (Gmail App Password).
+
+Credentials are read from the environment (via config), never hard-coded. If
+they are not set (e.g. local runs without secrets), emailing is skipped with a
+log message instead of failing.
+
+Frequency is controlled by config.EMAIL_MODE:
+  * "actionable" (default) — only email when a Buy / Strong Buy / Exit appears,
+    so the 10-minute loop does not spam you.
+  * "hourly" — email at most once per hour (throttle state in a temp file that
+    survives across cycles of the continuous-session loop job).
+  * "always" — email every run (used by the evening summary job).
+  * "off" — never email.
+"""
+
+import os
+import ssl
+import time
+import smtplib
+import logging
+import tempfile
+from email.message import EmailMessage
+from datetime import datetime
+
+import config
+
+log = logging.getLogger("notify")
+
+_HOURLY_STAMP = os.path.join(tempfile.gettempdir(), "psx_engine_last_email")
+_HOURLY_SECONDS = 3600
+
+
+def _hourly_due():
+    try:
+        age = time.time() - os.path.getmtime(_HOURLY_STAMP)
+    except OSError:
+        return True
+    return age >= _HOURLY_SECONDS
+
+
+def _mark_hourly_sent():
+    with open(_HOURLY_STAMP, "w") as f:
+        f.write(str(time.time()))
+
+
+def _should_send(results):
+    mode = (config.EMAIL_MODE or "actionable").lower()
+    if mode == "off":
+        return False, "EMAIL_MODE=off"
+    if mode == "always":
+        return True, "always"
+    if mode == "hourly":
+        if _hourly_due():
+            return True, "hourly window elapsed"
+        return False, "hourly throttle — sent within the last hour"
+    actionable = [r["symbol"] for r in results
+                  if r["signal"]["signal"] in config.ACTIONABLE_SIGNALS]
+    if actionable:
+        return True, "actionable signals: " + ", ".join(actionable)
+    return False, "no actionable signals this run"
+
+
+def _creds_ok():
+    if not (config.SMTP_USER and config.SMTP_APP_PASSWORD and config.EMAIL_TO):
+        log.info("Email skipped — SMTP_USER / SMTP_APP_PASSWORD / EMAIL_TO "
+                 "not configured.")
+        return False
+    return True
+
+
+def _deliver(subject, body, attachment_path=None):
+    """Low-level SMTP send. Returns True on success."""
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = config.SMTP_USER
+    msg["To"] = config.EMAIL_TO
+    msg.set_content(body)
+    if attachment_path and os.path.exists(attachment_path):
+        with open(attachment_path, "rb") as f:
+            msg.add_attachment(
+                f.read(), maintype="application",
+                subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=os.path.basename(attachment_path))
+    try:
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=30) as s:
+            s.starttls(context=ctx)
+            s.login(config.SMTP_USER, config.SMTP_APP_PASSWORD)
+            s.send_message(msg)
+        log.info("Email sent to %s.", config.EMAIL_TO)
+        return True
+    except Exception as e:
+        log.warning("Email send failed: %s", e)
+        return False
+
+
+def send_report(results, report_text, attachment_path=None):
+    """Email the run report with the Excel attached (gated by EMAIL_MODE)."""
+    if not _creds_ok():
+        return False
+    ok, reason = _should_send(results)
+    if not ok:
+        log.info("Email skipped — %s.", reason)
+        return False
+
+    ranked = sorted([r for r in results if r["shariah"]["eligible_for_ranking"]],
+                    key=lambda r: r["scoring"]["final_score"], reverse=True)
+    top = ranked[0] if ranked else None
+    subject = f"PSX Engine {datetime.now():%Y-%m-%d %H:%M} — "
+    subject += (f"{top['symbol']} {top['signal']['signal']} "
+                f"(score {top['scoring']['final_score']})" if top else "report")
+    body = (report_text[:4000]
+            + "\n\n[Full ranking attached as an Excel file.]\n"
+            + config.DISCLAIMER)
+    sent = _deliver(subject, body, attachment_path)
+    if sent:
+        _mark_hourly_sent()
+    return sent
+
+
+def send_text(subject, body, attachment_path=None):
+    """Send a plain-text email (e.g. the evening summary). Respects
+    EMAIL_MODE != 'off' and the presence of credentials."""
+    if not _creds_ok():
+        return False
+    if (config.EMAIL_MODE or "").lower() == "off":
+        log.info("Email skipped — EMAIL_MODE=off.")
+        return False
+    return _deliver(subject, body, attachment_path)
+
+===== backend/portfolio_advisor.py =====
+"""portfolio_advisor.py — Turns the engine's per-stock signals into a strategy
+for YOUR actual book: existing holdings + ready cash → P/L and a per-position
+action (hold / add / average down / trim / exit), plus how to deploy spare cash
+into new Buys.
+
+Inputs are plain dicts so this stays pure/testable and the dashboard just renders
+it. Sizing reuses the risk rules in config.RISK (per-trade risk %, position cap).
+
+Averaging-down policy = CONSERVATIVE (Fahad, 2026-06-15): only suggest averaging
+down when the engine STILL rates the stock Buy/Strong Buy — which already implies
+it is not extended and not breaking down (those downgrade the signal), the thesis
+is intact, and the position is under the per-stock cap. Never average a falling
+knife.
+"""
+
+import json
+import logging
+
+import config
+
+log = logging.getLogger("portfolio")
+
+_DEPLOY_ACTIONS = ("AVERAGE DOWN", "ADD", "NEW POSITION")
+_SIG_RANK = {"Strong Buy": 0, "Buy": 1}
+
+
+def load_portfolio(path=None):
+    """Read portfolio.json → {'cash_pkr': float, 'holdings': [..]}. Tolerant of a
+    missing/blank file (returns an empty book)."""
+    path = path or config.PORTFOLIO_PATH
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {"cash_pkr": 0.0, "holdings": []}
+    holds = []
+    for h in d.get("holdings", []):
+        try:
+            holds.append({"symbol": str(h["symbol"]).upper(),
+                          "qty": float(h["qty"]),
+                          "avg_cost": float(h["avg_cost"])})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return {"cash_pkr": float(d.get("cash_pkr") or 0), "holdings": holds}
+
+
+def _size(price, stop, cash_left, equity, current_value):
+    """Risk-based share count, bounded by per-trade risk, remaining position-cap
+    room, and the cash still available. Returns (shares, value)."""
+    if not price or price <= 0 or cash_left <= 0:
+        return 0, 0.0
+    cap_value = equity * config.RISK["max_position_pct"] / 100
+    room_value = max(0.0, cap_value - current_value)
+    by_cap = room_value / price
+    by_cash = cash_left / price
+    if stop and price > stop:
+        max_loss = equity * config.RISK["max_risk_per_trade_pct"] / 100
+        by_risk = max_loss / (price - stop)
+    else:
+        by_risk = by_cash            # no valid stop -> let cash/cap bind
+    shares = int(max(0, min(by_risk, by_cap, by_cash)))
+    return shares, round(shares * price, 0)
+
+
+def advise(portfolio, latest):
+    """portfolio: {'cash_pkr', 'holdings':[{symbol,qty,avg_cost}]}.
+    latest: {SYMBOL: latest-run dict} (needs price, signal, stop_loss, final_score,
+            buy_zone_low/high, risk_level).
+    Returns {'holdings':[...], 'deploy':[...], 'totals':{...}}."""
+    cash = float(portfolio.get("cash_pkr") or 0)
+    holds = portfolio.get("holdings", [])
+    held_syms = {h["symbol"] for h in holds}
+
+    # --- value the book first (need total equity for position-cap %)
+    rows, market_value, cost_value = [], 0.0, 0.0
+    for h in holds:
+        sym = h["symbol"]
+        r = latest.get(sym)
+        price = (r or {}).get("price")
+        qty, avg = h["qty"], h["avg_cost"]
+        cost = qty * avg
+        cost_value += cost
+        if price:
+            mv = qty * price
+            market_value += mv
+        rows.append({"symbol": sym, "qty": qty, "avg_cost": avg, "price": price,
+                     "cost": cost, "run": r})
+    equity = market_value + cash
+
+    # --- per-holding action
+    holdings_out, deploy_ideas = [], []
+    for row in rows:
+        sym, r, price = row["symbol"], row["run"], row["price"]
+        qty, avg, cost = row["qty"], row["avg_cost"], row["cost"]
+        mv = qty * price if price else None
+        pl = (mv - cost) if mv is not None else None
+        pl_pct = (pl / cost * 100) if (pl is not None and cost) else None
+        pos_pct = (mv / equity * 100) if (mv and equity) else 0.0
+        signal = (r or {}).get("signal")
+        stop = (r or {}).get("stop_loss")
+        under_cap = pos_pct < config.RISK["max_position_pct"]
+
+        if r is None:
+            action, detail = "NO COVERAGE", "Not in the engine universe — tracked for P/L only."
+        elif signal == "Exit":
+            action, detail = "EXIT", "Engine flags Exit — close the position."
+        elif price and stop and price <= stop:
+            action, detail = "EXIT (stop hit)", f"Price ≤ stop {stop:.2f} — exit per plan."
+        elif signal == "Avoid":
+            action, detail = "TRIM / EXIT", "Thesis broken (Avoid) — reduce; do not add."
+        elif signal in ("Buy", "Strong Buy"):
+            if pl_pct is not None and pl_pct < 0:          # underwater
+                if under_cap and cash > 0:
+                    action = "AVERAGE DOWN"
+                    detail = (f"Still {signal} (thesis intact, not extended) & under "
+                              f"{config.RISK['max_position_pct']:.0f}% cap — averaging "
+                              "lowers your cost.")
+                else:
+                    action = "HOLD"
+                    detail = ("Underwater but at/over the position cap — hold, don't add.")
+            else:                                          # in profit
+                if under_cap and cash > 0:
+                    action = "ADD"
+                    detail = (f"Winner, still {signal} — room under cap to add "
+                              "(prefer the buy-zone on a pullback).")
+                else:
+                    action = "HOLD (let it run)"
+                    detail = "Winner but at the position cap — ride it, don't add."
+        elif signal == "Watch":
+            action = "HOLD"
+            bz = _zone_txt(r)
+            detail = f"Engine on Watch — hold." + (f" {bz}" if bz else "")
+        else:
+            action, detail = "HOLD", f"Engine: {signal or 'No data'} — hold."
+
+        holdings_out.append({
+            "symbol": sym, "qty": qty, "avg_cost": avg, "price": price,
+            "value": mv, "pl": pl, "pl_pct": pl_pct, "pos_pct": pos_pct,
+            "signal": signal, "action": action, "detail": detail})
+
+        if action in ("AVERAGE DOWN", "ADD"):
+            deploy_ideas.append({"symbol": sym, "signal": signal, "price": price,
+                                 "stop": stop, "score": (r or {}).get("final_score") or 0,
+                                 "kind": action, "current_value": mv or 0})
+
+    # --- new-position candidates: Buy/Strong Buy not already held
+    for sym, r in latest.items():
+        if sym in held_syms:
+            continue
+        if r.get("signal") in ("Buy", "Strong Buy") and r.get("price"):
+            deploy_ideas.append({"symbol": sym, "signal": r["signal"],
+                                 "price": r["price"], "stop": r.get("stop_loss"),
+                                 "score": r.get("final_score") or 0,
+                                 "kind": "NEW POSITION", "current_value": 0})
+
+    # --- allocate cash sequentially, best conviction first (Strong Buy, then score)
+    deploy_ideas.sort(key=lambda d: (_SIG_RANK.get(d["signal"], 9), -d["score"]))
+    cash_left, deploy_out = cash, []
+    for d in deploy_ideas:
+        shares, value = _size(d["price"], d["stop"], cash_left, equity, d["current_value"])
+        if shares <= 0:
+            continue
+        cash_left -= value
+        d2 = dict(d); d2["shares"] = shares; d2["value"] = value
+        deploy_out.append(d2)
+
+    totals = {
+        "cash": cash, "invested_cost": round(cost_value, 0),
+        "market_value": round(market_value, 0), "equity": round(equity, 0),
+        "pl": round(market_value - cost_value, 0) if cost_value else 0.0,
+        "pl_pct": round((market_value - cost_value) / cost_value * 100, 1) if cost_value else None,
+        "deployed_pct": round(market_value / equity * 100, 1) if equity else 0.0,
+        "cash_after_plan": round(cash_left, 0), "n_holdings": len(holds)}
+    return {"holdings": holdings_out, "deploy": deploy_out, "totals": totals}
+
+
+def _zone_txt(r):
+    lo, hi = (r or {}).get("buy_zone_low"), (r or {}).get("buy_zone_high")
+    return f"Buy-zone {lo:.2f}–{hi:.2f}." if lo and hi else ""
+
+===== backend/portfolio_risk.py =====
+"""portfolio_risk.py — Tier 2 #9: risk at the BOOK level, not just per trade.
+
+risk_manager sizes each position so a single stopped-out trade costs at most
+RISK['max_risk_per_trade_pct'] of capital. But the real account-killers are
+CORRELATED: ten "safe" 1.5% trades that all gap down on the same bad day cost
+15% together, and a book that is 80% cement isn't diversified at all.
+
+This module takes the current Buy / Strong Buy candidates, sizes each one with
+the same rule risk_manager uses, then admits them greedily (best score first)
+until a cap binds:
+  * total portfolio HEAT  — sum of max-loss-if-stopped across open positions
+  * SECTOR exposure       — capital deployed into any one sector
+  * max OPEN positions    — a practical concurrency cap
+
+Anything that would breach a cap is moved to `deferred` WITH the reason, never
+silently dropped. Honest by design: a candidate with no usable price/stop can't
+be sized, so it is listed separately in `unsizable`.
+"""
+
+import logging
+import config
+
+log = logging.getLogger("portfolio_risk")
+
+
+def _size(price, stop, capital):
+    """Risk-based share count — identical rule to risk_manager.assess: cap the
+    loss-if-stopped at max_risk_per_trade_pct, and the position at
+    max_position_pct. Returns None if the inputs can't be sized."""
+    if not price or not stop or price <= stop or capital <= 0:
+        return None
+    rps = price - stop
+    max_loss = capital * config.RISK["max_risk_per_trade_pct"] / 100
+    shares = int(max_loss / rps)
+    cap_shares = int(capital * config.RISK["max_position_pct"] / 100 / price)
+    shares = max(0, min(shares, cap_shares))
+    if shares <= 0:
+        return None
+    return {"shares": shares, "value": shares * price,
+            "risk": shares * rps, "rps": rps}
+
+
+def assess(candidates, capital=1_000_000):
+    """candidates: list of dicts with keys symbol, score, signal, price, stop,
+    and (optional) sector. Returns admitted / deferred / unsizable lists plus a
+    `book` summary of heat, deployment and sector exposure vs the caps."""
+    P = config.PORTFOLIO_RISK
+    max_heat = capital * P["max_portfolio_heat_pct"] / 100
+    max_sector_val = capital * P["max_sector_exposure_pct"] / 100
+    EPS = 1e-6
+
+    ranked = sorted(candidates, key=lambda c: (c.get("score") or 0), reverse=True)
+    admitted, deferred, unsizable = [], [], []
+    heat_used, value_used, sector_val = 0.0, 0.0, {}
+
+    for c in ranked:
+        sec = c.get("sector") or config.SECTORS.get(c.get("symbol"), "Unknown")
+        size = _size(c.get("price"), c.get("stop"), capital)
+        if not size:
+            unsizable.append({**c, "sector": sec,
+                              "reason": "no usable price/stop to size a position"})
+            continue
+        reasons = []
+        if len(admitted) >= P["max_open_positions"]:
+            reasons.append(f"max {P['max_open_positions']} open positions reached")
+        if heat_used + size["risk"] > max_heat + EPS:
+            reasons.append(f"would breach {P['max_portfolio_heat_pct']:.0f}% total "
+                           f"portfolio heat")
+        if sector_val.get(sec, 0.0) + size["value"] > max_sector_val + EPS:
+            reasons.append(f"would breach {P['max_sector_exposure_pct']:.0f}% cap "
+                           f"on {sec}")
+        entry = {"symbol": c.get("symbol"), "score": c.get("score"),
+                 "signal": c.get("signal"), "sector": sec,
+                 "price": c.get("price"), "stop": c.get("stop"),
+                 "shares": size["shares"], "value": round(size["value"], 0),
+                 "risk": round(size["risk"], 0),
+                 "heat_pct": round(size["risk"] / capital * 100, 2),
+                 "weight_pct": round(size["value"] / capital * 100, 2)}
+        if reasons:
+            entry["reason"] = "; ".join(reasons)
+            deferred.append(entry)
+        else:
+            admitted.append(entry)
+            heat_used += size["risk"]
+            value_used += size["value"]
+            sector_val[sec] = sector_val.get(sec, 0.0) + size["value"]
+
+    sectors = {s: {"value": round(v, 0), "pct": round(v / capital * 100, 2)}
+               for s, v in sorted(sector_val.items(), key=lambda kv: -kv[1])}
+    book = {
+        "capital": capital,
+        "heat_pkr": round(heat_used, 0),
+        "heat_pct": round(heat_used / capital * 100, 2),
+        "max_heat_pct": P["max_portfolio_heat_pct"],
+        "heat_room_pct": round(P["max_portfolio_heat_pct"] - heat_used / capital * 100, 2),
+        "deployed_pkr": round(value_used, 0),
+        "deployed_pct": round(value_used / capital * 100, 2),
+        "cash_pct": round(100 - value_used / capital * 100, 2),
+        "open_positions": len(admitted),
+        "max_open_positions": P["max_open_positions"],
+        "sector_exposure": sectors,
+        "max_sector_pct": P["max_sector_exposure_pct"],
+        "deferred": len(deferred),
+    }
+    return {"admitted": admitted, "deferred": deferred,
+            "unsizable": unsizable, "book": book}
+
+
+def summary_line(result):
+    """One-line book summary for logs / reports / email."""
+    b = result["book"]
+    top_sec = next(iter(b["sector_exposure"].items()), None)
+    sec_txt = (f", heaviest sector {top_sec[0]} {top_sec[1]['pct']:.0f}%"
+               if top_sec else "")
+    return (f"{b['open_positions']} positions, heat {b['heat_pct']:.1f}% of "
+            f"{b['max_heat_pct']:.0f}% cap, deployed {b['deployed_pct']:.0f}% "
+            f"({b['cash_pct']:.0f}% cash){sec_txt}; {b['deferred']} deferred.")
+
+===== backend/reports.py =====
+"""reports.py — Builds the clean human-readable report after every run, plus
+morning (9 AM) and evening (9 PM) summaries. Reports are printed and saved
+to reports_out/ as markdown."""
+
+import os
+import logging
+from datetime import datetime
+
+import config
+import database as db
+
+log = logging.getLogger("reports")
+
+
+def _fmt(v, nd=2):
+    return f"{v:,.{nd}f}" if isinstance(v, (int, float)) and v is not None else "n/a"
+
+
+def _portfolio_section(portfolio):
+    """Render the book-level risk block (Tier 2 #9) for the run report."""
+    if not portfolio:
+        return []
+    b = portfolio["book"]
+    lines = ["", "## Portfolio risk (book-level)",
+             f"- Capital assumed: PKR {b['capital']:,.0f}",
+             f"- Open positions: {b['open_positions']} / {b['max_open_positions']} "
+             f"max",
+             f"- Total heat (loss if every stop fills): **{b['heat_pct']:.2f}%** "
+             f"of {b['max_heat_pct']:.0f}% cap "
+             f"({b['heat_room_pct']:.2f}% headroom)",
+             f"- Capital deployed: {b['deployed_pct']:.1f}% "
+             f"({b['cash_pct']:.1f}% cash)"]
+    if b["sector_exposure"]:
+        secs = ", ".join(f"{s} {v['pct']:.0f}%"
+                         for s, v in b["sector_exposure"].items())
+        lines.append(f"- Sector exposure (cap {b['max_sector_pct']:.0f}% each): {secs}")
+    if portfolio["admitted"]:
+        lines += ["", "**Fits the book now:**"]
+        for a in portfolio["admitted"]:
+            lines.append(f"  - {a['symbol']}: {a['shares']:,} sh "
+                         f"(PKR {a['value']:,.0f}, heat {a['heat_pct']:.2f}%, "
+                         f"{a['sector']})")
+    if portfolio["deferred"]:
+        lines += ["", "**Deferred — a cap would be breached:**"]
+        for d in portfolio["deferred"]:
+            lines.append(f"  - {d['symbol']}: {d['reason']}")
+    return lines
+
+
+def build_run_report(results, market_notes, portfolio=None):
+    """results: list of per-stock result dicts from main.analyze_stock.
+    portfolio: optional output of portfolio_risk.assess (book-level risk)."""
+    ranked = sorted([r for r in results if r["shariah"]["eligible_for_ranking"]],
+                    key=lambda r: r["scoring"]["final_score"], reverse=True)
+    excluded = [r for r in results if not r["shariah"]["eligible_for_ranking"]]
+
+    lines = [f"# PSX Shariah Engine Report — {datetime.now():%Y-%m-%d %H:%M}",
+             "", "## Market summary",
+             market_notes or "No macro headlines captured this run.",
+             "", "## Ranking (shariah-verified only)", ""]
+    hdr = ("| # | Stock | Shariah | Final | Tech | Fund | Macro | Sent | Price | "
+           "Support | Resist | Entry zone | Stop | Target | Risk | Signal | Conf |")
+    lines += [hdr, "|" + "---|" * 17]
+    for i, r in enumerate(ranked, 1):
+        t, s = r["technical"], r["scoring"]
+        entry = (f"{_fmt(t.get('buy_zone_low'))}–{_fmt(t.get('buy_zone_high'))}"
+                 if t.get("support") else "n/a")
+        lines.append(
+            f"| {i} | {r['symbol']} | {r['shariah']['status'].split('(')[0].strip()} "
+            f"| {s['final_score']} | {s['breakdown']['technical']} "
+            f"| {s['breakdown'].get('fundamentals', '-')} "
+            f"| {s['breakdown']['macro_news']} | {s['breakdown']['sentiment']} "
+            f"| {_fmt(t.get('price'))} | {_fmt(t.get('support'))} "
+            f"| {_fmt(t.get('resistance'))} | {entry} | {_fmt(t.get('stop_loss'))} "
+            f"| {_fmt(t.get('target1'))} | {r['risk']['risk_level']} "
+            f"| {r['signal']['signal']} | {s['confidence']}% |")
+
+    lines += ["", "## Per-stock detail", ""]
+    for r in ranked:
+        lines += [f"### {r['symbol']} — {r['signal']['signal']} "
+                  f"({r['scoring']['confidence']}% confidence, "
+                  f"{r['risk']['risk_level']} risk)",
+                  f"- Why: {'; '.join(r['signal']['reasons'])}",
+                  f"- Main risk: {r['risk']['warnings'][0] if r['risk']['warnings'] else 'n/a'}",
+                  f"- Macro view: {r['macro']['explanation']}",
+                  f"- Sentiment: {r['sentiment']['verdict']} "
+                  f"({r['sentiment']['mentions']} public mentions, "
+                  f"trend {r['sentiment'].get('trend_vs_prev')})",
+                  f"- Data quality: {r['scoring']['data_quality']} | "
+                  f"{r['scoring']['history_note']}",
+                  f"- Watch next: price vs {_fmt(r['technical'].get('resistance'))} "
+                  f"resistance and {_fmt(r['technical'].get('support'))} support; "
+                  "next earnings/news flow.", ""]
+
+    lines += _portfolio_section(portfolio)
+
+    if excluded:
+        lines += ["", "## Excluded (shariah unverified)", ""]
+        for r in excluded:
+            lines.append(f"- {r['symbol']}: {r['shariah']['status']} — "
+                         f"{'; '.join(r['shariah']['notes'])}")
+
+    lines += ["", "---", "⚠ " + config.DISCLAIMER]
+    return "\n".join(lines)
+
+
+def save_report(text, tag="run"):
+    os.makedirs(config.REPORT_DIR, exist_ok=True)
+    path = os.path.join(config.REPORT_DIR,
+                        f"{tag}_{datetime.now():%Y%m%d_%H%M}.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    log.info("Report saved: %s", path)
+    return path
+
+
+def morning_report():
+    """Pre-market plan from the latest stored runs."""
+    lines = [f"# Morning Report — {datetime.now():%Y-%m-%d 09:00}", ""]
+    for sym in config.STOCKS:
+        r = db.last_run(sym)
+        if not r:
+            lines.append(f"- {sym}: no data yet")
+            continue
+        lines.append(f"- {sym}: last signal **{r['signal']}** "
+                      f"(score {r['final_score']}, conf {r['confidence']}%), "
+                      f"price {r['price']}, stop {r['stop_loss']}, "
+                      f"target {r['target1']}, risk {r['risk_level']}")
+    lines += ["", "Plan: act only on signals re-confirmed after the open; "
+              "check overnight news first.", "", "⚠ " + config.DISCLAIMER]
+    return "\n".join(lines)
+
+
+def evening_report():
+    """Post-market review: what changed today + accuracy snapshot."""
+    lines = [f"# Evening Report — {datetime.now():%Y-%m-%d 21:00}", ""]
+    for sym in config.STOCKS:
+        r = db.last_run(sym)
+        if r:
+            lines.append(f"- {sym}: close-of-day signal {r['signal']}, "
+                          f"score {r['final_score']}, risk {r['risk_level']}")
+    acc = db.signal_accuracy()
+    if acc:
+        lines += ["", "## Signal accuracy to date"]
+        for row in acc:
+            lines.append(f"- {row['signal']}: {row['outcome']} × {row['n']}")
+    else:
+        lines += ["", "No completed signal outcomes yet (need 1/3/7-day "
+                  "follow-up prices)."]
+    lines += ["", "⚠ " + config.DISCLAIMER]
+    return "\n".join(lines)
+
+===== backend/risk_manager.py =====
+"""risk_manager.py — Capital protection layer. Runs AFTER scoring and can
+veto or downgrade anything. The engine never claims zero loss; it labels
+every setup low / medium / high risk and sizes positions so a stopped-out
+trade costs at most RISK['max_risk_per_trade_pct'] of capital.
+"""
+
+import logging
+import config
+
+log = logging.getLogger("risk")
+
+
+def _effective_min_headroom_rr(regime, regime_pct_above):
+    """Regime-aware headroom-RR threshold. In a strong risk-on rally most names
+    sit near their recent highs (the leadership default), so a flat 1.5x rule
+    flags the entire leadership group as "thin upside". The minimum scales DOWN
+    linearly with rally strength, from the strict baseline (neutral / risk-off)
+    to a configured floor (powerful rally). Same pattern as the chase-guard
+    widening — symmetric, regime-aware risk policy."""
+    base = config.RISK["min_headroom_rr"]
+    floor = config.RISK.get("min_headroom_rr_riskon_floor", base)
+    full_pct = config.RISK.get("headroom_rr_riskon_full_pct", 8.0) or 8.0
+    if regime != "risk-on" or floor >= base:
+        return base
+    strength = 1.0 if regime_pct_above is None else \
+        max(0.0, min(1.0, regime_pct_above / full_pct))
+    return base - (base - floor) * strength
+
+
+def _concentration_pct(symbol, price, holdings):
+    """This symbol's share of the CURRENT book at live prices, or None when the
+    book is unknown/unpriceable. holdings: [{symbol, qty, avg_cost}, ...] —
+    positions other than `symbol` are valued at avg_cost (no live quote for them
+    in this call), which is the honest approximation available here."""
+    if not holdings or not price:
+        return None
+    total = this = 0.0
+    for h in holdings:
+        qty = float(h.get("qty") or 0)
+        if qty <= 0:
+            continue
+        if (h.get("symbol") or "").upper() == symbol.upper():
+            val = qty * price          # live price for the symbol being assessed
+            this += val
+        else:
+            val = qty * float(h.get("avg_cost") or 0)
+        total += val
+    if total <= 0 or this <= 0:
+        return None
+    return round(this / total * 100, 1)
+
+
+def assess(symbol, technical, sentiment, macro, capital_pkr=1_000_000,
+           regime=None, regime_pct_above=None, holdings=None):
+    """Returns dict: risk_level, warnings[], position sizing, veto flags.
+
+    regime / regime_pct_above (optional): market context. When supplied, the
+    headroom-RR veto relaxes in a confirmed risk-on rally (see
+    _effective_min_headroom_rr). Backward-compatible — omit to keep the strict
+    threshold."""
+    warnings, vetoes = [], []
+    price = technical.get("price")
+    stop = technical.get("stop_loss")
+    rr = technical.get("headroom_rr")   # REAL room-to-resistance:risk (not the ≈2.0 proj.)
+    rr_min = _effective_min_headroom_rr(regime, regime_pct_above)
+
+    # ---- hard warnings
+    if technical.get("avg_volume") is not None and \
+       technical["avg_volume"] < config.RISK["min_avg_daily_volume"]:
+        warnings.append(f"ILLIQUID: 20-day avg volume "
+                        f"{technical['avg_volume']:,.0f} below "
+                        f"{config.RISK['min_avg_daily_volume']:,} — exits may slip badly")
+    if technical.get("atr_pct") and technical["atr_pct"] > config.RISK["max_volatility_pct"]:
+        warnings.append(f"HIGH VOLATILITY: daily range ≈{technical['atr_pct']:.1f}% — "
+                        "gap risk elevated")
+    if technical.get("breakdown"):
+        warnings.append("TECHNICAL BREAKDOWN below support")
+        vetoes.append("breakdown")
+    conc = _concentration_pct(symbol, price, holdings)
+    conc_cap = config.RISK.get("max_existing_concentration_pct")
+    if conc is not None and conc_cap and conc > conc_cap:
+        warnings.append(f"CONCENTRATED: {symbol} is already {conc}% of the book "
+                        f"(cap {conc_cap}%) — adding here increases single-name "
+                        "risk, the exposure per-trade sizing cannot see")
+        vetoes.append("concentrated")
+
+    # News- and sentiment-derived flags. In PURE_TECHNICAL mode they are still
+    # surfaced as warnings (the dashboard shows them for manual cross-checking)
+    # but are NOT vetoes: nothing outside price/volume moves a signal.
+    _pure = getattr(config, "PURE_TECHNICAL", False)
+    if macro.get("bad_news_flag"):
+        warnings.append("NEGATIVE COMPANY NEWS in last 96h: "
+                        + "; ".join(t[:70] for t in macro.get("bad_news", [])[:2]))
+        if not _pure:
+            vetoes.append("bad_news")
+    for f in sentiment.get("flags", []):
+        warnings.append(f)
+        if ("PUMP" in f or "HYPE" in f) and not _pure:
+            vetoes.append("manipulation_risk")
+    if rr is not None and rr < rr_min:
+        _relax = (f" (eased from {config.RISK['min_headroom_rr']} for risk-on rally)"
+                  if rr_min < config.RISK["min_headroom_rr"] else "")
+        warnings.append(f"Thin upside: room-to-resistance:risk {rr} below "
+                        f"{round(rr_min, 2)}{_relax} — price near overhead "
+                        "resistance, little room before the next ceiling")
+        vetoes.append("poor_rr")
+    if technical.get("volume_spike") and sentiment.get("score", 50) > 80:
+        warnings.append("Volume spike + euphoric sentiment — possible "
+                        "manipulation / pump pattern, verify before acting")
+
+    # ---- structural rules (always shown)
+    warnings.append("Rule: no leverage, never all-in, max "
+                    f"{config.RISK['max_position_pct']}% of capital per stock, "
+                    "diversify across sectors")
+    warnings.append("Rule: manual confirmation required before any buy order")
+
+    # ---- risk level
+    _keys = ["ILLIQUID", "HIGH VOLATILITY", "BREAKDOWN"]
+    if not _pure:
+        _keys += ["NEGATIVE", "PUMP", "PANIC"]
+    hard = sum(1 for w in warnings if any(k in w for k in _keys))
+    risk_level = "High" if hard >= 2 or vetoes else \
+                 "Medium" if hard == 1 else "Low"
+
+    # ---- position sizing (risk-based)
+    sizing = None
+    if price and stop and price > stop:
+        risk_per_share = price - stop
+        max_loss = capital_pkr * config.RISK["max_risk_per_trade_pct"] / 100
+        shares = int(max_loss / risk_per_share)
+        cap_shares = int(capital_pkr * config.RISK["max_position_pct"] / 100 / price)
+        shares = max(0, min(shares, cap_shares))
+        sizing = {"capital_assumed_pkr": capital_pkr,
+                  "max_loss_if_stopped_pkr": round(shares * risk_per_share, 0),
+                  "suggested_shares": shares,
+                  "position_value_pkr": round(shares * price, 0),
+                  "risk_per_share": round(risk_per_share, 2)}
+
+    return {"risk_level": risk_level, "warnings": warnings, "vetoes": vetoes,
+            "position_sizing": sizing}
+
+===== backend/scoring_engine.py =====
+"""scoring_engine.py — Blends the section scores into a final 0-100 score and
+a confidence percentage.
+
+Weights are configurable in config.WEIGHTS (currently technical 0.70 /
+fundamentals 0.30; news + sentiment are 0-weight). Learning adjusts
+CONFIDENCE, not weights: if a stock's past signals keep failing, confidence
+drops; if they keep working, it rises modestly. Small samples are flagged as
+overfitting risk and barely move confidence. The weak-section confidence
+penalty is weight-aware, so a minor section can't dominate confidence.
+"""
+
+import logging
+
+import config
+import database as db
+
+log = logging.getLogger("scoring")
+
+
+def _indicator_accuracy_boost(symbol, tech_flags):
+    """±confidence from per-sub-indicator track records on this specific symbol.
+
+    When a sub-indicator (RSI, MACD, trend etc.) has been bullish at signal time
+    ≥5 times and its win rate deviates from 50%, it earns a credit or debit that
+    modulates confidence. Averaged across applicable indicators; capped at ±8 pts.
+    This is SEPARATE from the overall win-rate adjustment in
+    historical_confidence_adjust — that adjusts for how the WHOLE signal did;
+    this adjusts for which INDICATORS are actually predicting outcomes here.
+    """
+    if not tech_flags:
+        return 0.0, ""
+    all_stats = {r["indicator"]: r for r in db.indicator_stats(symbol)}
+    boosts, parts = [], []
+    for ind, bullish in tech_flags.items():
+        if bullish is not True:   # only grade indicators that were bullish
+            continue
+        s = all_stats.get(f"tech_{ind}")
+        if not s:
+            continue
+        total = (s["hits"] or 0) + (s["misses"] or 0)
+        if total < 5:             # too few samples — don't overfit
+            continue
+        wr = s["hits"] / total
+        boosts.append((wr - 0.5) * 10)   # wr=100% → +5, wr=0% → -5
+        parts.append(f"{ind} {wr:.0%}")
+    if not boosts:
+        return 0.0, ""
+    avg = sum(boosts) / len(boosts)
+    capped = round(max(-8.0, min(8.0, avg)), 1)
+    return capped, "Indicator track records: " + ", ".join(parts)
+
+
+# Only signals graded under STRICT rules count toward confidence. Watch/Hold
+# are graded on the loose "didn't lose >3%" rule (their 80-90% 'win' rates are
+# survival, not edge) — counting them pushed nearly every symbol to the +15
+# confidence cap, so confidence stopped discriminating (failed Buys averaged
+# 71% confidence in the 2026-07-15 audit).
+_STRICT_SIGNALS = ("Buy", "Strong Buy", "Avoid", "Exit")
+
+
+def historical_confidence_adjust(symbol):
+    """Return (adjustment in percentage points, note)."""
+    rows = [r for r in db.signal_accuracy(symbol) if r["signal"] in _STRICT_SIGNALS]
+    wins = sum(r["n"] for r in rows if r["outcome"] == "worked")
+    losses = sum(r["n"] for r in rows if r["outcome"] == "failed")
+    total = wins + losses
+    if total == 0:
+        return 0.0, "No strictly-graded (Buy/Avoid) history yet — base confidence."
+    win_rate = wins / total
+    if total < 10:
+        # tiny sample: cap influence, warn about overfitting
+        adj = (win_rate - 0.5) * 8
+        return round(adj, 1), (f"Only {total} completed signals — small sample, "
+                               "OVERFITTING RISK; history given little weight.")
+    adj = (win_rate - 0.5) * 30          # max ±15 points
+    return round(max(-15, min(15, adj)), 1), \
+        f"History: {wins}W/{losses}L (win rate {win_rate:.0%}) over {total} " \
+        "strictly-graded Buy/Avoid signals."
+
+
+def compute(symbol, macro, sentiment, technical, fundamentals=None, tech_flags=None):
+    w = config.WEIGHTS
+    fund = fundamentals or {"score": 50.0, "low_confidence": True}
+    final = round(w["macro_news"] * macro["score"]
+                  + w["sentiment"] * sentiment["score"]
+                  + w["technical"] * technical["score"]
+                  + w.get("fundamentals", 0) * fund["score"], 1)
+
+    # ---- data quality. Only sections that ACTUALLY drive the score count here.
+    # News/sentiment are 0-weight, so their (usually low) confidence must not
+    # paint every stock "weak" — that was making 28/30 stocks look low-quality
+    # when the weighted sections (technical, fundamentals) were fine.
+    weak = []
+    if macro.get("low_confidence") and w.get("macro_news", 0) > 0: weak.append("macro/news")
+    if sentiment.get("low_confidence") and w.get("sentiment", 0) > 0: weak.append("sentiment")
+    if technical.get("low_confidence") and w.get("technical", 0) > 0: weak.append("technical")
+    if fund.get("low_confidence") and w.get("fundamentals", 0) > 0: weak.append("fundamentals")
+    data_quality = "good" if not weak else ("weak: " + ", ".join(weak))
+
+    # ---- confidence
+    confidence = 70.0
+    # Weight-aware penalty: a weak section dents confidence in proportion to how
+    # much it actually drives the score. With the technical-first weights, a
+    # quiet/empty news section barely matters, while weak technicals (the core)
+    # matter most. (Old behaviour was a flat 12 pts per weak section.)
+    _key = {"macro/news": "macro_news", "sentiment": "sentiment",
+            "technical": "technical", "fundamentals": "fundamentals"}
+    confidence -= sum(36 * w.get(_key.get(s, s), 0) for s in weak)
+    # agreement bonus: all WEIGHTED sections pointing the same way. 0-weight
+    # sections (news/sentiment) are excluded so their noise can't deny the bonus.
+    _sec = {"technical": technical["score"], "fundamentals": fund["score"],
+            "macro_news": macro["score"], "sentiment": sentiment["score"]}
+    scores = [v for k, v in _sec.items() if w.get(k, 0) > 0]
+    if scores and max(scores) - min(scores) < 15:
+        confidence += 8
+    adj, hist_note = historical_confidence_adjust(symbol)
+    ind_boost, ind_note = _indicator_accuracy_boost(symbol, tech_flags or {})
+    confidence = round(max(10, min(95, confidence + adj + ind_boost)), 1)
+    history_note = hist_note + (f" | {ind_note}" if ind_note else "")
+
+    return {"final_score": final, "confidence": confidence,
+            "data_quality": data_quality, "weak_sections": weak,
+            "history_note": history_note,
+            "breakdown": {"macro_news": macro["score"],
+                          "sentiment": sentiment["score"],
+                          "technical": technical["score"],
+                          "fundamentals": fund["score"],
+                          "weights": w}}
+
+===== backend/sentiment_analyzer.py =====
+"""sentiment_analyzer.py — Computes the 30% public sentiment score.
+
+Sources: ONLY public, login-free content already fetched legally (RSS news
+headlines stored in the DB, plus any optional public-forum text the user
+drops into `public_comments/` as .txt files — e.g. copied from open polls
+or open discussion threads they are allowed to use).
+
+Honesty rules:
+  * If mention volume is low, the score is pulled toward neutral and the
+    confidence flag is lowered — silence is NOT bullishness.
+  * Hype / pump-and-dump / panic heuristics raise explicit warnings.
+"""
+
+import logging
+import os
+from datetime import datetime
+
+import config
+import database as db
+import news_feed
+
+log = logging.getLogger("sentiment")
+
+try:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    _VADER = SentimentIntensityAnalyzer()
+    # Finance-flavoured lexicon additions
+    _VADER.lexicon.update({
+        "bullish": 2.5, "bearish": -2.5, "rally": 1.8, "surge": 1.8,
+        "plunge": -2.2, "crash": -3.0, "record profit": 3.0, "default": -2.5,
+        "upgrade": 2.0, "downgrade": -2.0, "dividend": 1.5, "loss": -1.8,
+        "imf": 0.0, "circuit breaker": -1.5, "buyback": 1.8, "halal": 0.5,
+    })
+except ImportError:
+    _VADER = None
+    log.warning("vaderSentiment not installed — sentiment limited to keywords.")
+
+BULL_WORDS = {"buy", "bullish", "rally", "breakout", "target", "upgrade",
+              "profit", "growth", "dividend", "surge", "accumulate"}
+BEAR_WORDS = {"sell", "bearish", "crash", "plunge", "downgrade", "loss",
+              "default", "panic", "dump", "decline", "warning"}
+HYPE_WORDS = {"moon", "rocket", "guaranteed", "double", "10x", "jackpot",
+              "easy money", "can't lose", "sure shot"}
+
+COMMENTS_DIR = os.path.join(config.BASE_DIR, "public_comments")
+
+
+def _polarity(text):
+    if _VADER:
+        return _VADER.polarity_scores(text)["compound"]
+    low = text.lower()
+    b = sum(w in low for w in BULL_WORDS)
+    s = sum(w in low for w in BEAR_WORDS)
+    return 0.0 if b == s else (0.4 if b > s else -0.4)
+
+
+def _load_public_comments(symbol):
+    """Optional user-supplied public text (one snippet per line)."""
+    texts = []
+    path = os.path.join(COMMENTS_DIR, f"{symbol}.txt")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            texts = [ln.strip() for ln in f if ln.strip()]
+    return texts
+
+
+def analyze(symbol, news_items):
+    """Returns dict: score (0-100), counts, trend, flags, verdict, notes.
+
+    Primary path: the authentic news feed (news_signals.json, LLM-judged with
+    source URLs). Falls back to RSS/VADER below when the feed has no fresh
+    verdict for this symbol — see _analyze_vader."""
+    av = news_feed.get(symbol)
+    if av and av.get("score") is not None:
+        run_time = datetime.now().isoformat()
+        score = round(float(av["score"]), 1)
+        conf = (av.get("confidence") or "medium").lower()
+        flags = []
+        if av.get("materiality") == "material_negative":
+            flags.append("MATERIAL NEGATIVE news (authentic source)")
+        if av.get("materiality") == "material_positive":
+            flags.append("Material positive news (authentic source)")
+        verdict = (av.get("summary") or av.get("direction") or "")[:200]
+        db.save_sentiment(run_time, symbol, score, 0, 0, 0,
+                          len(av.get("headlines") or []), flags)
+        return {"symbol": symbol, "score": score,
+                "bullish": 0, "bearish": 0, "neutral": 0,
+                "mentions": len(av.get("headlines") or []),
+                "trend_vs_prev": None, "flags": flags, "verdict": verdict,
+                "notes": [f"Authentic news ({conf} confidence): {verdict}"],
+                "low_confidence": conf == "low",
+                "sources": "Authentic news feed (" +
+                           ", ".join((av.get("sources") or [])[:3]) + ")"}
+    if config.NEWS_FALLBACK_VADER:
+        return _analyze_vader(symbol, news_items)
+    # Authentic-or-neutral: no fresh authentic verdict -> neutral, not RSS noise.
+    return {"symbol": symbol, "score": 50.0, "bullish": 0, "bearish": 0,
+            "neutral": 0, "mentions": 0, "trend_vs_prev": None, "flags": [],
+            "verdict": "No authentic news", "low_confidence": True,
+            "notes": ["No fresh authentic news verdict — news treated as neutral "
+                      "(VADER keyword scoring disabled)."],
+            "sources": "Authentic news feed (none this run)"}
+
+
+def _analyze_vader(symbol, news_items):
+    """RSS/VADER fallback (keyword-lexicon scoring) when no authentic verdict."""
+    run_time = datetime.now().isoformat()
+    texts = [n["title"] for n in news_items
+             if symbol in n.get("symbols", []) or symbol in (n.get("symbols") or "")]
+    # DB-stored news for this symbol over the last 48h adds depth
+    texts += [n["title"] for n in db.recent_news(48, symbol)]
+    texts += _load_public_comments(symbol)
+    texts = list(dict.fromkeys(texts))  # dedupe
+
+    flags, notes = [], []
+    bullish = bearish = neutral = 0
+    polarities = []
+    for t in texts:
+        p = _polarity(t)
+        polarities.append(p)
+        if p > 0.15: bullish += 1
+        elif p < -0.15: bearish += 1
+        else: neutral += 1
+        if any(h in t.lower() for h in HYPE_WORDS):
+            flags.append("HYPE language detected")
+
+    mentions = len(texts)
+    if mentions == 0:
+        notes.append("No public mentions found in current sources — neutral "
+                     "score assigned with LOW confidence. Silence ≠ bullish.")
+        score, verdict = 50.0, "No signal (insufficient public data)"
+    else:
+        avg = sum(polarities) / mentions
+        raw = 50 + avg * 50                       # map [-1,1] -> [0,100]
+        # Low-volume shrinkage toward neutral
+        weight = min(1.0, mentions / 8)
+        score = round(50 + (raw - 50) * weight, 1)
+        verdict = ("Healthy bullish" if 58 <= score <= 75 and bearish < bullish
+                   else "Overhyped" if score > 80
+                   else "Improving" if score > 55
+                   else "Weak/negative" if score < 42 else "Mixed/neutral")
+
+    # Trend vs previous run
+    prev = db.previous_sentiment(symbol)
+    trend = None
+    if prev is not None:
+        trend = round(score - prev, 1)
+        if trend <= -15:
+            flags.append("PANIC-SELLING risk: sentiment dropped sharply vs last run")
+        if trend >= 15 and score > 75:
+            flags.append("PUMP-AND-DUMP risk: sudden sentiment spike — verify "
+                         "with fundamentals before acting")
+    if score > 82:
+        flags.append("RETAIL OVER-EXCITEMENT: sentiment unusually euphoric")
+
+    db.save_sentiment(run_time, symbol, score, bullish, bearish, neutral,
+                      mentions, flags)
+    return {"symbol": symbol, "score": score, "bullish": bullish,
+            "bearish": bearish, "neutral": neutral, "mentions": mentions,
+            "trend_vs_prev": trend, "flags": list(set(flags)),
+            "verdict": verdict, "notes": notes,
+            "low_confidence": mentions < 5,
+            "sources": "Public RSS headlines + optional user-supplied public text"}
+
+===== backend/shariah_checker.py =====
+"""shariah_checker.py — Determines shariah compliance status.
+
+Policy (strict):
+  * COMPLIANT only if symbol is in the verified KMI-30 constituent list
+    (with source + verification date) OR has a documented alternative
+    verification entry in config.OTHER_COMPLIANT.
+  * Everything else -> "Needs manual verification" and EXCLUDED from the
+    top-10 ranking. We never assume compliance.
+  * Warns when the verification snapshot is stale (KMI-30 is recomposed
+    semi-annually; financial ratios change every quarter).
+"""
+
+import logging
+from datetime import datetime
+
+import config
+
+log = logging.getLogger("shariah")
+
+# KMI screening criteria (for the README / manual checks; the engine relies
+# on the official index screening rather than recomputing ratios itself):
+SCREENING_CRITERIA = [
+    "Core business must be halal",
+    "Interest-bearing debt / total assets < 37%",
+    "Illiquid assets / total assets > 25%",
+    "Net liquid assets per share < market price",
+    "Non-compliant investments / total assets < 33%",
+    "Non-compliant income / total revenue < 5%",
+]
+
+
+def _staleness_warning():
+    try:
+        age = (datetime.now()
+               - datetime.fromisoformat(config.KMI30_VERIFICATION_DATE)).days
+    except Exception:
+        return "Verification date unparsable — re-verify the KMI-30 list."
+    if age > config.SHARIAH_STALE_DAYS:
+        return (f"Shariah verification snapshot is {age} days old. KMI-30 is "
+                "recomposed semi-annually — re-verify before relying on it.")
+    return None
+
+
+def check(symbol):
+    """Return dict: status, eligible_for_ranking, source, notes[]"""
+    notes = []
+    stale = _staleness_warning()
+    if stale:
+        notes.append(stale)
+
+    if symbol in config.KMI30_VERIFIED:
+        return {
+            "symbol": symbol, "status": "Compliant (KMI-30 constituent)",
+            "eligible_for_ranking": True,
+            "source": f"{config.KMI30_SOURCE}, effective "
+                      f"{config.KMI30_VERIFICATION_DATE}",
+            "notes": notes,
+        }
+
+    if symbol in getattr(config, "KMIALLSHR_VERIFIED", set()):
+        try:
+            age = (datetime.now() - datetime.fromisoformat(
+                config.KMIALLSHR_VERIFICATION_DATE)).days
+            if age > config.SHARIAH_STALE_DAYS:
+                notes.append(
+                    f"KMI All-Share verification snapshot is {age} days old — "
+                    "re-verify at the next semi-annual recomposition.")
+        except Exception:
+            pass
+        return {
+            "symbol": symbol,
+            "status": "Compliant (KMI All-Share constituent)",
+            "eligible_for_ranking": True,
+            "source": f"{config.KMIALLSHR_SOURCE}, effective "
+                      f"{config.KMIALLSHR_VERIFICATION_DATE}",
+            "notes": notes,
+        }
+
+    if symbol in config.OTHER_COMPLIANT:
+        entry = config.OTHER_COMPLIANT[symbol]
+        notes.append(entry["verify_note"])
+        return {
+            "symbol": symbol,
+            "status": "Compliant (non-KMI-30 route — verify quarterly)",
+            "eligible_for_ranking": True,
+            "source": entry["reason"],
+            "notes": notes,
+        }
+
+    notes.append("Not found in any verified compliance source. Excluded "
+                 "from top-10 ranking until manually verified against the "
+                 "latest KMI All Share / SECP shariah list.")
+    return {"symbol": symbol, "status": "Needs manual verification",
+            "eligible_for_ranking": False, "source": "none", "notes": notes}
+
+
+def check_all(symbols):
+    return {s: check(s) for s in symbols}
+
+===== backend/signal_generator.py =====
+"""signal_generator.py — Converts final score + risk assessment into one of:
+Strong Buy / Buy / Watch / Hold / Avoid / Exit.
+
+PURE-TECHNICAL MODE (config.PURE_TECHNICAL, 2026-08-12): decisions come from
+price/volume only. News- and sentiment-derived vetoes (bad_news,
+manipulation_risk) are still WARNED about but no longer downgrade a signal —
+risk_manager stops emitting them as vetoes, so the branches below go quiet.
+The chase guard (config.CHASE_GUARD_ENABLED) is OFF and the pullback/extension
+reference EMA is config.PULLBACK_EMA_SPAN (50, was 20): both deliberate risk-up
+choices by the user.
+
+Overrides ALWAYS beat the score:
+  * shariah issue            -> Exit (if held) / Avoid
+  * technical breakdown      -> Exit / Avoid
+  * poor risk/reward         -> downgrade Buy to Watch
+  * bad news / manipulation risk -> downgrade Buy to Watch (OFF in pure-technical)
+
+Tier 2 additions:
+  * Confluence gate  — Strong Buy needs ≥3/4 independent dimensions (trend,
+                       momentum, volume, structure); Buy needs ≥2. Below → Watch.
+  * Strong Buy confirmation — capped at Buy on its FIRST appearance; the next
+                              run still scoring Strong Buy confirms it. (No
+                              numeric streak/conviction count is tracked.)
+
+Anti-chase additions (don't buy at the peak):
+  * Overextension gate — price too far above the reference EMA (or parabolic
+                         momentum) steps the signal down one notch. DISABLED by
+                         config.CHASE_GUARD_ENABLED = False; still reported.
+  * Thin-headroom (poor_rr) — REAL room-to-resistance:risk below the minimum
+                         (price jammed under a ceiling) → Watch. (Via risk_manager,
+                         which now reads technical.headroom_rr, not the ≈2.0 proj R:R.)
+  * Pullback entry  — an extended setup held at Watch shows its buy-zone (the
+                       50-EMA band); when price later retraces INTO that zone with
+                       the uptrend intact, a cooled Watch/Hold is upgraded to Buy
+                       (buy the dip, don't chase the peak). Stateless across runs.
+  * Earnings blackout — within EARNINGS_BLACKOUT_DAYS of a KNOWN result date, a
+                       fresh Buy/Strong Buy is held at Watch (binary event risk).
+                       Only acts when a date is known; never invents a blackout.
+"""
+
+import logging
+import config
+import database as db
+
+log = logging.getLogger("signal")
+
+T = config.SIGNAL_THRESHOLDS
+
+
+def _confluence(technical):
+    """0-4: how many independent signal dimensions agree with a bullish trade.
+
+    Four INDEPENDENT dimensions (each captures a different market mechanism):
+      1. Trend    — price above its 50-EMA (intermediate trend is up)
+      2. Momentum — RSI in healthy zone AND MACD histogram positive (both agree)
+      3. Volume   — OBV trending up (smart money accumulating, not distributing)
+      4. Structure— price above nearest support AND no breakdown in progress
+
+    A score of 4 means trend, momentum, volume and structure all line up.
+    A Buy signal with confluence 1 is a weak coincidence; with 4 it is a real setup.
+    """
+    price = technical.get("price") or 0
+    score, dims = 0, []
+
+    ema50 = technical.get("ema50")
+    if ema50 and price > ema50:
+        score += 1; dims.append("trend")
+
+    rsi = technical.get("rsi")
+    macd_h = technical.get("macd_hist")
+    if (rsi is not None and 40 <= rsi <= 74
+            and macd_h is not None and macd_h > 0):
+        score += 1; dims.append("momentum")
+
+    if technical.get("obv_up"):
+        score += 1; dims.append("volume")
+
+    support = technical.get("support")
+    if support and price > support and not technical.get("breakdown"):
+        score += 1; dims.append("structure")
+
+    return score, dims
+
+
+def early_watch(final_score, technical, shariah):
+    """Is this name BUILDING — worth watching before it reaches the Buy band?
+
+    Returns (bool, reason). Deliberately narrow: only CMF (real high/low money
+    flow) showed forward edge in the graded history; the OBV-based accumulation
+    heuristics measured NEGATIVE and are excluded (see config.EARLY_WATCH_*).
+
+    This never returns a tradeable signal — it is a monitoring tier that buys
+    lead time. Structure must be intact (no breakdown, above support) so it
+    cannot flag a falling knife.
+    """
+    if not config.EARLY_WATCH_ENABLED or not shariah["eligible_for_ranking"]:
+        return False, ""
+    cmf = technical.get("cmf")
+    lo, hi = config.EARLY_WATCH_SCORE_BAND
+    price, support = technical.get("price"), technical.get("support")
+    rs = technical.get("relative_strength")
+    if (cmf is None or cmf <= config.EARLY_WATCH_MIN_CMF
+            or final_score is None or not (lo <= final_score < hi)
+            or technical.get("breakdown")
+            or not (price and support and price > support)
+            or (rs is not None and rs < config.EARLY_WATCH_MIN_RS)):
+        return False, ""
+    return True, (f"EARLY: money flow building (CMF {cmf:+.2f}) while the score "
+                  f"is still {final_score:.0f} — below the Buy band. Structure "
+                  "intact. Watch for the score to confirm; NOT a buy signal, and "
+                  "not yet validated out-of-sample (graded on the 7-day horizon).")
+
+
+def generate(symbol, final_score, confidence, risk, shariah, technical,
+             regime=None, prev_signal=None, days_to_earnings=None,
+             regime_pct_above=None):
+    """Generate a trading signal.
+
+    prev_signal: the most recent stored signal — used by the Strong Buy
+    confirmation gate (a fresh Strong Buy is held at Buy until the NEXT run
+    still scores Strong Buy). No streak/conviction count is tracked or shown:
+    it proved misleading (15-min polling let raw run-counts look like many
+    independent confirmations when they were really one session)."""
+    reasons, override = [], None
+
+    # No usable price this run -> not analysable. Emit an explicit "No data"
+    # signal so a fetch failure can never masquerade as a Hold/Watch with a
+    # bogus 0.00 price/stop/target sitting in the ranking.
+    price = technical.get("price")
+    if not price or price <= 0:
+        return {"signal": "No data",
+                "reasons": ["No usable price for this symbol this run — "
+                            "excluded from ranking until the feed returns."],
+                "confidence": 0, "confluence": 0, "confluence_dims": []}
+
+    if not shariah["eligible_for_ranking"]:
+        override = "Avoid"
+        reasons.append("Shariah status unverified — excluded by policy")
+
+    if "breakdown" in risk["vetoes"]:
+        prev = db.last_run(symbol)
+        override = "Exit" if prev and prev.get("signal") in \
+            ("Buy", "Strong Buy", "Hold") else "Avoid"
+        reasons.append("Technical breakdown below support")
+
+    if override:
+        return {"signal": override, "reasons": reasons,
+                "confidence": min(confidence, 60),
+                "confluence": 0, "confluence_dims": []}
+
+    # ---- score-based base signal
+    if final_score >= T["strong_buy"]:
+        base = "Strong Buy"
+        reasons.append(f"Final score {final_score} ≥ {T['strong_buy']} with "
+                       f"technical {technical['classification']}")
+        if technical["classification"] not in ("Strong bullish", "Bullish"):
+            base = "Buy"
+            reasons.append("Downgraded: score high but technicals not confirming")
+    elif final_score >= T["buy"]:
+        base = "Buy"; reasons.append(f"Score {final_score} in Buy band 70-80")
+    elif final_score >= T["watch"]:
+        base = "Watch"; reasons.append(f"Score {final_score} in Watch band 60-70")
+    elif final_score >= T["hold"]:
+        base = "Hold"; reasons.append(f"Score {final_score} in Hold band 50-60")
+    else:
+        base = "Avoid"; reasons.append(f"Score {final_score} below 50")
+
+    # ---- Hysteresis dead-band: a raw score grazing a band edge (e.g. 70.3 one
+    # run, 69.7 the next) shouldn't flip the signal — that's scoring noise, not
+    # a real change. Require crossing the threshold by HYSTERESIS_BAND points
+    # before changing direction. Only acts on one-notch transitions; multi-notch
+    # moves and hard vetoes (breakdown/shariah) bypass it. Applied BEFORE the
+    # confirmation/confluence/chase gates so those still operate normally on top.
+    _band = getattr(config, "HYSTERESIS_BAND", 0)
+    if _band > 0 and prev_signal in ("Strong Buy", "Buy", "Watch", "Hold", "Avoid"):
+        _RANK = {"Strong Buy": 4, "Buy": 3, "Watch": 2, "Hold": 1, "Avoid": 0}
+        _pr, _br = _RANK.get(prev_signal), _RANK.get(base)
+        _thr = {"Strong Buy": T["strong_buy"], "Buy": T["buy"],
+                "Watch": T["watch"], "Hold": T["hold"]}
+        if _pr is not None and _br is not None and abs(_pr - _br) == 1:
+            if _pr > _br:
+                # one-notch DOWNGRADE. The dead-band sits ENTIRELY ABOVE the
+                # threshold (enter at _t+band, exit at _t) rather than straddling
+                # it (2026-08-12). Straddling let a stale Buy persist down to
+                # _t-band: with the threshold raised to 75, scores of 73-74 —
+                # exactly the 30%-win band the raise was meant to exclude — were
+                # still being emitted as Buy. Anti-flap is preserved by the
+                # upgrade side below, which still requires clearing _t+band.
+                _t = _thr.get(prev_signal)
+                if _t is not None and final_score >= _t:
+                    base = prev_signal
+                    reasons.append(
+                        f"Hysteresis: score {final_score} still at/above the "
+                        f"{prev_signal} threshold ({_t}) — held at {prev_signal}")
+            else:
+                # one-notch UPGRADE — require clearing the new threshold by the
+                # band, not just grazing it (avoids flapping the other way)
+                _t = _thr.get(base)
+                if _t is not None and final_score < _t + _band:
+                    base = prev_signal
+                    reasons.append(
+                        f"Hysteresis: score {final_score} only just clears the "
+                        f"{base} threshold ({_t}) — held at {prev_signal} until "
+                        f"it breaks {_t + _band}+")
+
+    # ---- Tier 2: confirmation gate (before confluence so we check intent, not result)
+    # A new Strong Buy on its first appearance is held at Buy — the market has
+    # to CONFIRM it on the next run. This prevents chasing a one-run spike.
+    if base == "Strong Buy" and prev_signal != "Strong Buy":
+        base = "Buy"
+        reasons.append("Downgraded Strong Buy→Buy: first run at this level — "
+                       "needs one more consecutive confirmation")
+
+    # ---- Confluence: MEASURED and reported, but no longer a gate (2026-08-12).
+    # The four dimensions were assumed independent; graded outcomes say they are
+    # not. Day-deduped Buy win rate by confluence: 2/4 won 17% (n=24), 3/4 won
+    # 26% (n=47), 4/4 won 25% (n=108) — flat. The gate was rejecting setups
+    # without buying accuracy (trend and structure are near-collinear: price
+    # above its 50-EMA is usually also above support). Still stored and shown
+    # as context so the dimensions remain visible per card.
+    confluence, conf_dims = _confluence(technical)
+
+    # ---- Overextension (chase) guard: don't buy a stretched, parabolic move at
+    # the peak — that's where profit-takers hand you the bag. Far above EMA20 or
+    # very high 20-day momentum steps the signal down one notch and tells the user
+    # to wait for the pullback the profit-taking creates. (The "thin room to
+    # resistance" case is handled by the poor_rr veto in the soft downgrades.)
+    _zlo, _zhi = technical.get("buy_zone_low"), technical.get("buy_zone_high")
+    _span = technical.get("buy_zone_ema_span", config.PULLBACK_EMA_SPAN)
+    _zone = (f" Buy-zone PKR {_zlo}–{_zhi} (pullback to {_span}-EMA)."
+             if _zlo and _zhi else "")
+    # Regime-aware chase guard. In a broad rally most names sit well above their
+    # 20-EMA — treating that as "extended" would downgrade the whole leadership
+    # group to Watch and make the engine miss the move. So in a confirmed risk-on
+    # regime the chase thresholds widen (×extension_riskon_multiplier); only a
+    # genuinely parabolic move is still stepped down. In neutral/risk-off the
+    # guard stays tight. (technical['extended'] keeps its strict definition for the
+    # buy-zone/accumulation logic; only the SIGNAL action adapts here.)
+    _ext_pct = technical.get("ext_pct")
+    _mom = technical.get("momentum_20d")
+    # The widening scales with RALLY STRENGTH: ramp the multiplier linearly from
+    # 1.0 (index just crossed above its 50-EMA — a shaky breakout, loosen barely)
+    # up to the configured ceiling (index _full_pct above its EMA — a strong,
+    # confirmed bull, loosen fully). A mild rally relaxes the guard a little; a
+    # powerful one relaxes it a lot.
+    _mult = 1.0
+    if regime == "risk-on":
+        _ceil = config.RISK.get("extension_riskon_multiplier", 1.0)
+        _full = config.RISK.get("extension_riskon_full_pct", 8.0) or 8.0
+        _strength = 1.0 if regime_pct_above is None else \
+            max(0.0, min(1.0, regime_pct_above / _full))
+        _mult = 1.0 + (_ceil - 1.0) * _strength
+    _ext_lim = config.RISK["max_extension_pct"] * _mult
+    _mom_lim = config.RISK["max_extension_momentum_pct"] * _mult
+    _chase = ((_ext_pct is not None and _ext_pct > _ext_lim)
+              or (_mom is not None and _mom > _mom_lim))
+    _relaxed = (f" (chase guard ×{_mult:.2f} for risk-on rally)"
+                if _mult > 1.0 else "")
+    if _chase and not config.CHASE_GUARD_ENABLED:
+        # Guard off (2026-08-12): note the stretch, don't act on it.
+        _mom_txt = f", 20d momentum {_mom:+.1f}%" if _mom is not None else ""
+        reasons.append(
+            f"Note (chase guard OFF): extended {_ext_pct}% above EMA{_span}"
+            f"{_mom_txt} — buying strength, accept the higher "
+            f"drawdown risk.{_zone}")
+    elif _chase:
+        if base == "Strong Buy":
+            base = "Buy"; reasons.append(
+                f"Downgraded Strong Buy→Buy: extended {_ext_pct}% "
+                f"above EMA{_span}{_relaxed} — chase risk, a pullback entry is safer.{_zone}")
+        elif base == "Buy":
+            base = "Watch"; reasons.append(
+                f"Downgraded Buy→Watch: price extended above EMA{_span} (chase risk{_relaxed}) "
+                f"— wait for a pullback before acting.{_zone}")
+
+    # ---- soft downgrades (earnings, regime, concentration, rr, confidence, RS)
+    # `bad_news` / `manipulation_risk` branches remain for when PURE_TECHNICAL is
+    # turned off; risk_manager stops emitting those vetoes while it is on.
+    # The old `risk_level == "High"` branch was REMOVED (2026-08-12): any veto
+    # forces risk_level High, and every veto already has its own branch above it,
+    # so the branch could never fire (confirmed: all 203 graded Buys were "Low").
+    _earnings_soon = (days_to_earnings is not None
+                      and 0 <= days_to_earnings <= config.EARNINGS_BLACKOUT_DAYS)
+    if base in ("Strong Buy", "Buy"):
+        if _earnings_soon:
+            base = "Watch"; reasons.append(
+                f"Downgraded: earnings/result due in ~{days_to_earnings}d — binary "
+                "event risk, don't open a fresh position into the announcement")
+        elif config.REGIME_GATE_ENABLED and regime == "risk-off":
+            base = "Watch"; reasons.append(
+                f"Downgraded: market regime risk-off ({config.BENCHMARK_INDEX} below "
+                f"its {config.REGIME_EMA_SPAN}-EMA) — don't buy into a falling market")
+        elif "concentrated" in risk["vetoes"]:
+            base = "Watch"; reasons.append(
+                "Downgraded: this name is already over the single-name cap in your "
+                "book — adding compounds concentration risk. Trim or hold, don't add")
+        elif "poor_rr" in risk["vetoes"]:
+            base = "Watch"; reasons.append("Downgraded: risk/reward below minimum")
+        elif "manipulation_risk" in risk["vetoes"]:
+            base = "Watch"; reasons.append("Downgraded: hype/pump risk — verify first")
+        elif "bad_news" in risk["vetoes"]:
+            base = "Watch"; reasons.append("Downgraded: material negative news — "
+                                           "verify the headline before acting")
+        elif confidence < 45:
+            base = "Watch"; reasons.append("Downgraded: confidence below 45% "
+                                           "(weak data or poor history)")
+        elif (technical.get("cmf") is not None
+              and technical["cmf"] <= config.BUY_MIN_CMF):
+            base = "Watch"; reasons.append(
+                f"Downgraded: money flow not confirming (CMF {technical['cmf']:+.2f} "
+                f"≤ {config.BUY_MIN_CMF:.2f}) — price is rising without real "
+                "buying pressure behind it (graded history: CMF-negative Buys "
+                "beat the market 61% vs 83% when flow confirms, and carried the "
+                "worse drawdowns)")
+        elif (technical.get("relative_strength") is not None
+              and technical["relative_strength"] < config.RS_LAGGARD_VETO):
+            base = "Watch"; reasons.append(
+                f"Downgraded: relative strength {technical['relative_strength']:.0f} "
+                f"< {config.RS_LAGGARD_VETO} — market laggard (graded history: "
+                "RS<55 Buys won 21%, RS 70+ won 36%); buy leaders, not laggards")
+
+    # The pullback-entry UPGRADE was removed 2026-08-12: the Buys it produced
+    # (final_score below the Buy band) won 9% (n=57) against a 38% market base
+    # rate. technical['pullback_ready'] and the buy-zone are still computed and
+    # shown as manual context — the engine just no longer acts on them.
+
+    if base in ("Strong Buy", "Buy"):
+        reasons.append("Manual confirmation REQUIRED before placing any order")
+
+    return {"signal": base, "reasons": reasons, "confidence": confidence,
+            "confluence": confluence, "confluence_dims": conf_dims,
+            "buy_zone_low": technical.get("buy_zone_low"),
+            "buy_zone_high": technical.get("buy_zone_high")}
+
+===== backend/technical_analyzer.py =====
+"""technical_analyzer.py — Computes the 30% technical score.
+
+All indicators are calculated from real fetched OHLC/volume data (pandas/
+NumPy only — no fabricated values). When history is too short for an
+indicator (e.g. EMA-200), the indicator is skipped and noted, never faked.
+"""
+
+import logging
+import numpy as np
+import pandas as pd
+
+import config
+
+log = logging.getLogger("technical")
+
+
+# ----------------------------- indicators ---------------------------------
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def macd(series, fast=12, slow=26, signal=9):
+    ema_f = series.ewm(span=fast, adjust=False).mean()
+    ema_s = series.ewm(span=slow, adjust=False).mean()
+    line = ema_f - ema_s
+    sig = line.ewm(span=signal, adjust=False).mean()
+    return line, sig, line - sig
+
+
+def bollinger(series, period=20, mult=2):
+    mid = series.rolling(period).mean()
+    sd = series.rolling(period).std()
+    return mid + mult * sd, mid, mid - mult * sd
+
+
+def obv(close, volume):
+    direction = np.sign(close.diff().fillna(0))
+    return (direction * volume).cumsum()
+
+
+def atr_from_close(close, period=14):
+    """Approximate ATR using close-to-close ranges (EOD feed has no H/L)."""
+    tr = close.diff().abs()
+    return tr.rolling(period).mean()
+
+
+def range_proxy(open_, close):
+    """Daily true-range estimate from open+close (PSX EOD has no H/L).
+
+    Uses max(body, overnight gap, close-to-close) so it captures opening gaps
+    and the day's body — wider and more realistic than close-to-close alone,
+    which makes ATR-based stops less likely to whipsaw. It is still an
+    UNDER-estimate (intraday wicks are invisible) and is labelled as such.
+    """
+    prev_close = close.shift(1)
+    body = (close - open_).abs()
+    gap = (open_ - prev_close).abs()
+    c2c = (close - prev_close).abs()
+    return pd.concat([body, gap, c2c], axis=1).max(axis=1)
+
+
+def adx_proxy(close, period=14):
+    """Directional-strength proxy from close data (true ADX needs H/L).
+    Returns 0-100 style trend-strength estimate, clearly labelled a proxy."""
+    up = close.diff().clip(lower=0).rolling(period).sum()
+    dn = (-close.diff().clip(upper=0)).rolling(period).sum()
+    denom = (up + dn).replace(0, np.nan)
+    dx = (abs(up - dn) / denom) * 100
+    return dx.rolling(period).mean()
+
+
+def _wilder(x, period):
+    """Wilder's moving average (used for true ATR/ADX). Returns an array the same
+    length as x, NaN until index period-1."""
+    out = np.full(len(x), np.nan)
+    if len(x) >= period:
+        out[period - 1] = np.nanmean(x[:period])
+        for i in range(period, len(x)):
+            out[i] = (out[i - 1] * (period - 1) + x[i]) / period
+    return out
+
+
+def true_atr_adx(ohlc, period=14):
+    """TRUE ATR and ADX from REAL daily OHLC bars (list of dicts oldest-first,
+    banked from the intraday H/L feed). ATR needs ~period+1 bars; ADX needs
+    ~2*period. Each is returned as None until enough bars exist, so the caller
+    keeps using the close-based proxy for whichever isn't ready yet."""
+    n = len(ohlc)
+    if n < period + 2:
+        return {"atr": None, "adx": None}
+    high = np.array([b["high"] for b in ohlc], float)
+    low = np.array([b["low"] for b in ohlc], float)
+    close = np.array([b["close"] for b in ohlc], float)
+    pc = close[:-1]
+    tr = np.maximum.reduce([high[1:] - low[1:],
+                            np.abs(high[1:] - pc), np.abs(low[1:] - pc)])
+    up = high[1:] - high[:-1]
+    dn = low[:-1] - low[1:]
+    pdm = np.where((up > dn) & (up > 0), up, 0.0)
+    mdm = np.where((dn > up) & (dn > 0), dn, 0.0)
+    atr_arr = _wilder(tr, period)
+    atr = None if np.isnan(atr_arr[-1]) else float(atr_arr[-1])
+    s_tr, s_pdm, s_mdm = _wilder(tr, period), _wilder(pdm, period), _wilder(mdm, period)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pdi = 100 * s_pdm / s_tr
+        mdi = 100 * s_mdm / s_tr
+        dx = 100 * np.abs(pdi - mdi) / (pdi + mdi)
+    dx_valid = dx[~np.isnan(dx)]
+    adx = None
+    if len(dx_valid) >= period:
+        adx_arr = _wilder(dx_valid, period)
+        if not np.isnan(adx_arr[-1]):
+            adx = float(adx_arr[-1])
+    return {"atr": atr, "adx": adx}
+
+
+def obv_price_divergence(close, obv_series, lookback=30):
+    """Bullish OBV/price divergence: price's most recent swing low is flat or
+    lower than the prior swing low in the window, while OBV's low at that same
+    point is HIGHER than its prior low — sellers pushing price down on
+    shrinking volume pressure, the classic quiet-accumulation signature.
+    Returns None when there isn't enough history."""
+    if len(close) < lookback:
+        return None
+    c = close.tail(lookback).to_numpy()
+    o = obv_series.tail(lookback).to_numpy()
+    half = lookback // 2
+    c1, c2, o1, o2 = c[:half], c[half:], o[:half], o[half:]
+    i1, i2 = int(np.argmin(c1)), int(np.argmin(c2))
+    price_low1, price_low2 = float(c1[i1]), float(c2[i2])
+    obv_low1, obv_low2 = float(o1[i1]), float(o2[i2])
+    bullish = bool(price_low2 <= price_low1 * 1.01 and obv_low2 > obv_low1)
+    return {"bullish": bullish, "price_low1": price_low1, "price_low2": price_low2,
+            "obv_low1": obv_low1, "obv_low2": obv_low2}
+
+
+def chaikin_money_flow(ohlc, period=20):
+    """Chaikin Money Flow from REAL daily OHLC bars (needs real high/low — the
+    EOD feed alone can't compute this). Weights each day's volume by where the
+    close sits within that day's range: +1 at the high (pure buying pressure),
+    -1 at the low (pure selling). Returns None until enough real bars exist;
+    the caller must not fall back to a close-only proxy for this one — a fake
+    range would invert the whole point of the indicator."""
+    if len(ohlc) < period:
+        return None
+    bars = ohlc[-period:]
+    high = np.array([b["high"] for b in bars], float)
+    low = np.array([b["low"] for b in bars], float)
+    close = np.array([b["close"] for b in bars], float)
+    volume = np.array([b["volume"] for b in bars], float)
+    rng = high - low
+    mfm = np.where(rng != 0, ((close - low) - (high - close)) / rng, 0.0)
+    mfv = mfm * volume
+    vol_sum = volume.sum()
+    return float(mfv.sum() / vol_sum) if vol_sum else None
+
+
+def support_resistance(close, lookback=60):
+    win = close.tail(lookback)
+    lo, hi, last = win.min(), win.max(), close.iloc[-1]
+    # nearest swing levels via quantiles for robustness
+    support = float(win[win <= last].quantile(0.10)) if (win <= last).any() else float(lo)
+    resistance = float(win[win >= last].quantile(0.90)) if (win >= last).any() else float(hi)
+    return support, resistance, float(lo), float(hi)
+
+
+def candle_signal(close):
+    """Very simple pattern proxy from closes: 3-bar momentum reversal."""
+    if len(close) < 4:
+        return None
+    c = close.tail(4).values
+    if c[0] > c[1] > c[2] and c[3] > c[2]:
+        return "potential bullish reversal (3-down then up)"
+    if c[0] < c[1] < c[2] and c[3] < c[2]:
+        return "potential bearish reversal (3-up then down)"
+    return None
+
+
+# ----------------------------- main entry ---------------------------------
+def analyze(symbol, eod_df, quote, rs_score=None, ohlc=None):
+    """eod_df: DataFrame[date, (open,) close, volume] (real fetched data) or None.
+    quote: dict from data_fetcher.latest_quote.
+    rs_score: optional 0-100 relative-strength vs the benchmark index.
+    ohlc: optional list of REAL banked daily OHLC bars (oldest-first); when long
+    enough, true ATR/ADX replace the close-based proxies. Pass None (e.g. in
+    backtests) to force the proxies.
+    Returns dict with score (0-100), classification, levels, and notes."""
+    notes, missing = [], []
+    out = {"symbol": symbol, "score": None, "classification": "No data",
+           "notes": notes, "missing": missing}
+
+    if eod_df is None or len(eod_df) < 30:
+        notes.append("Insufficient price history (<30 sessions) — technical "
+                     "score withheld rather than guessed.")
+        out["score"] = 50.0  # neutral, low-confidence
+        out["low_confidence"] = True
+        return out
+
+    df = eod_df.copy()
+    close, vol = df["close"].astype(float), df["volume"].astype(float)
+    price = float(quote["price"]) if quote.get("price") else float(close.iloc[-1])
+
+    # --- core indicators
+    df["rsi"] = rsi(close)
+    macd_line, macd_sig, macd_hist = macd(close)
+    ema20 = close.ewm(span=20, adjust=False).mean()
+    ema50 = close.ewm(span=50, adjust=False).mean()
+    ema200 = close.ewm(span=200, adjust=False).mean() if len(close) >= 200 else None
+    if ema200 is None:
+        missing.append("EMA-200 (needs 200 sessions)")
+    bb_up, bb_mid, bb_lo = bollinger(close)
+    obv_series = obv(close, vol)
+    if "open" in df.columns and df["open"].notna().sum() >= 20:
+        atr = range_proxy(df["open"].astype(float), close).rolling(14).mean()
+        atr_method = "open+close range (gaps & body; no intraday wicks)"
+    else:
+        atr = atr_from_close(close)
+        atr_method = "close-to-close (open unavailable)"
+    adx = adx_proxy(close)
+    support, resistance, recent_lo, recent_hi = support_resistance(close)
+
+    last_rsi = float(df["rsi"].iloc[-1]) if not np.isnan(df["rsi"].iloc[-1]) else None
+    avg_vol = float(vol.tail(20).mean())
+    today_vol = float(quote.get("volume") or vol.iloc[-1])
+    vol_spike = today_vol > 1.8 * avg_vol if avg_vol else False
+    last_atr = float(atr.iloc[-1]) if not np.isnan(atr.iloc[-1]) else None
+    last_adx = float(adx.iloc[-1]) if not np.isnan(adx.iloc[-1]) else None
+    adx_is_true = atr_is_true = False
+    # Upgrade to TRUE ATR/ADX once enough real OHLC bars are banked (else proxy).
+    if ohlc and len(ohlc) >= config.MIN_OHLC_BARS_FOR_TRUE:
+        t = true_atr_adx(ohlc)
+        if t["atr"] is not None:
+            last_atr = t["atr"]; atr_is_true = True
+            atr_method = "true ATR (real intraday H/L)"
+        if t["adx"] is not None:
+            last_adx = t["adx"]; adx_is_true = True
+    # CMF needs real daily H/L, same gate as true ATR/ADX above.
+    cmf = (chaikin_money_flow(ohlc) if ohlc and len(ohlc) >= config.MIN_OHLC_BARS_FOR_TRUE
+           else None)
+    atr_pct = (last_atr / price * 100) if (last_atr and price) else None
+    momentum_20d = (price / float(close.iloc[-21]) - 1) * 100 if len(close) > 21 else 0.0
+    obv_trend_up = float(obv_series.iloc[-1]) > float(obv_series.iloc[-10]) \
+        if len(obv_series) > 10 else None
+    obv_divergence = obv_price_divergence(close, obv_series)
+
+    breakout = price > resistance and vol_spike
+    breakdown = price < support
+
+    # --- scoring (each component contributes to 0-100)
+    score, max_pts = 0.0, 0.0
+
+    def add(points, max_p, label, hit_note=None):
+        nonlocal score, max_pts
+        score += points
+        max_pts += max_p
+        if hit_note:
+            notes.append(hit_note)
+
+    # Trend via EMAs (25 pts)
+    pts = 0
+    if price > float(ema20.iloc[-1]): pts += 8
+    if price > float(ema50.iloc[-1]): pts += 9
+    if ema200 is not None and price > float(ema200.iloc[-1]): pts += 8
+    add(pts, 25 if ema200 is not None else 17, "trend",
+        f"Price vs EMAs: 20={ema20.iloc[-1]:.2f}, 50={ema50.iloc[-1]:.2f}"
+        + (f", 200={ema200.iloc[-1]:.2f}" if ema200 is not None else " (no EMA-200)"))
+
+    # RSI (15 pts) — reward healthy zone, penalise extremes
+    if last_rsi is not None:
+        if 45 <= last_rsi <= 65: r_pts = 15
+        elif 35 <= last_rsi < 45 or 65 < last_rsi <= 72: r_pts = 9
+        elif last_rsi < 30: r_pts = 5; notes.append("RSI oversold (<30) — possible bounce but weak trend")
+        elif last_rsi > 75: r_pts = 2; notes.append("RSI overbought (>75) — chase risk")
+        else: r_pts = 6
+        add(r_pts, 15, "rsi", f"RSI(14)={last_rsi:.1f}")
+    else:
+        missing.append("RSI")
+
+    # MACD (15 pts)
+    m_pts = 0
+    if float(macd_hist.iloc[-1]) > 0: m_pts += 8
+    if float(macd_line.iloc[-1]) > float(macd_sig.iloc[-1]): m_pts += 7
+    add(m_pts, 15, "macd", f"MACD hist={macd_hist.iloc[-1]:.3f}")
+
+    # Momentum (10 pts)
+    mo_pts = 10 if momentum_20d > 5 else 7 if momentum_20d > 0 else 3 if momentum_20d > -5 else 0
+    add(mo_pts, 10, "momentum", f"20-day momentum {momentum_20d:+.1f}%")
+
+    # Volume/OBV (15 pts)
+    v_pts = 0
+    if vol_spike: v_pts += 7; notes.append(f"Volume spike: today {today_vol:,.0f} vs 20d avg {avg_vol:,.0f}")
+    if obv_trend_up: v_pts += 8
+    add(v_pts, 15, "volume")
+
+    # Breakout / breakdown (10 pts)
+    if breakout:
+        add(10, 10, "breakout", f"Breakout above resistance {resistance:.2f} on volume")
+    elif breakdown:
+        add(0, 10, "breakdown", f"BREAKDOWN below support {support:.2f}")
+    else:
+        add(5, 10, "range")
+
+    # Trend strength ADX (10 pts) — true ADX once enough real OHLC bars exist.
+    if last_adx is not None:
+        add(min(10, last_adx / 5), 10, "adx",
+            f"Trend strength ADX={last_adx:.0f}"
+            + (" (true, from real H/L)" if adx_is_true else " (proxy, not true ADX)"))
+    else:
+        missing.append("ADX")
+
+    # Bollinger Bands (10 pts). These were computed but UNUSED before. The value
+    # here isn't another trend vote — it's volatility regime + position:
+    #   * a "squeeze" (bands unusually tight) = coiled volatility, a move brewing;
+    #     a squeeze resolving upward is a high-probability setup.
+    #   * %B says where price sits in the band (top = strength, bottom = weakness).
+    bb_u, bb_m, bb_l = float(bb_up.iloc[-1]), float(bb_mid.iloc[-1]), float(bb_lo.iloc[-1])
+    bb_pct_b = (price - bb_l) / (bb_u - bb_l) if (bb_u - bb_l) else 0.5
+    bb_bandwidth = (bb_u - bb_l) / bb_m if bb_m else None
+    _recent_bw = ((bb_up - bb_lo) / bb_mid).dropna().tail(100)
+    bb_squeeze = bool(bb_bandwidth is not None and len(_recent_bw) >= 20
+                      and bb_bandwidth <= _recent_bw.quantile(0.25))
+    if bb_squeeze and bb_pct_b >= 0.6:
+        bb_pts = 10
+        notes.append(f"Bollinger SQUEEZE resolving up (%B={bb_pct_b:.2f}) — coiled "
+                     "volatility breaking higher")
+    elif bb_pct_b > 1.0:
+        bb_pts = 5
+        notes.append(f"Above upper Bollinger band (%B={bb_pct_b:.2f}) — strong but extended")
+    elif 0.5 <= bb_pct_b <= 1.0:
+        bb_pts = 7
+    elif bb_pct_b < 0.2:
+        bb_pts = 2
+        notes.append(f"Hugging lower Bollinger band (%B={bb_pct_b:.2f}) — weak")
+    else:
+        bb_pts = 5
+    if bb_squeeze and bb_pct_b < 0.6:
+        notes.append("Bollinger squeeze (low volatility) — breakout brewing, "
+                     "direction unconfirmed")
+    add(bb_pts, 10, "bollinger")
+
+    # Relative strength (config.RS_POINTS) — is the stock BEATING the index? A
+    # stock can be in an uptrend yet still LAG the market; RS catches that and
+    # steers the score toward genuine leaders. Skipped if the index was missing.
+    if rs_score is not None:
+        add(rs_score / 100 * config.RS_POINTS, config.RS_POINTS, "relative_strength",
+            f"Relative strength {rs_score:.0f}/100 vs {config.BENCHMARK_INDEX} "
+            + ("(outperforming)" if rs_score >= 50 else "(LAGGING the market)"))
+
+    final = round(score / max_pts * 100, 1) if max_pts else 50.0
+
+    cls = ("Strong bullish" if final >= 80 else "Bullish" if final >= 65
+           else "Neutral" if final >= 45 else "Weak" if final >= 30 else "Bearish")
+    cs = candle_signal(close)
+    if cs:
+        notes.append("Candle proxy: " + cs)
+    # Real open-vs-close read (Option A): PSX gaps often, and we now have `open`.
+    if "open" in df.columns and pd.notna(df["open"].iloc[-1]) and len(close) >= 2:
+        o_last, prev_c = float(df["open"].iloc[-1]), float(close.iloc[-2])
+        if o_last > prev_c * 1.015:
+            notes.append(f"Gap-up open ({(o_last/prev_c-1)*100:+.1f}% vs prev close)")
+        elif o_last < prev_c * 0.985:
+            notes.append(f"Gap-down open ({(o_last/prev_c-1)*100:+.1f}% vs prev close)")
+    if atr_pct and atr_pct > config.RISK["max_volatility_pct"]:
+        notes.append(f"High volatility: ATR≈{atr_pct:.1f}% of price ({atr_method})")
+
+    stop_loss = round(max(support, price - config.RISK["default_stop_atr_mult"]
+                          * (last_atr or price * 0.02)), 2)
+    risk = price - stop_loss
+    target1 = round(price + 2 * risk, 2)
+    target2 = round(min(price + 3 * risk, recent_hi * 1.05), 2)
+    rr = round((target1 - price) / risk, 2) if risk > 0 else None
+
+    # --- REAL reward:risk to the nearest OVERHEAD ceiling. `rr` above is the
+    # projected-target ratio (≈2.0 by construction) and can't catch "buying right
+    # under resistance". headroom_rr measures the ACTUAL room above price:
+    #   * below resistance      -> room is the gap up to that ceiling (small = trap)
+    #   * cleared resistance     -> room up to the recent high
+    #   * at/above the high      -> open space; use a measured-move target so a
+    #                               genuine new-high breakout is NOT falsely flagged
+    if price < resistance:
+        reward_room = resistance - price
+    elif price < recent_hi:
+        reward_room = recent_hi - price
+    else:
+        reward_room = 2 * risk
+    headroom_rr = round(reward_room / risk, 2) if risk > 0 else None
+    headroom_pct = round((resistance - price) / price * 100, 1) if price else None
+
+    # --- Overextension measure: how far price is stretched above the reference
+    # EMA (config.PULLBACK_EMA_SPAN — 50 since 2026-08-12, was 20). Uses PERCENT
+    # above that EMA (robust) plus 20-day momentum; the ATR-normalised distance
+    # (ext_atr) is kept for info only because the EOD ATR proxy understates true
+    # range and inflated it.
+    ema20_last = float(ema20.iloc[-1])
+    ema50_last = float(ema50.iloc[-1])
+    ref_span = getattr(config, "PULLBACK_EMA_SPAN", 20)
+    ref_series = ema50 if ref_span == 50 else ema20
+    ref_ema = float(ref_series.iloc[-1])
+    ext_pct = round((price / ref_ema - 1) * 100, 1) if ref_ema else None
+    ext_atr = round((price - ref_ema) / last_atr, 2) if last_atr else None
+    extended = bool((ext_pct is not None and ext_pct > config.RISK["max_extension_pct"])
+                    or momentum_20d > config.RISK["max_extension_momentum_pct"])
+    if extended:
+        notes.append(f"EXTENDED: {ext_pct}% above EMA{ref_span}, 20d momentum "
+                     f"{momentum_20d:+.1f}% — chase risk, a pullback entry is safer")
+
+    # --- Accumulation candidate: a SEPARATE, lower-bar tag from the Buy signal —
+    # "smart money may be quietly building a position" rather than "act now".
+    # Deliberately NOT folded into the score (would double-count OBV/volume,
+    # already 15 pts above); surfaced as its own flag so it can be spotted
+    # BEFORE a stock ever reaches Buy. Heuristic, proxy-based — labelled as such.
+    #
+    # The defining feature of ACCUMULATION (vs an ordinary uptrend) is buying
+    # pressure WHILE PRICE IS FLAT OR DOWN — quiet absorption inside a base, not
+    # a stock that is already running. So a rising OBV only counts when price has
+    # NOT advanced over the same window; otherwise it is just trend confirmation.
+    price_chg_window = ((price / float(close.iloc[-10]) - 1) * 100
+                        if len(close) > 10 else 0.0)
+    price_flat_or_down = price_chg_window <= 2.0   # ≤+2% over the OBV window
+
+    strong_reasons = []   # high-conviction signals (each can stand on its own)
+    weak_reasons = []     # supporting signals (need a second one to count)
+    if obv_divergence and obv_divergence["bullish"]:
+        strong_reasons.append("bullish OBV/price divergence (price flat/down, OBV up)")
+    if cmf is not None and cmf > 0.10:
+        strong_reasons.append(f"strong CMF {cmf:+.2f} (real-H/L buying pressure)")
+    if obv_trend_up and price_flat_or_down:
+        weak_reasons.append(f"OBV rising while price flat/down ({price_chg_window:+.1f}%)")
+    if vol_spike and not breakout and price_flat_or_down:
+        weak_reasons.append("volume spike inside the range (no breakout yet)")
+    if cmf is not None and 0.05 < cmf <= 0.10:
+        weak_reasons.append(f"CMF {cmf:+.2f} (mild buying pressure, real H/L)")
+
+    accum_reasons = strong_reasons + weak_reasons
+    # Net selling pressure on REAL data overrides every proxy signal.
+    if cmf is not None and cmf < -0.05:
+        accum_reasons = strong_reasons = weak_reasons = []
+    # Require genuine confluence: one high-conviction signal, OR at least two
+    # independent supporting signals. A single weak signal is NOT enough — that
+    # is what previously flagged most of the market as "accumulating".
+    has_confluence = bool(strong_reasons) or len(weak_reasons) >= 2
+    accumulation_candidate = bool(
+        accum_reasons and has_confluence
+        and not breakout and not breakdown and not extended)
+    if accumulation_candidate:
+        notes.append("ACCUMULATION candidate: " + "; ".join(accum_reasons))
+
+    # --- Pullback-entry setup: an established uptrend that has retraced to its
+    # rising reference EMA with momentum cooled but structure intact — the
+    # lower-risk entry (buy the dip profit-takers create) vs chasing the
+    # breakout. buy_zone is the band around that EMA, floored at support.
+    #
+    # The reference is the 50-EMA (config.PULLBACK_EMA_SPAN, 2026-08-12): a
+    # deeper retracement than the old 20-EMA band. Price inside a 50-EMA zone can
+    # sit slightly BELOW the 50-EMA, so the old `price > ema50` trend test would
+    # contradict the zone itself — the uptrend is instead confirmed by the
+    # reference EMA still RISING over the last 10 sessions, plus the 200-EMA when
+    # available. RSI window is widened to 35-65 to match the deeper dip.
+    ref_rising = (len(ref_series) > 10
+                  and ref_ema > float(ref_series.iloc[-11]))
+    buy_zone_high = round(ref_ema * 1.03, 2)
+    buy_zone_low = round(max(support, ref_ema * 0.96), 2)
+    in_buy_zone = bool(buy_zone_low <= price <= buy_zone_high)
+    pullback_ready = bool(
+        in_buy_zone and not breakdown and not extended
+        and ref_rising
+        and (ema200 is None or price > float(ema200.iloc[-1]))
+        and (last_rsi is not None and 35 <= last_rsi <= 65)
+        and (bool(obv_trend_up) or float(macd_line.iloc[-1]) > 0))
+    if pullback_ready:
+        notes.append(f"PULLBACK setup: retraced into the EMA{ref_span} buy-zone "
+                     f"({buy_zone_low}–{buy_zone_high}), uptrend intact, RSI cooled "
+                     f"to {last_rsi:.0f} — lower-risk entry than chasing.")
+
+    # --- which sub-indicators were bullish at this bar. Stored in the DB so
+    # the learning loop can track per-indicator accuracy per symbol over time
+    # and feed back into confidence (scoring_engine._indicator_accuracy_boost).
+    # None = indicator not computable this run (data too short etc.).
+    tech_flags = {
+        "trend":    price > ema50_last,
+        "rsi":      (last_rsi is not None and 40 <= last_rsi <= 72),
+        "macd":     float(macd_hist.iloc[-1]) > 0,
+        "obv":      bool(obv_trend_up) if obv_trend_up is not None else None,
+        "momentum": momentum_20d > 0,
+        "bb":       bb_pct_b >= 0.5,
+        "rs":       bool(rs_score >= 50) if rs_score is not None else None,
+        "accumulation": accumulation_candidate if accum_reasons else None,
+    }
+
+    out.update({
+        "score": final, "classification": cls, "price": price,
+        "volume": today_vol, "avg_volume": avg_vol, "volume_spike": vol_spike,
+        "rsi": last_rsi, "macd_hist": float(macd_hist.iloc[-1]),
+        "ema20": float(ema20.iloc[-1]), "ema50": float(ema50.iloc[-1]),
+        "ema200": float(ema200.iloc[-1]) if ema200 is not None else None,
+        "bb_upper": bb_u, "bb_lower": bb_l, "bb_pct_b": round(bb_pct_b, 3),
+        "bb_bandwidth": (round(bb_bandwidth, 4) if bb_bandwidth is not None else None),
+        "bb_squeeze": bb_squeeze,
+        "support": support, "resistance": resistance,
+        "recent_high": recent_hi, "recent_low": recent_lo,
+        "breakout": breakout, "breakdown": breakdown,
+        "atr": last_atr, "atr_pct": atr_pct, "atr_method": atr_method,
+        "adx_proxy": last_adx, "atr_is_true": atr_is_true, "adx_is_true": adx_is_true,
+        "momentum_20d": momentum_20d, "obv_up": obv_trend_up,
+        "stop_loss": stop_loss, "target1": target1, "target2": target2,
+        "risk_reward": rr, "headroom_rr": headroom_rr, "headroom_pct": headroom_pct,
+        "ext_pct": ext_pct, "ext_atr": ext_atr, "extended": extended,
+        "buy_zone_low": buy_zone_low, "buy_zone_high": buy_zone_high,
+        "in_buy_zone": in_buy_zone, "pullback_ready": pullback_ready,
+        "buy_zone_ema_span": ref_span,
+        "relative_strength": rs_score,
+        "low_confidence": len(close) < 60,
+        "tech_flags": tech_flags,
+        "cmf": cmf,
+        "obv_divergence_bullish": (obv_divergence["bullish"] if obv_divergence else None),
+        "accumulation_candidate": accumulation_candidate,
+        "accumulation_reasons": accum_reasons,
+    })
+    return out
+

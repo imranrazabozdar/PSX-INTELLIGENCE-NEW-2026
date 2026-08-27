@@ -1,0 +1,5 @@
+plugins { id 'com.android.application' }
+
+android { namespace 'com.psx.intelligence'; compileSdk 35
+    defaultConfig { applicationId 'com.psx.intelligence'; minSdk 24; targetSdk 35; versionCode 18; versionName '4.4-trader-engine' }
+}
