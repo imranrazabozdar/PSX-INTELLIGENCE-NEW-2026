@@ -108,7 +108,7 @@ def diff_snapshots(prev, curr_result, wyckoff_events=None):
     score_delta = round((curr_result.get("evidence_score") or 0) - (prev.get("evidence_score") or 0), 1)
     action_changed = prev.get("final_action") != curr_result.get("final_action")
     grade_changed = prev.get("confidence_grade") != curr_result.get("confidence_grade")
-    meaningful = action_changed or grade_changed or abs(score_delta) >= 8 or bool(new_events)
+    meaningful = bool(action_changed or grade_changed or abs(score_delta) >= 8 or bool(new_events))
 
     return {
         "prior_checked_at": prev.get("saved_at"),
