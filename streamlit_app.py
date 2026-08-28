@@ -650,6 +650,53 @@ def _with_company(df, symbol_col="symbol"):
     return df
 
 
+def _render_watchlist_section(key_prefix):
+    """Shared by the Home and Screener tabs -- the curated ~90-symbol
+    watchlist the backend refreshes every 30 min during PSX trading hours
+    (see backend/app.py's _watchlist_refresh_loop), shown here as a
+    click-to-open ranked table matching the pattern used by the other
+    ranking tables (Consensus, DSS buckets, Conviction) elsewhere in this
+    file."""
+    st.markdown('<div class="psx-section-eyebrow">WATCHLIST</div>'
+                '<div class="psx-section-title">🎯 Intraday Watchlist</div>', unsafe_allow_html=True)
+    st.caption("A curated set refreshed every 30 minutes while PSX is open (~09:30-15:30 PKT, weekdays) — "
+               "faster than the rest of the market, which uses the 3x/day full scan. Click a row to open "
+               "that symbol in Stock Research.")
+    wl = _get("/watchlist/scan")
+    if not isinstance(wl, dict) or wl.get("status") != "ok":
+        st.info("Watchlist hasn't completed its first refresh yet — check back once the market's open.")
+        return
+    age = wl.get("age_seconds")
+    age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+    results = wl.get("results") or {}
+    rows = []
+    for sym in wl.get("symbols") or []:
+        r = results.get(sym) or {}
+        if r.get("status") != "ok":
+            continue
+        q = r.get("quote") or {}
+        rows.append({"symbol": sym, "price": q.get("price"), "chg %": q.get("pct"),
+                     "evidence score": r.get("evidence_score"), "grade": r.get("confidence_grade"),
+                     "action": r.get("final_action")})
+    if not rows:
+        st.info("No watchlist results yet — check back once the market's open and the first refresh completes.")
+        return
+    st.caption(f"Last refreshed {age_str} · {len(rows)}/{len(wl.get('symbols') or [])} symbols with a result")
+    wdf = pd.DataFrame(rows).sort_values("evidence score", ascending=False, na_position="last")
+    wsel = st.dataframe(
+        wdf, use_container_width=True, height=380, hide_index=True,
+        on_select="rerun", selection_mode="single-row", key=f"watchlist_table_{key_prefix}",
+        column_config={
+            "evidence score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f"),
+            "price": st.column_config.NumberColumn(format="%.2f"),
+            "chg %": st.column_config.NumberColumn(format="%.2f%%"),
+        })
+    wrows = wsel.selection.rows if wsel and wsel.selection else []
+    if wrows:
+        st.session_state.research_symbol = wdf.iloc[wrows[0]]["symbol"]
+        st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
+
+
 _backend_ok = _backend_up()
 st.markdown(
     '<div class="psx-topbar"><div class="psx-brand">'
@@ -737,6 +784,8 @@ with tab_home:
                 f'<div class="val">{close_str}</div></div>'
             )
         st.markdown(f'<div class="psx-idx-row">{"".join(pills)}</div>', unsafe_allow_html=True)
+
+    _render_watchlist_section("home")
 
     st.markdown('<div class="psx-section-eyebrow">MARKET COMMAND CENTER</div>'
                 '<div class="psx-section-title">Regime, Momentum, Volatility & Sector Leadership</div>',
@@ -870,6 +919,8 @@ with tab_screener:
                 "of each other or of the primary ranking. Click any row to open that symbol in the Stock Research "
                 "tab. (The Home tab's table uses a much simpler price/volume heuristic — not a fourth ranking, "
                 "just a quick-glance tag.)")
+
+    _render_watchlist_section("screener")
 
     op_min_vol = st.number_input("Min volume (applies to all three below)", step=10_000, key="op_vol",
                                   on_change=_sync_cb("min_volume", "op_vol"))
