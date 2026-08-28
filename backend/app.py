@@ -2516,6 +2516,36 @@ HEAVY_REFRESH_INTERVAL = int(os.getenv("PSX_HEAVY_REFRESH_INTERVAL", str(_scan_c
 # early" gate, not the alert threshold itself.
 EVENT_CHECK_INTERVAL = int(os.getenv("PSX_EVENT_CHECK_INTERVAL", "300"))       # 5 min
 EVENT_PRICE_MOVE_PCT = float(os.getenv("PSX_EVENT_PRICE_PCT", "1.5"))          # vs price at last scan
+
+# ---- Market-hours gating for the deep scan (dss_scan/alerts). Each full
+# scan reads OHLC + peer history for every symbol -- on Turso that's real
+# rows-read cost, not a free local-disk read. Running it on a flat 30-min
+# timer around the clock, 7 days a week, is what actually exhausted a
+# 500M-row/month free-tier quota in a matter of hours. PSX only trades
+# Mon-Fri, roughly 09:30-15:30 PKT -- there is nothing to re-scan overnight
+# or on weekends. DEEP_SCAN_SLOTS_PKT replaces the flat interval with three
+# fixed daily targets: near market open, midday, and shortly after close.
+PSX_TZ = ZoneInfo("Asia/Karachi")
+DEEP_SCAN_SLOTS_PKT = [(9, 35), (13, 0), (20, 0)]
+
+
+def _is_market_week(now_pkt=None):
+    now_pkt = now_pkt or datetime.now(PSX_TZ)
+    return now_pkt.weekday() < 5  # Mon=0 .. Fri=4; Sat=5, Sun=6 excluded
+
+
+def _due_scan_slot(now_pkt=None):
+    """Index of the DEEP_SCAN_SLOTS_PKT entry we've just entered (within one
+    EVENT_CHECK_INTERVAL-sized window of its start), or None. Weekday only."""
+    now_pkt = now_pkt or datetime.now(PSX_TZ)
+    if not _is_market_week(now_pkt):
+        return None
+    for i, (h, m) in enumerate(DEEP_SCAN_SLOTS_PKT):
+        slot_start = now_pkt.replace(hour=h, minute=m, second=0, microsecond=0)
+        elapsed = (now_pkt - slot_start).total_seconds()
+        if 0 <= elapsed < EVENT_CHECK_INTERVAL:
+            return i
+    return None
 EVENT_TRIGGER_DIST_PCT = float(os.getenv("PSX_EVENT_TRIGGER_PCT", "1.0"))     # vs entry/stop/target
 EVENT_RVOL_X = float(os.getenv("PSX_EVENT_RVOL_X", "1.5"))                     # from cached alerts
 
@@ -2582,44 +2612,51 @@ def _scan_event_triggered(cached_scan):
 async def _fast_refresh_loop():
     """Ticks every EVENT_CHECK_INTERVAL (5 min) to CHECK cheaply, but only
     actually recomputes dss_scan/alerts (the expensive Wyckoff/candlestick/
-    technical/CMF passes) when due on their own SCAN_REFRESH_INTERVAL (30 min)
-    cadence OR an event fires early. The 5-min tick is not a 5-min recompute —
-    matching the plan's "don't run the deep scanner every 5 minutes" rule
-    while still reacting sooner than 30 min when something material happens.
+    technical/CMF passes) at one of DEEP_SCAN_SLOTS_PKT's three fixed daily
+    times (weekdays only) OR when an event fires early DURING market hours.
+    Replaces a flat 30-min-around-the-clock timer, which read enough rows on
+    Turso to exhaust a 500M/month free-tier quota in hours — there's nothing
+    new to scan overnight or on a weekend PSX isn't even open.
     """
-    last_scan_refresh = 0.0
-    last_alerts_refresh = 0.0
+    last_scan_slot = None    # (date, slot_index) already run today
+    last_alerts_slot = None
     while True:
-        now = time.time()
+        now_pkt = datetime.now(PSX_TZ)
+        slot = _due_scan_slot(now_pkt)
+        today = now_pkt.date()
         try:
             cached = _scan_cache.latest_scan()
-            due = cached is None or (now - last_scan_refresh) >= SCAN_REFRESH_INTERVAL
+            due = (cached is None and slot is not None) or (slot is not None and last_scan_slot != (today, slot))
             reason = None
-            if not due and cached:
+            # Event-early-trigger stays on, but only during the trading week —
+            # off-hours/weekend price data isn't moving in any way that
+            # justifies the extra scan cost.
+            if not due and cached and _is_market_week(now_pkt):
                 try:
                     triggered, reason = await asyncio.to_thread(_scan_event_triggered, cached)
                     due = due or triggered
                 except Exception as e:
-                    print(f"[scan_cache] event check failed (falling back to fixed interval): {type(e).__name__}: {e}")
+                    print(f"[scan_cache] event check failed (falling back to fixed slots): {type(e).__name__}: {e}")
             if due:
                 # _run_guarded shares its lock with the HTTP /dss-scan?force=true
                 # path — if an admin's manual force-run is already in flight this
                 # tick is skipped rather than double-computing the same scan.
                 ran, result = await asyncio.to_thread(_run_guarded, "dss_scan", _run_dss_scan)
                 if ran and result:
-                    last_scan_refresh = time.time()
+                    if slot is not None:
+                        last_scan_slot = (today, slot)
                     why = f" (event-triggered: {reason})" if reason else ""
                     print(f"[scan_cache] dss_scan refreshed: {result.get('scanned')} symbols{why}")
                 elif not ran:
                     print("[scan_cache] dss_scan refresh skipped — a force-run was already in flight")
         except Exception as e:
             print(f"[scan_cache] dss_scan refresh failed: {type(e).__name__}: {e}")
-        if (time.time() - last_alerts_refresh) >= SCAN_REFRESH_INTERVAL:
+        if slot is not None and last_alerts_slot != (today, slot):
             try:
                 ran, result = await asyncio.to_thread(
                     _run_guarded, "alerts", _run_alerts_full, None, lambda r: isinstance(r, dict))
                 if ran and result:
-                    last_alerts_refresh = time.time()
+                    last_alerts_slot = (today, slot)
                     print(f"[scan_cache] alerts refreshed: {result.get('flagged')} flagged")
                 elif not ran:
                     print("[scan_cache] alerts refresh skipped — a force-run was already in flight")
