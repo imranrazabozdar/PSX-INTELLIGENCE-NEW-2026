@@ -2797,10 +2797,21 @@ async def _heavy_refresh_loop():
 async def _start_background_refresh_loops():
     if os.getenv("PSX_DISABLE_SCAN_AUTOREFRESH"):
         print("[scan_cache] PSX_DISABLE_SCAN_AUTOREFRESH is set — background refresh loops "
-              "(dss_scan, alerts, backtest family, OHLC refresh) will NOT start. All cached "
-              "analysis will go stale until this is unset and the server restarts.")
+              "(watchlist_scan, watchlist_alerts, backtest family, OHLC refresh) will NOT start. "
+              "All cached analysis will go stale until this is unset and the server restarts.")
         return
-    asyncio.create_task(_fast_refresh_loop())
+    # _fast_refresh_loop() (the whole-market dss_scan/alerts) is deliberately
+    # NOT auto-started -- per an explicit request, the whole-market scan is
+    # on-demand only now (triggered from the Screener/Pulse tabs' "on-demand"
+    # buttons, which hit /dss-scan?force=true and /alerts?force=true
+    # directly and don't need this loop running). Auto-starting it here
+    # would silently keep consuming Turso's rows-read quota 3x/day even
+    # though the UI no longer shows the result without an explicit click --
+    # exactly the kind of hidden cost that exhausted the previous account's
+    # quota in a few hours. Set PSX_ENABLE_WHOLE_MARKET_AUTOREFRESH=1 to
+    # restore the old always-on behavior if ever needed.
+    if os.getenv("PSX_ENABLE_WHOLE_MARKET_AUTOREFRESH"):
+        asyncio.create_task(_fast_refresh_loop())
     asyncio.create_task(_watchlist_refresh_loop())
     asyncio.create_task(_heavy_refresh_loop())
 
