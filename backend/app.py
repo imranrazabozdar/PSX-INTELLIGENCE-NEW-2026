@@ -2722,7 +2722,24 @@ async def _watchlist_refresh_loop():
                 print(f"[scan_cache] watchlist_scan refreshed: {len(WATCHLIST_SYMBOLS)} symbols, {errors} errors")
             except Exception as e:
                 print(f"[scan_cache] watchlist_scan cache save failed: {type(e).__name__}: {e}")
+            try:
+                alerts_result = await asyncio.to_thread(_run_alerts_watchlist)
+                _scan_cache.save("watchlist_alerts", alerts_result)
+                print(f"[scan_cache] watchlist_alerts refreshed: {alerts_result.get('flagged')} flagged")
+            except Exception as e:
+                print(f"[scan_cache] watchlist_alerts refresh failed: {type(e).__name__}: {e}")
         await asyncio.sleep(WATCHLIST_REFRESH_INTERVAL)
+
+
+@app.get("/watchlist/alerts")
+def watchlist_alerts():
+    """Cached VOLUME_SURGE/ACCUMULATION/DISTRIBUTION alerts scoped to
+    WATCHLIST_SYMBOLS (see _run_alerts_watchlist), refreshed on the same
+    30-min/market-hours cadence as /watchlist/scan."""
+    cached = _scan_cache.latest("watchlist_alerts")
+    if not cached:
+        return {"status": "never_run", "alerts": []}
+    return cached
 
 
 @app.get("/watchlist/scan")
@@ -3014,10 +3031,10 @@ def _psx_session_elapsed_fraction(now=None):
     return max(0.05, min(1.0, (now_s-open_s)/(close_s-open_s)))
 
 
-def _run_alerts_full(min_volume=MIN_VOLUME, limit=60, volume_surge_x=2.0, cmf_threshold=0.05):
-    rows=market_watch()
-    syms=[x for x in sorted(rows,key=lambda z:-z["volume"])
-          if x["volume"]>=min_volume][:limit]
+def _run_alerts_for_quotes(syms, volume_surge_x=2.0, cmf_threshold=0.05):
+    """Shared per-quote alert logic -- `syms` is a list of market_watch()
+    rows already selected by the caller (whether that's the whole market's
+    top-N by volume, or a specific curated symbol set)."""
     session_frac=_psx_session_elapsed_fraction()
     flagged, skipped = [], 0
     for q in syms:
@@ -3056,6 +3073,24 @@ def _run_alerts_full(min_volume=MIN_VOLUME, limit=60, volume_surge_x=2.0, cmf_th
                    "order-level data. VOLUME_SURGE needs backfilled true "
                    "OHLC for the 20-day average; symbols without it are in "
                    "skipped_no_data, not silently scored as normal."}
+
+
+def _run_alerts_full(min_volume=MIN_VOLUME, limit=60, volume_surge_x=2.0, cmf_threshold=0.05):
+    rows=market_watch()
+    syms=[x for x in sorted(rows,key=lambda z:-z["volume"])
+          if x["volume"]>=min_volume][:limit]
+    return _run_alerts_for_quotes(syms, volume_surge_x, cmf_threshold)
+
+
+def _run_alerts_watchlist(volume_surge_x=2.0, cmf_threshold=0.05):
+    """Same VOLUME_SURGE/ACCUMULATION/DISTRIBUTION detection as the
+    whole-market alerts scan, scoped to WATCHLIST_SYMBOLS instead of the
+    top-N-by-volume selection -- so the Pulse tab's alerts feed matches
+    the same reduced-data-usage scope as Home/Screener."""
+    rows = market_watch()
+    quote_by_symbol = {x["symbol"]: x for x in rows}
+    syms = [quote_by_symbol[s] for s in WATCHLIST_SYMBOLS if s in quote_by_symbol]
+    return _run_alerts_for_quotes(syms, volume_surge_x, cmf_threshold)
 
 
 @app.get("/alerts")

@@ -1121,10 +1121,9 @@ with tab_pulse:
     with st.container(border=True):
         st.markdown('<div class="psx-panel-title">🔔 Volume & Accumulation/Distribution Alerts</div>',
                     unsafe_allow_html=True)
-        st.caption("Rebuilt on data this app already owns (PSX portal + technical "
-                   "engine's CMF/OBV/avg-volume) — no longer depends on the now-gated "
-                   "psxterminal.com feed. ~5min delayed, not tick-level. Auto-refreshes in the "
-                   "background every 30 min for the default thresholds below — no click needed.")
+        st.caption("Scoped to the same 89-symbol watchlist as Home/Screener, refreshed every 30 min "
+                   "during market hours — not the whole market. Rebuilt on data this app already owns "
+                   "(PSX portal + technical engine's CMF/OBV/avg-volume). ~5min delayed, not tick-level.")
 
         _ALERT_LABEL = {"ACCUMULATION": "POSITIVE MONEY-FLOW PRESSURE", "DISTRIBUTION": "NEGATIVE MONEY-FLOW PRESSURE",
                         "VOLUME_SURGE": "VOLUME SURGE"}
@@ -1158,10 +1157,10 @@ with tab_pulse:
                         "the surge/accumulation thresholds right now.")
 
         if "alerts_result" not in st.session_state:
-            st.session_state["alerts_result"] = _get("/alerts")
+            st.session_state["alerts_result"] = _get("/watchlist/alerts")
         _render_alerts(st.session_state["alerts_result"])
 
-        with st.expander("Custom thresholds (runs live, not cached)"):
+        with st.expander("Whole-market custom scan (on-demand, uses far more data than the watchlist above)"):
             a1, a2, a3 = st.columns(3)
             with a1:
                 al_min_vol = st.number_input("Min volume", step=50_000, key="al_vol",
