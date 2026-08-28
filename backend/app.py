@@ -2526,12 +2526,47 @@ EVENT_PRICE_MOVE_PCT = float(os.getenv("PSX_EVENT_PRICE_PCT", "1.5"))          #
 # or on weekends. DEEP_SCAN_SLOTS_PKT replaces the flat interval with three
 # fixed daily targets: near market open, midday, and shortly after close.
 PSX_TZ = ZoneInfo("Asia/Karachi")
-DEEP_SCAN_SLOTS_PKT = [(9, 35), (13, 0), (20, 0)]
+DEEP_SCAN_SLOTS_PKT = [(9, 35), (14, 0), (20, 0)]  # ~4h25m / 6h apart
+
+# ---- Watchlist: a curated ~90-symbol set gets a much faster (30-min,
+# market-hours-only) refresh than the rest of the market, which only gets
+# the full scan above. At ~5K rows/symbol, 89 symbols every 30 min for a
+# ~6h trading day is ~118M rows/month -- small next to the 500M budget --
+# while still giving near-live DSS/technical updates for the stocks
+# actually being watched for intraday entries. User-supplied list.
+WATCHLIST_SYMBOLS = [
+    'CNERGY', 'PRL', 'BOP', 'FNEL', 'KEL', 'SSGC', 'PACE', 'WAVESAPP', 'NBP', 'PIBTL',
+    'FCL', 'PPL', 'BLUEX', 'AKBL', 'PREMA', 'BECO', 'BAFL', 'LOTCHEM', 'NRL', 'SYS',
+    'HUBC', 'AICL', 'THCCL', 'FCCL', 'HASCOL', 'ABL', 'PSO', 'HBL', 'OGDC', 'AVN',
+    'SLGL', 'SPSL', 'POWER', 'UBL', 'TRG', 'TOMCL', 'AIRLINK', 'FFL', 'SEARL', 'CLOV',
+    'SNBL', 'SNGP', 'MDTL', 'BML', 'BNL', 'BAHL', 'SYM', 'WASL', 'CPHL', 'FFC',
+    'MARI', 'MUGHAL', 'BGL', 'GAL', 'GDL', 'YOUW', 'ZAL', 'AGP', 'LOADS', 'KOHC',
+    'SAZEW', 'WAHDAT', 'STCL', 'GLAXO', 'TGL', 'MCB', 'JSBL', 'IMAGE', 'SCBPL', 'BOK',
+    'AGTL', 'ECPL', 'BIPL', 'HMB', 'FABL', 'SBL', 'ASTL', 'EFERT', 'DGKC', 'LUCK',
+    'TBL', 'STL', 'STLR', 'MLCF', 'CHCC', 'WTL', 'PTC', 'QTECH', 'ITANZ',
+]
+WATCHLIST_REFRESH_INTERVAL = int(os.getenv("PSX_WATCHLIST_REFRESH_INTERVAL", "1800"))  # 30 min
+# PSX's actual session is ~09:30-15:30 PKT; a little padding on each side so
+# a 30-min-interval loop doesn't miss the open/close by a few minutes.
+WATCHLIST_HOURS_PKT = (9, 15, 30)  # start hour, end hour, end minute
 
 
 def _is_market_week(now_pkt=None):
     now_pkt = now_pkt or datetime.now(PSX_TZ)
     return now_pkt.weekday() < 5  # Mon=0 .. Fri=4; Sat=5, Sun=6 excluded
+
+
+def _is_trading_hours(now_pkt=None):
+    """Weekday AND within the padded PSX session window -- the watchlist
+    loop should only spend quota while the market is actually open; a stock
+    that hasn't traded in hours doesn't need re-analysis every 30 min."""
+    now_pkt = now_pkt or datetime.now(PSX_TZ)
+    if not _is_market_week(now_pkt):
+        return False
+    start_h, end_h, end_m = WATCHLIST_HOURS_PKT
+    start = now_pkt.replace(hour=start_h, minute=0, second=0, microsecond=0)
+    end = now_pkt.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    return start <= now_pkt <= end
 
 
 def _due_scan_slot(now_pkt=None):
@@ -2665,6 +2700,44 @@ async def _fast_refresh_loop():
         await asyncio.sleep(EVENT_CHECK_INTERVAL)
 
 
+async def _watchlist_refresh_loop():
+    """Runs the full /dss/{symbol} analysis for every WATCHLIST_SYMBOLS
+    entry every WATCHLIST_REFRESH_INTERVAL (30 min), but only during actual
+    trading hours -- there's nothing new to analyse once the market's shut.
+    Results are cached under 'watchlist_scan' so the frontend can show
+    near-live analysis for these symbols without recomputing per page view.
+    """
+    while True:
+        if _is_trading_hours():
+            results = {}
+            errors = 0
+            for sym in WATCHLIST_SYMBOLS:
+                try:
+                    results[sym] = await asyncio.to_thread(dss, sym)
+                except Exception as e:
+                    errors += 1
+                    results[sym] = {"symbol": sym, "status": "error", "reason": f"{type(e).__name__}: {e}"}
+            try:
+                _scan_cache.save("watchlist_scan", {"results": results, "symbols": WATCHLIST_SYMBOLS})
+                print(f"[scan_cache] watchlist_scan refreshed: {len(WATCHLIST_SYMBOLS)} symbols, {errors} errors")
+            except Exception as e:
+                print(f"[scan_cache] watchlist_scan cache save failed: {type(e).__name__}: {e}")
+        await asyncio.sleep(WATCHLIST_REFRESH_INTERVAL)
+
+
+@app.get("/watchlist/scan")
+def watchlist_scan():
+    """Cached results of the last watchlist refresh (see
+    _watchlist_refresh_loop) -- near-live (<=30 min stale during market
+    hours) DSS analysis for the curated WATCHLIST_SYMBOLS set."""
+    cached = _scan_cache.latest("watchlist_scan")
+    if not cached:
+        return {"status": "never_run", "symbols": WATCHLIST_SYMBOLS}
+    return {"status": "ok", "age_seconds": cached.get("_cache_age_seconds"),
+            "run_at": cached.get("_cache_run_at"), "symbols": cached.get("symbols"),
+            "results": cached.get("results")}
+
+
 async def _heavy_refresh_loop():
     while True:
         try:
@@ -2711,6 +2784,7 @@ async def _start_background_refresh_loops():
               "analysis will go stale until this is unset and the server restarts.")
         return
     asyncio.create_task(_fast_refresh_loop())
+    asyncio.create_task(_watchlist_refresh_loop())
     asyncio.create_task(_heavy_refresh_loop())
 
 
