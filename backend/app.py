@@ -627,18 +627,46 @@ def technicals(symbol:str):
             "history_source":source,"ohlc_limitation":None if any(x.get("high") is not None for x in hist) else "True OHLC unavailable from current source."}
 
 # ---- V2.4 true-OHLC intelligence layer ----
+_ohlc_table_ensured = False
+
 def ensure_ohlc():
+    # Used to run this CREATE TABLE IF NOT EXISTS on every single ohlc_rows()
+    # call — free when that meant a local sqlite3 no-op, but now that db()
+    # can be a Turso HTTP round trip (see turso_db.py), that doubled every
+    # ohlc_rows() call's network cost for no reason. Run it once per process.
+    global _ohlc_table_ensured
+    if _ohlc_table_ensured:
+        return
     with db() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS daily_ohlc(
           symbol TEXT, trade_date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL,
           source TEXT, PRIMARY KEY(symbol,trade_date))"""); c.commit()
+    _ohlc_table_ensured = True
+
+_ohlc_cache = {}
+_OHLC_CACHE_TTL = 10  # seconds
+_OHLC_CACHE_MAX_LIMIT = 500  # only cache "normal" reads (verdict/decision/
+                              # intelligence/relative-strength all separately
+                              # re-fetch the same symbol's ~300-400 recent
+                              # rows within one /dss/{symbol} request) -- not
+                              # the rare full-history calls (limit=10000),
+                              # which would bloat this cache for little benefit.
 
 def ohlc_rows(symbol,limit=260):
     ensure_ohlc()
+    sym = symbol.upper()
+    cacheable = limit <= _OHLC_CACHE_MAX_LIMIT
+    if cacheable:
+        cached = _ohlc_cache.get((sym, limit))
+        if cached and (time.time() - cached[0]) < _OHLC_CACHE_TTL:
+            return cached[1]
     with db() as c:
         a=c.execute("SELECT * FROM daily_ohlc WHERE symbol=? ORDER BY trade_date DESC LIMIT ?",
-                    (symbol.upper(),limit)).fetchall()
-    return [dict(x) for x in reversed(a)]
+                    (sym,limit)).fetchall()
+    result = [dict(x) for x in reversed(a)]
+    if cacheable:
+        _ohlc_cache[(sym, limit)] = (time.time(), result)
+    return result
 
 def tr_values(a):
     out=[]

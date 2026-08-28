@@ -24,7 +24,8 @@ import time
 import streamlit as st
 
 BACKEND = os.getenv("PSX_BACKEND", "http://localhost:8000")
-TIMEOUT = 20
+TIMEOUT = 45  # generous margin for cross-region latency to Turso (Streamlit
+              # Cloud's runtime and this database aren't in the same region)
 
 # Streamlit Community Cloud only runs one process per app, so there's no
 # separate host for backend/app.py the way local dev (two terminals: uvicorn
