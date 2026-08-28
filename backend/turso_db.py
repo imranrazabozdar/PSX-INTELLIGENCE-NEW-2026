@@ -38,6 +38,7 @@ sqlite3.Row specifically, since many call sites already do dict(row) or
 row.get(...) directly.
 """
 
+import json
 import os
 import sqlite3
 import threading
@@ -166,10 +167,19 @@ class _TursoConnection:
         self.row_factory = None  # unused; kept only for API parity with sqlite3.Connection
 
     def _post(self, reqs, max_retries=4):
+        # Encode the body ourselves as ASCII-safe bytes (json.dumps defaults
+        # to ensure_ascii=True, escaping every non-ASCII character as \uXXXX)
+        # and send via data= instead of requests' json= convenience param.
+        # This app's data legitimately contains non-ASCII text (company/
+        # sector names, news headlines) — passing that through json= hit a
+        # 'latin-1' codec UnicodeEncodeError somewhere in requests/urllib3's
+        # header/body handling on Streamlit Cloud's runtime; encoding to
+        # plain ASCII ourselves up front sidesteps it entirely.
+        payload = json.dumps({"requests": reqs}, ensure_ascii=True).encode("ascii")
         last_exc = None
         for attempt in range(1, max_retries + 1):
             try:
-                r = self._session.post(self._http_url, json={"requests": reqs},
+                r = self._session.post(self._http_url, data=payload,
                                         headers=self._headers, timeout=60)
                 r.raise_for_status()
                 return r.json()
