@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from datetime import datetime, timezone, time as dtime
 from zoneinfo import ZoneInfo
-import asyncio, io, json, math, os, sqlite3, statistics, requests, time
+import asyncio, io, json, math, os, statistics, requests, time
 import concurrent.futures as _cf
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -142,6 +142,13 @@ import regime_backtest_engine as _rbt
 # recomputation of daily-bar analysis was wasted work.
 import scan_cache_engine as _scan_cache
 
+# Shared DB connection layer — local SQLite by default, or a Turso libSQL
+# embedded replica when LIBSQL_URL/LIBSQL_AUTH_TOKEN are set (needed on
+# hosts with no persistent disk, e.g. Streamlit Community Cloud). See
+# turso_db.py's module docstring for the full explanation and the
+# not-yet-smoke-tested caveat on the Turso path.
+import turso_db
+
 # ---- V4.12: official ticker -> company name map (dps.psx.com.pk/symbols).
 try:
     import names as _names
@@ -153,7 +160,6 @@ except Exception as _e:                                  # pragma: no cover
     print(f"[V4.12] names unavailable: {_e}")
 
 app = FastAPI(title="PSX Intelligence V2 API", version="3.3-real-intelligence")
-DB=os.getenv("PSX_DB","psx_v2.db")
 PSX="https://dps.psx.com.pk"
 MIN_VOLUME=50_000
 HEAD={"User-Agent":"PSX-Intelligence-V2/2.0 private-research"}
@@ -188,15 +194,28 @@ def _require_admin(request):
             "how":"Set the PSX_ADMIN_TOKEN environment variable on the server, "
                   "then pass ?token=... with the request."}
 
+_db_schema_ready = False
+
+
 def db():
-    c=sqlite3.connect(DB,timeout=30); c.row_factory=sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    c.executescript("""
-    CREATE TABLE IF NOT EXISTS snapshots(ts TEXT,symbol TEXT,sector TEXT,listed TEXT,ldcp REAL,o REAL,h REAL,l REAL,p REAL,ch REAL,pct REAL,vol REAL,score REAL,setup TEXT,shariah INTEGER);
-    CREATE INDEX IF NOT EXISTS ix_snap ON snapshots(symbol,ts);
-    CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,fetched_at TEXT,source TEXT,title TEXT,link TEXT,published TEXT,direction TEXT,materiality TEXT,symbols TEXT);
-    CREATE TABLE IF NOT EXISTS predictions(id INTEGER PRIMARY KEY AUTOINCREMENT,ts TEXT,symbol TEXT,signal TEXT,score REAL,entry REAL,stop REAL,target REAL,model_version TEXT,outcome TEXT);
-    """); return c
+    """Returns the shared process-wide connection (turso_db.py — a plain
+    local SQLite file by default, or a Turso libSQL embedded replica when
+    LIBSQL_URL/LIBSQL_AUTH_TOKEN are set, e.g. on Streamlit Community Cloud
+    which has no persistent disk of its own). Schema creation used to run on
+    every single call — harmless-but-wasteful when each call got a genuinely
+    fresh sqlite3 connection, actually worth avoiding now that every caller
+    shares one persistent connection: run it once per process instead."""
+    global _db_schema_ready
+    c = turso_db.get_connection()
+    if not _db_schema_ready:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS snapshots(ts TEXT,symbol TEXT,sector TEXT,listed TEXT,ldcp REAL,o REAL,h REAL,l REAL,p REAL,ch REAL,pct REAL,vol REAL,score REAL,setup TEXT,shariah INTEGER);
+        CREATE INDEX IF NOT EXISTS ix_snap ON snapshots(symbol,ts);
+        CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,fetched_at TEXT,source TEXT,title TEXT,link TEXT,published TEXT,direction TEXT,materiality TEXT,symbols TEXT);
+        CREATE TABLE IF NOT EXISTS predictions(id INTEGER PRIMARY KEY AUTOINCREMENT,ts TEXT,symbol TEXT,signal TEXT,score REAL,entry REAL,stop REAL,target REAL,model_version TEXT,outcome TEXT);
+        """)
+        _db_schema_ready = True
+    return c
 
 def num(x):
     try:return float(str(x).replace(",","").replace("%","").strip())
@@ -460,7 +479,7 @@ def health():
     return {"ok": ok, "time": datetime.now(timezone.utc).isoformat(), "min_volume": MIN_VOLUME,
             "market_data": "PSX Data Portal", "freshness": "5-minute delayed unless PSX indicates otherwise",
             "policy": "private research; do not redistribute PSX market data without appropriate rights",
-            "database": {"ok": db_ok, "error": db_err},
+            "database": {"ok": db_ok, "error": db_err, **turso_db.status()},
             "background_refresh_loops_disabled": refresh_loops_disabled,
             "background_job_running": any_job_running,
             "caches": caches,

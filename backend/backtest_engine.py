@@ -26,22 +26,18 @@ costs yet) — it is a real, honest, first version. Extending it is future work,
 not a shortcut taken here.
 """
 
-import os
-import sqlite3
 import candlestick_engine as _candles
 import statistics
 from datetime import datetime, timezone
 
-DB = os.getenv("PSX_DB", "psx_v2.db")
+import turso_db
+
 HORIZONS = [1, 3, 5, 10, 20, 40, 60]
 MIN_SAMPLE = 20
 
 
 def _conn():
-    c = sqlite3.connect(DB, timeout=30)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    return c
+    return turso_db.get_connection()
 
 
 def ensure_tables():

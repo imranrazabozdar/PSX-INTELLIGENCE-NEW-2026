@@ -20,11 +20,10 @@ stores whatever was last computed for each named key, with its age.
 
 import json
 import os
-import sqlite3
 import time
 from datetime import datetime, timezone
 
-DB = os.getenv("PSX_DB", "psx_v2.db")
+import turso_db
 
 # dss_scan/alerts cadence: partly live-data-dependent.
 DEFAULT_MAX_AGE_SECONDS = int(os.getenv("PSX_SCAN_MAX_AGE", "1800"))
@@ -34,9 +33,7 @@ HEAVY_MAX_AGE_SECONDS = int(os.getenv("PSX_HEAVY_MAX_AGE", str(24 * 3600)))
 
 
 def _conn():
-    c = sqlite3.connect(DB, timeout=30)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
+    c = turso_db.get_connection()
     return c
 
 

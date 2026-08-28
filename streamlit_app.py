@@ -13,6 +13,8 @@ Run:
 """
 
 import os
+import sys
+import threading
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -23,6 +25,53 @@ import streamlit as st
 
 BACKEND = os.getenv("PSX_BACKEND", "http://localhost:8000")
 TIMEOUT = 20
+
+# Streamlit Community Cloud only runs one process per app, so there's no
+# separate host for backend/app.py the way local dev (two terminals: uvicorn
+# + streamlit run) or a split Render+Streamlit deploy has. PSX_EMBED_BACKEND=1
+# makes this script start the FastAPI app itself, in a background thread
+# inside the same process, before rendering anything. Local dev is unaffected
+# unless this env var is explicitly set.
+_EMBED_BACKEND = os.getenv("PSX_EMBED_BACKEND", "").lower() in ("1", "true", "yes")
+_BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
+
+
+@st.cache_resource
+def _ensure_embedded_backend():
+    """Starts backend/app.py in a daemon thread exactly once per container
+    process. @st.cache_resource (not a module-level flag) guarantees the
+    once-per-process part — Streamlit reruns this script on every interaction
+    and a plain global can't be trusted to survive that the same way."""
+    if not _EMBED_BACKEND:
+        return False
+    # backend/app.py and its siblings resolve PSX_DB relative to the process
+    # CWD at import time, which is the project root under `streamlit run`, not
+    # backend/ — set it to an absolute path first so they agree with BACKEND's
+    # "http://127.0.0.1:8000" pointing at this same embedded instance.
+    os.environ.setdefault("PSX_DB", os.path.join(_BACKEND_DIR, "psx_v2.db"))
+    if _BACKEND_DIR not in sys.path:
+        sys.path.insert(0, _BACKEND_DIR)
+    import uvicorn
+    import app as _backend_app  # backend/app.py; its own bare imports (psx_report,
+                                 # scan_cache_engine, ...) resolve now that
+                                 # _BACKEND_DIR is on sys.path
+
+    threading.Thread(
+        target=uvicorn.run,
+        kwargs={"app": _backend_app.app, "host": "127.0.0.1", "port": 8000, "log_level": "warning"},
+        daemon=True,
+    ).start()
+    for _ in range(30):
+        try:
+            if requests.get("http://127.0.0.1:8000/health", timeout=1).ok:
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    return True
+
+
+_ensure_embedded_backend()
 
 st.set_page_config(page_title="PSX Intelligence", layout="wide",
                     initial_sidebar_state="collapsed",

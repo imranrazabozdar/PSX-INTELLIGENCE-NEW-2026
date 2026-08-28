@@ -20,20 +20,24 @@ As the tables fill (see save_run/save_sentiment below), the learning loop
 reactivates automatically with no further code changes.
 """
 
-import os
-import sqlite3
 import logging
+import sqlite3  # still needed below: every except clause in this file catches
+                # sqlite3.Error specifically. When turso_db is running the
+                # Turso/libsql path, libsql raises its own exception types,
+                # NOT sqlite3.Error — those except clauses simply won't match
+                # on that path, so a genuine Turso-side error propagates up
+                # uncaught instead of being swallowed into an empty result.
+                # That's a real gap (untested, see turso_db.py's docstring),
+                # not silently patched over here — surfacing an unexpected
+                # error beats masking it as "no history yet".
+
+import turso_db
 
 log = logging.getLogger("database")
 
-DB = os.getenv("PSX_DB", "psx_v2.db")
-
 
 def _conn():
-    c = sqlite3.connect(DB, timeout=30)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    return c
+    return turso_db.get_connection()
 
 
 def ensure_schema():

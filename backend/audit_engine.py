@@ -17,21 +17,16 @@ up as certainty.
 """
 
 import json
-import os
-import sqlite3
 from datetime import datetime, timezone
 
-DB = os.getenv("PSX_DB", "psx_v2.db")
+import turso_db
 
 BUY_LIKE = {"STRONG BUY", "BUY", "ACCUMULATE", "WATCH FOR BUY"}
 SELL_LIKE = {"STRONG SELL / AVOID", "SELL / REDUCE", "WATCH FOR SELL"}
 
 
 def _conn():
-    c = sqlite3.connect(DB, timeout=30)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    return c
+    return turso_db.get_connection()
 
 
 def ensure_tables():

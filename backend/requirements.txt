@@ -7,3 +7,4 @@ numpy==2.5.1
 openpyxl==3.1.5
 plotly==7.0.0
 streamlit==1.62.0
+libsql==0.1.8
