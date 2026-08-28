@@ -29,7 +29,15 @@ def _conn():
     return turso_db.get_connection()
 
 
+_tables_ensured = False
+
 def ensure_tables():
+    # Ran this CREATE TABLE/INDEX IF NOT EXISTS on every latest_snapshot()/
+    # save_snapshot() call -- free with local sqlite3, a real Turso round
+    # trip once db access went over the network. Run once per process.
+    global _tables_ensured
+    if _tables_ensured:
+        return
     with _conn() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS dss_history(
@@ -41,6 +49,7 @@ def ensure_tables():
         CREATE INDEX IF NOT EXISTS ix_dss_history_symbol ON dss_history(symbol, saved_at);
         """)
         c.commit()
+    _tables_ensured = True
 
 
 def latest_snapshot(symbol):

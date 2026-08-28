@@ -40,7 +40,17 @@ def _conn():
     return turso_db.get_connection()
 
 
+_tables_ensured = False
+
 def ensure_tables():
+    # Used to send this CREATE TABLE IF NOT EXISTS on every call -- free when
+    # _conn() meant a local sqlite3 no-op, but latest_run()/pattern_stats()/
+    # baseline_stats() all call this first, and dss_engine.py calls those
+    # once per detected pattern per symbol -- that's a real Turso network
+    # round trip doubling the cost of every one of those lookups. Run once.
+    global _tables_ensured
+    if _tables_ensured:
+        return
     with _conn() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS backtest_runs(
@@ -59,6 +69,7 @@ def ensure_tables():
             PRIMARY KEY(run_id, baseline, horizon));
         """)
         c.commit()
+    _tables_ensured = True
 
 
 # ---------------------------------------------------------------- helpers ---
@@ -351,6 +362,30 @@ def pattern_stats(pattern, horizon=20, run_id=None):
         row = c.execute("SELECT * FROM backtest_pattern_stats WHERE run_id=? AND pattern=? AND horizon=?",
                          (run_id, pattern, horizon)).fetchone()
     return dict(row) if row else None
+
+
+def pattern_stats_multi(patterns, horizon=20, run_id=None):
+    """Same per-pattern result as calling pattern_stats() once per pattern,
+    but as ONE database round trip -- dss_engine.py's historical-stats and
+    quant-validation components each loop over every currently-active
+    pattern calling pattern_stats() individually, which used to be free with
+    local sqlite3 and became a real Turso round trip per pattern (a stock
+    with a dozen active patterns meant a dozen sequential network calls)."""
+    ensure_tables()
+    pats = list(dict.fromkeys(patterns))
+    if not pats:
+        return {}
+    if run_id is None:
+        r = latest_run()
+        if not r:
+            return {}
+        run_id = r["id"]
+    placeholders = ",".join("?" * len(pats))
+    sql = (f"SELECT * FROM backtest_pattern_stats WHERE run_id=? AND horizon=? "
+           f"AND pattern IN ({placeholders})")
+    with _conn() as c:
+        rows = c.execute(sql, (run_id, horizon, *pats)).fetchall()
+    return {r["pattern"]: dict(r) for r in rows}
 
 
 def baseline_stats(baseline, horizon=20, run_id=None):

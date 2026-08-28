@@ -37,7 +37,15 @@ def _conn():
     return c
 
 
+_tables_ensured = False
+
 def ensure_tables():
+    # Ran this CREATE TABLE IF NOT EXISTS on every save()/latest() call --
+    # free with local sqlite3, a real Turso round trip once db access went
+    # over the network. Run once per process.
+    global _tables_ensured
+    if _tables_ensured:
+        return
     with _conn() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS analysis_cache(
@@ -45,6 +53,7 @@ def ensure_tables():
             run_at TEXT, run_at_epoch REAL, result_json TEXT);
         """)
         c.commit()
+    _tables_ensured = True
 
 
 def save(cache_key, result):
@@ -70,6 +79,31 @@ def latest(cache_key):
     result["_cache_run_at"] = row["run_at"]
     result["_cache_age_seconds"] = round(time.time() - row["run_at_epoch"])
     return result
+
+
+def latest_many(cache_keys):
+    """Same result as calling latest() once per key, but as ONE round trip
+    when running against Turso -- built for /health, which used to check
+    8 cache keys sequentially (8 separate network round trips just to
+    report freshness). No-op optimization on the local sqlite3 path, where
+    those round trips were already free."""
+    ensure_tables()
+    if not turso_db.USING_TURSO:
+        return {k: latest(k) for k in cache_keys}
+    conn = turso_db.get_connection()
+    queries = [("SELECT * FROM analysis_cache WHERE cache_key=?", (k,)) for k in cache_keys]
+    results = conn.batch_query(queries)
+    out = {}
+    for k, rows in zip(cache_keys, results):
+        if not rows:
+            out[k] = None
+            continue
+        row = rows[0]
+        result = json.loads(row["result_json"])
+        result["_cache_run_at"] = row["run_at"]
+        result["_cache_age_seconds"] = round(time.time() - row["run_at_epoch"])
+        out[k] = result
+    return out
 
 
 def status(cache_key):

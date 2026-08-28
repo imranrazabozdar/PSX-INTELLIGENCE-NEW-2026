@@ -165,8 +165,20 @@ class _TursoConnection:
         self._session = requests.Session()
         self._requests = requests
         self.row_factory = None  # unused; kept only for API parity with sqlite3.Connection
+        self._query_cache = {}  # (sql, params) -> (timestamp, result)
+
+    _debug_call_count = 0
 
     def _post(self, reqs, max_retries=4):
+        _TursoConnection._debug_call_count += 1
+        if os.getenv("PSX_DEBUG_TURSO_CALLS"):
+            import traceback
+            stack = traceback.extract_stack()
+            for frame in reversed(stack[:-1]):
+                if "turso_db.py" not in frame.filename:
+                    print(f"[turso_db DEBUG] call #{_TursoConnection._debug_call_count} from "
+                          f"{frame.filename.split(chr(92))[-1]}:{frame.lineno} ({frame.name})")
+                    break
         # Encode the body ourselves as ASCII-safe bytes (json.dumps defaults
         # to ensure_ascii=True, escaping every non-ASCII character as \uXXXX)
         # and send via data= instead of requests' json= convenience param.
@@ -190,7 +202,24 @@ class _TursoConnection:
                 time.sleep(min(2 ** attempt, 10))
         raise sqlite3.OperationalError(f"Turso HTTP request failed: {last_exc}")
 
+    _QUERY_CACHE_TTL = 8  # seconds
+
     def _run_one(self, sql, params=()):
+        # Many call sites across this codebase independently re-fetch the
+        # exact same (sql, params) within one request -- e.g. a scoring pass
+        # and an audit pass both asking for the same symbol's indicator
+        # stats a few lines apart. Free with local sqlite3; a real Turso
+        # round trip once db() started talking over HTTP. A short cache on
+        # this one shared low-level path catches that pattern generically,
+        # without hand-auditing every caller across a dozen files. Only
+        # SELECTs are eligible -- a write must never be served from cache or
+        # silently deduped.
+        is_select = sql.lstrip()[:6].upper() == "SELECT"
+        cache_key = (sql, tuple(params)) if is_select else None
+        if cache_key is not None:
+            cached = self._query_cache.get(cache_key)
+            if cached and (time.time() - cached[0]) < self._QUERY_CACHE_TTL:
+                return cached[1]
         stmt = {"sql": sql}
         if params:
             stmt["args"] = [_encode_arg(p) for p in params]
@@ -198,13 +227,42 @@ class _TursoConnection:
         res = data["results"][0]
         if res.get("type") == "error":
             raise sqlite3.OperationalError(res["error"].get("message", "Turso error"))
-        return res["response"]["result"]
+        result = res["response"]["result"]
+        if cache_key is not None:
+            if len(self._query_cache) > 5000:  # crude cap against unbounded
+                self._query_cache.clear()       # growth over a long-lived process
+            self._query_cache[cache_key] = (time.time(), result)
+        return result
 
     def execute(self, sql, params=()):
         return _TursoCursor(self).execute(sql, params)
 
     def executemany(self, sql, seq_of_params):
         return _TursoCursor(self).executemany(sql, seq_of_params)
+
+    def batch_query(self, queries):
+        """queries: list of (sql, params) tuples. Sends them all as ONE HTTP
+        request (Hrana lets one pipeline call carry many "execute" ops) and
+        returns a list of row-lists in the same order -- for hot paths that
+        run several independent, unrelated SELECTs (e.g. /health checking N
+        cache keys, or a peer-comparison loop fetching N symbols' history)
+        where the bottleneck is round-trip count, not any single query."""
+        reqs = []
+        for sql, params in queries:
+            stmt = {"sql": sql}
+            if params:
+                stmt["args"] = [_encode_arg(p) for p in params]
+            reqs.append({"type": "execute", "stmt": stmt})
+        data = self._post(reqs)
+        out = []
+        for res in data["results"]:
+            if res.get("type") == "error":
+                raise sqlite3.OperationalError(res["error"].get("message", "Turso error"))
+            result = res["response"]["result"]
+            cols = [c["name"] for c in result.get("cols", [])]
+            rows = [_Row(zip(cols, [_decode_cell(v) for v in r])) for r in result.get("rows", [])]
+            out.append(rows)
+        return out
 
     def executescript(self, script):
         # This codebase's executescript() calls are simple CREATE TABLE/INDEX

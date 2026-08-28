@@ -457,9 +457,10 @@ def health():
 
     cache_keys = ("dss_scan", "alerts", "scan_brain", "backtest_run",
                   "walkforward", "regime_split", "discover_edges", "failure_analysis")
+    caches_raw = _scan_cache.latest_many(cache_keys)
     caches = {}
     for k in cache_keys:
-        c = _scan_cache.latest(k)
+        c = caches_raw[k]
         caches[k] = {"age_seconds": c["_cache_age_seconds"] if c else None,
                      "job_running": _bg_job_running(k)}
 
@@ -667,6 +668,31 @@ def ohlc_rows(symbol,limit=260):
     if cacheable:
         _ohlc_cache[(sym, limit)] = (time.time(), result)
     return result
+
+def ohlc_rows_multi(symbols, limit=300):
+    """Same per-symbol result as calling ohlc_rows() once per symbol, but as
+    ONE database round trip via a window-function query -- built for peer-
+    comparison loops (see _rs_multi_for's same-sector peers) that used to
+    call ohlc_rows() once per peer stock. That was free with local sqlite3;
+    once db() started talking to Turso over HTTP, a sector with 20+ peers
+    meant 20+ sequential network round trips for a single /dss/ request."""
+    ensure_ohlc()
+    syms = list(dict.fromkeys(s.upper() for s in symbols))  # de-dupe, keep order
+    if not syms:
+        return {}
+    placeholders = ",".join("?" * len(syms))
+    sql = f"""SELECT symbol, trade_date, open, high, low, close, volume, source FROM (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trade_date DESC) AS rn
+        FROM daily_ohlc WHERE symbol IN ({placeholders})
+    ) WHERE rn <= ?"""
+    with db() as c:
+        rows = c.execute(sql, (*syms, limit)).fetchall()
+    out = {s: [] for s in syms}
+    for r in rows:
+        out[r["symbol"]].append(dict(r))
+    for s in out:
+        out[s] = list(reversed(out[s]))  # ascending, matching ohlc_rows()
+    return out
 
 def tr_values(a):
     out=[]
@@ -1615,9 +1641,8 @@ def _rs_multi_for(sym, a, rows=None):
     if q:
         cov = ohlc_coverage()
         peer_syms = {r["symbol"] for r in cov if r["symbol"] != sym}
-        for x in rows:
-            if x["symbol"] in peer_syms and x["sector"] == q["sector"]:
-                peers[x["symbol"]] = ohlc_rows(x["symbol"], 300)
+        same_sector = [x["symbol"] for x in rows if x["symbol"] in peer_syms and x["sector"] == q["sector"]]
+        peers = ohlc_rows_multi(same_sector, 300)
     return _rse.compute(a, idx_hist, peers)
 
 

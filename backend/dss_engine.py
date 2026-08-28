@@ -313,9 +313,10 @@ def _historical_stats_component(current_patterns):
     if not current_patterns:
         return _component("Historical Pattern Statistics", "historical_stats", "neutral", 0,
                            "No pattern currently active on this stock to look up.")
+    stats_by_pattern = _bt.pattern_stats_multi(current_patterns, STATS_HORIZON, run_id=run["id"])
     best = None
     for pat in current_patterns:
-        st = _bt.pattern_stats(pat, STATS_HORIZON, run_id=run["id"])
+        st = stats_by_pattern.get(pat)
         if st and st["n"] > 0 and (best is None or st["n"] > best[1]["n"]):
             best = (pat, st)
     if not best:
@@ -348,9 +349,10 @@ def _quant_validation_component(current_patterns):
         return _component("Quantitative Baseline Validation", "quant_validation", "pending", 0,
                            "No active pattern to validate.")
     baseline = _bt.baseline_stats("random_entry", STATS_HORIZON, run_id=run["id"])
+    stats_by_pattern = _bt.pattern_stats_multi(current_patterns, STATS_HORIZON, run_id=run["id"])
     best = None
     for pat in current_patterns:
-        st = _bt.pattern_stats(pat, STATS_HORIZON, run_id=run["id"])
+        st = stats_by_pattern.get(pat)
         if st and st["n"] > 0 and not st["low_sample"] and (best is None or st["n"] > best[1]["n"]):
             best = (pat, st)
     if not best or not baseline:
