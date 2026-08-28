@@ -671,25 +671,37 @@ def ohlc_rows(symbol,limit=260):
 
 def ohlc_rows_multi(symbols, limit=300):
     """Same per-symbol result as calling ohlc_rows() once per symbol, but as
-    ONE database round trip via a window-function query -- built for peer-
-    comparison loops (see _rs_multi_for's same-sector peers) that used to
-    call ohlc_rows() once per peer stock. That was free with local sqlite3;
-    once db() started talking to Turso over HTTP, a sector with 20+ peers
-    meant 20+ sequential network round trips for a single /dss/ request."""
+    ONE database round trip -- built for peer-comparison loops (see
+    _rs_multi_for's same-sector peers) that used to call ohlc_rows() once
+    per peer stock. That was free with local sqlite3; once db() started
+    talking to Turso over HTTP, a sector with 20+ peers meant 20+ sequential
+    network round trips for a single /dss/ request.
+
+    Deliberately NOT a single ROW_NUMBER()-over-PARTITION-BY query across
+    all symbols at once: that shape has to read and rank a symbol's ENTIRE
+    stored history before it can hand back the last `limit` rows, which
+    burns through Turso's rows-read quota far faster than the round-trip
+    count suggests (a first version of this function did exactly that and
+    contributed to tripping a usage warning). Sending N separate per-symbol
+    `WHERE symbol=? ORDER BY trade_date DESC LIMIT ?` queries in one HTTP
+    batch keeps the round-trip win while each query stays index-satisfied
+    (daily_ohlc's PRIMARY KEY is (symbol, trade_date)) and only reads the
+    rows actually needed."""
     ensure_ohlc()
     syms = list(dict.fromkeys(s.upper() for s in symbols))  # de-dupe, keep order
     if not syms:
         return {}
-    placeholders = ",".join("?" * len(syms))
-    sql = f"""SELECT symbol, trade_date, open, high, low, close, volume, source FROM (
-        SELECT *, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trade_date DESC) AS rn
-        FROM daily_ohlc WHERE symbol IN ({placeholders})
-    ) WHERE rn <= ?"""
-    with db() as c:
-        rows = c.execute(sql, (*syms, limit)).fetchall()
-    out = {s: [] for s in syms}
-    for r in rows:
-        out[r["symbol"]].append(dict(r))
+    queries = [("SELECT * FROM daily_ohlc WHERE symbol=? ORDER BY trade_date DESC LIMIT ?", (s, limit))
+               for s in syms]
+    if turso_db.USING_TURSO:
+        conn = turso_db.get_connection()
+        results = conn.batch_query(queries)
+    else:
+        c = db()
+        results = [c.execute(sql, params).fetchall() for sql, params in queries]
+    out = {}
+    for s, rows in zip(syms, results):
+        out[s] = [dict(r) for r in rows]
     for s in out:
         out[s] = list(reversed(out[s]))  # ascending, matching ohlc_rows()
     return out
