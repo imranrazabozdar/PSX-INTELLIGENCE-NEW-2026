@@ -2546,9 +2546,15 @@ WATCHLIST_SYMBOLS = [
     'TBL', 'STL', 'STLR', 'MLCF', 'CHCC', 'WTL', 'PTC', 'QTECH', 'ITANZ',
 ]
 WATCHLIST_REFRESH_INTERVAL = int(os.getenv("PSX_WATCHLIST_REFRESH_INTERVAL", "1800"))  # 30 min
-# PSX's actual session is ~09:30-15:30 PKT; a little padding on each side so
-# a 30-min-interval loop doesn't miss the open/close by a few minutes.
-WATCHLIST_HOURS_PKT = (9, 15, 30)  # start hour, end hour, end minute
+# User-confirmed PSX session times -- Friday genuinely differs from the rest
+# of the week (later close), not a typo. weekday(): Mon=0 .. Fri=4.
+WATCHLIST_HOURS_PKT = {
+    0: ((9, 45), (15, 30)),  # Monday
+    1: ((9, 45), (15, 30)),  # Tuesday
+    2: ((9, 45), (15, 30)),  # Wednesday
+    3: ((9, 45), (15, 30)),  # Thursday
+    4: ((9, 30), (16, 30)),  # Friday
+}
 
 
 def _is_market_week(now_pkt=None):
@@ -2557,14 +2563,17 @@ def _is_market_week(now_pkt=None):
 
 
 def _is_trading_hours(now_pkt=None):
-    """Weekday AND within the padded PSX session window -- the watchlist
-    loop should only spend quota while the market is actually open; a stock
-    that hasn't traded in hours doesn't need re-analysis every 30 min."""
+    """Weekday AND within that day's actual PSX session window -- the
+    watchlist loop should only spend quota while the market is actually
+    open; a stock that hasn't traded in hours doesn't need re-analysis
+    every 30 min. Friday's window is genuinely different (later close),
+    not a bug -- see WATCHLIST_HOURS_PKT."""
     now_pkt = now_pkt or datetime.now(PSX_TZ)
-    if not _is_market_week(now_pkt):
-        return False
-    start_h, end_h, end_m = WATCHLIST_HOURS_PKT
-    start = now_pkt.replace(hour=start_h, minute=0, second=0, microsecond=0)
+    window = WATCHLIST_HOURS_PKT.get(now_pkt.weekday())
+    if window is None:
+        return False  # Sat/Sun
+    (start_h, start_m), (end_h, end_m) = window
+    start = now_pkt.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
     end = now_pkt.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
     return start <= now_pkt <= end
 
