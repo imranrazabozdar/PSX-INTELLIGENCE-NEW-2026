@@ -412,28 +412,6 @@ def _fmt_vol(v):
     return f"{v:.0f}"
 
 
-def _mover_html(rows, price_key="price", pct_key="pct", vol_key="volume", names=None):
-    names = names or {}
-    out = []
-    for r in rows:
-        sym = r.get("symbol", "")
-        pct = r.get(pct_key)
-        up = (pct or 0) >= 0
-        cls = "up" if up else "down"
-        arrow = "▲" if up else "▼"
-        co = names.get(sym.upper(), "") if isinstance(sym, str) else ""
-        out.append(
-            f'<div class="psx-mover"><div class="psx-avatar">{_initials(sym)}</div>'
-            f'<div><div class="sym">{sym}</div><div class="co">{co}</div></div>'
-            f'<div class="right"><div class="price">{r.get(price_key, "—")}</div>'
-            f'<div class="chg {cls}">{arrow} {abs(pct):.2f}%</div></div></div>'
-            if pct is not None else
-            f'<div class="psx-mover"><div class="psx-avatar">{_initials(sym)}</div>'
-            f'<div><div class="sym">{sym}</div><div class="co">{co}</div></div></div>'
-        )
-    return "".join(out)
-
-
 def _range_gauge_html(lo, hi, val, lo_label="Low", hi_label="High", fmt=None):
     """Visual range slider — Investify-style Day's Range/52-Week Range gauge:
     colored low/high endpoints, a dot at the current value's position, and a
@@ -683,18 +661,32 @@ def _render_watchlist_section(key_prefix):
         return
     st.caption(f"Last refreshed {age_str} · {len(rows)}/{len(wl.get('symbols') or [])} symbols with a result")
     wdf = pd.DataFrame(rows).sort_values("evidence score", ascending=False, na_position="last")
-    wsel = st.dataframe(
-        wdf, use_container_width=True, height=380, hide_index=True,
-        on_select="rerun", selection_mode="single-row", key=f"watchlist_table_{key_prefix}",
-        column_config={
-            "evidence score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f"),
-            "price": st.column_config.NumberColumn(format="%.2f"),
-            "chg %": st.column_config.NumberColumn(format="%.2f%%"),
-        })
-    wrows = wsel.selection.rows if wsel and wsel.selection else []
-    if wrows:
-        st.session_state.research_symbol = wdf.iloc[wrows[0]]["symbol"]
+    watchlist_col_cfg = {
+        "evidence score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f"),
+        "price": st.column_config.NumberColumn(format="%.2f"),
+        "chg %": st.column_config.NumberColumn(format="%.2f%%"),
+    }
+
+    st.markdown(f"**🏆 Top 10 Right Now** (of {len(rows)} tracked, ranked by evidence score)")
+    top10 = wdf.head(10)
+    tsel = st.dataframe(
+        top10, use_container_width=True, hide_index=True,
+        on_select="rerun", selection_mode="single-row", key=f"watchlist_top10_{key_prefix}",
+        column_config=watchlist_col_cfg)
+    trows = tsel.selection.rows if tsel and tsel.selection else []
+    if trows:
+        st.session_state.research_symbol = top10.iloc[trows[0]]["symbol"]
         st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
+
+    with st.expander(f"All {len(rows)} watchlist symbols"):
+        wsel = st.dataframe(
+            wdf, use_container_width=True, height=380, hide_index=True,
+            on_select="rerun", selection_mode="single-row", key=f"watchlist_table_{key_prefix}",
+            column_config=watchlist_col_cfg)
+        wrows = wsel.selection.rows if wsel and wsel.selection else []
+        if wrows:
+            st.session_state.research_symbol = wdf.iloc[wrows[0]]["symbol"]
+            st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
 
 
 _backend_ok = _backend_up()
@@ -830,83 +822,9 @@ with tab_home:
         else:
             st.caption("Market command center unavailable.")
 
-    names = _company_names()
-
-    st.markdown('<div class="psx-section-eyebrow">MARKET SNAPSHOT</div>'
-                '<div class="psx-section-title">PSX Market Overview</div>', unsafe_allow_html=True)
-    f1, f2 = st.columns([1, 2])
-    with f1:
-        min_vol = st.number_input("Min volume", step=10_000, key="home_min_vol",
-                                   on_change=_sync_cb("min_volume", "home_min_vol"))
-    with f2:
-        search = st.text_input("🔍 Search symbol or company", placeholder="e.g. OGDC, Oil & Gas...")
-    rows = _get("/market", min_volume=min_vol)
-
-    if isinstance(rows, list) and rows:
-        df = pd.DataFrame(rows)
-
-        b = _get("/breadth")
-        if isinstance(b, dict) and "advancing" in b:
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Advancing", b["advancing"])
-            m2.metric("Declining", b["declining"])
-            m3.metric("Breadth %", f"{b['breadth_pct']}%")
-
-        gc, lc, ac = st.columns(3)
-        by_pct = df.dropna(subset=["pct"]).sort_values("pct", ascending=False) if "pct" in df.columns else df
-        with gc:
-            st.markdown('<div class="psx-card"><b>⚡ Gainers</b>' +
-                        _mover_html(by_pct.head(6).to_dict("records"), names=names) +
-                        '</div>', unsafe_allow_html=True)
-        with lc:
-            st.markdown('<div class="psx-card"><b>📉 Losers</b>' +
-                        _mover_html(by_pct.tail(6).sort_values("pct").to_dict("records"), names=names) +
-                        '</div>', unsafe_allow_html=True)
-        with ac:
-            by_vol = df.sort_values("volume", ascending=False) if "volume" in df.columns else df
-            st.markdown('<div class="psx-card"><b>🔥 Most Active</b>' +
-                        _mover_html(by_vol.head(6).to_dict("records"), names=names) +
-                        '</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-        view = df.copy()
-        if search:
-            s = search.strip().lower()
-            nm = view["symbol"].map(lambda x: names.get(str(x).upper(), ""))
-            view = view[view["symbol"].str.lower().str.contains(s, na=False) |
-                        nm.str.lower().str.contains(s, na=False)]
-        cols = ["symbol", "name", "sector", "price", "pct", "volume", "score", "setup"]
-        home_df = (view[[c for c in cols if c in view.columns]]
-                   .rename(columns={"name": "company", "pct": "chg %"})
-                   .sort_values("chg %", ascending=False))
-        home_col_cfg = {"score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
-                        "price": st.column_config.NumberColumn("Price", format="%.2f"),
-                        "chg %": st.column_config.NumberColumn("Chg %", format="%.2f%%"),
-                        "volume": st.column_config.NumberColumn("Volume", format="compact")}
-        st.dataframe(
-            home_df, use_container_width=True, height=420, hide_index=True,
-            column_config={k: v for k, v in home_col_cfg.items() if k in home_df.columns},
-        )
-    else:
-        # rows can be a non-list error dict OR a genuinely empty list (e.g. a
-        # min-volume filter with no matches) — only dicts have .get().
-        reason = rows.get("reason") if isinstance(rows, dict) else None
-        st.warning(reason or "No market data returned. Is the backend reachable and PSX portal up?")
-
-    st.markdown('<div class="psx-section-eyebrow">PSX SECTORS</div>'
-                '<div class="psx-section-title">Sector Performance</div>', unsafe_allow_html=True)
-    sec = _get("/sectors")
-    if isinstance(sec, list) and sec:
-        chips = []
-        for s in sorted(sec, key=lambda x: -(x.get("avg_pct") or 0)):
-            pct = s.get("avg_pct")
-            cls = "up" if (pct or 0) >= 0 else "down"
-            chips.append(
-                f'<div class="psx-chip"><div class="name">{s.get("sector", "—")}</div>'
-                f'<div class="stat">{s.get("n", 0)} stocks · vol {_fmt_vol(s.get("volume"))} · '
-                f'<b class="{cls}">{pct:+.2f}%</b></div></div>'
-            )
-        st.markdown(f'<div class="psx-chip-grid">{"".join(chips)}</div>', unsafe_allow_html=True)
+    st.caption("Home now shows only the curated watchlist above, not the exhaustive whole-market list — "
+               "keeps data usage down. A full whole-market snapshot is available on-demand from the "
+               "Screener tab.")
 
 # ----------------------------------------------------------- Screener ----
 with tab_screener:
@@ -922,223 +840,240 @@ with tab_screener:
 
     _render_watchlist_section("screener")
 
-    op_min_vol = st.number_input("Min volume (applies to all three below)", step=10_000, key="op_vol",
-                                  on_change=_sync_cb("min_volume", "op_vol"))
-
-    # Pre-fetch both scans (cheap — cached client- and server-side) so the
-    # consensus section below can cross-reference them before either
-    # section's own detailed UI renders further down this tab.
-    if "dss_scan_result" not in st.session_state:
-        st.session_state["dss_scan_result"] = _get("/dss-scan")
-    if "brain_scan_result" not in st.session_state:
-        st.session_state["brain_scan_result"] = _get("/scan")
-    _sr_pre = st.session_state.get("dss_scan_result")
-    _br_pre = st.session_state.get("brain_scan_result")
-
-    consensus = _compute_consensus(_sr_pre, _br_pre)
-    st.markdown('<div class="psx-section-eyebrow">CONSENSUS</div>'
-                '<div class="psx-section-title">🤝 Where The Two Independent Engines Agree</div>',
-                unsafe_allow_html=True)
+    if "show_whole_market_scan" not in st.session_state:
+        st.session_state.show_whole_market_scan = False
     with st.container(border=True):
-        st.caption("DSS (Wyckoff + regime + backtested stats) and psx_brain (trend/momentum trade-plan "
-                   "verdicts) are built independently and can legitimately disagree — this cross-references "
-                   "their named buy/avoid buckets rather than blending scores into one fabricated number. "
-                   "Agreement here is a stronger signal than either engine alone; disagreement is worth "
-                   "investigating, not a bug.")
-        if consensus is None:
-            st.info("Waiting on both scans below to finish loading — consensus appears once the Primary "
-                    "Ranking and Whole-Book Scan sections have real data.")
-        else:
-            if consensus["agree_buy"]:
-                st.markdown(f"**✅ Both engines bullish on these ({len(consensus['agree_buy'])})**")
-                rows = [{"symbol": s, "DSS action": d.get("action"), "DSS score": d.get("score"),
-                        "psx_brain verdict": b.get("verdict"), "psx_brain confidence": b.get("confidence")}
-                        for s, d, b in consensus["agree_buy"]]
-                cdf = pd.DataFrame(rows)
-                csel = st.dataframe(cdf, use_container_width=True, hide_index=True,
-                                    on_select="rerun", selection_mode="single-row", key="consensus_buy_table",
-                                    column_config={
-                                        "DSS score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f"),
-                                        "psx_brain confidence": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f")})
-                crows = csel.selection.rows if csel and csel.selection else []
-                if crows:
-                    st.session_state.research_symbol = cdf.iloc[crows[0]]["symbol"]
-                    st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
+        st.markdown("**📊 Full Whole-Market Scan** — on-demand only, since it reads far more "
+                    "data than the watchlist above.")
+        wm_col1, wm_col2 = st.columns([1, 3])
+        with wm_col1:
+            if not st.session_state.show_whole_market_scan:
+                if st.button("Load whole-market scan"):
+                    st.session_state.show_whole_market_scan = True
+                    st.rerun()
             else:
-                st.info("No symbols right now where both engines are independently bullish — an honest "
-                        "result, not a bug. Check back after the next auto-refresh.")
+                if st.button("Hide whole-market scan"):
+                    st.session_state.show_whole_market_scan = False
+                    st.rerun()
 
-            if consensus["agree_avoid"]:
-                st.markdown(f"**🔴 Both engines bearish on these ({len(consensus['agree_avoid'])})**")
-                rows = [{"symbol": s, "DSS action": d.get("action"), "DSS score": d.get("score"),
-                        "psx_brain verdict": b.get("verdict")} for s, d, b in consensus["agree_avoid"]]
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    if st.session_state.show_whole_market_scan:
+        op_min_vol = st.number_input("Min volume (applies to all three below)", step=10_000, key="op_vol",
+                                      on_change=_sync_cb("min_volume", "op_vol"))
 
-            if consensus["disagree"]:
-                with st.expander(f"⚠️ Where they disagree ({len(consensus['disagree'])}) — shown, not hidden"):
-                    rows = [{"symbol": s, "DSS reads": f"{d.get('action')} (score {d.get('score')})",
-                            "psx_brain reads": f"{b.get('verdict')} (confidence {b.get('confidence')})",
-                            "note": note} for s, d, b, note in consensus["disagree"]]
+        # Pre-fetch both scans (cheap — cached client- and server-side) so the
+        # consensus section below can cross-reference them before either
+        # section's own detailed UI renders further down this tab.
+        if "dss_scan_result" not in st.session_state:
+            st.session_state["dss_scan_result"] = _get("/dss-scan")
+        if "brain_scan_result" not in st.session_state:
+            st.session_state["brain_scan_result"] = _get("/scan")
+        _sr_pre = st.session_state.get("dss_scan_result")
+        _br_pre = st.session_state.get("brain_scan_result")
+
+        consensus = _compute_consensus(_sr_pre, _br_pre)
+        st.markdown('<div class="psx-section-eyebrow">CONSENSUS</div>'
+                    '<div class="psx-section-title">🤝 Where The Two Independent Engines Agree</div>',
+                    unsafe_allow_html=True)
+        with st.container(border=True):
+            st.caption("DSS (Wyckoff + regime + backtested stats) and psx_brain (trend/momentum trade-plan "
+                       "verdicts) are built independently and can legitimately disagree — this cross-references "
+                       "their named buy/avoid buckets rather than blending scores into one fabricated number. "
+                       "Agreement here is a stronger signal than either engine alone; disagreement is worth "
+                       "investigating, not a bug.")
+            if consensus is None:
+                st.info("Waiting on both scans below to finish loading — consensus appears once the Primary "
+                        "Ranking and Whole-Book Scan sections have real data.")
+            else:
+                if consensus["agree_buy"]:
+                    st.markdown(f"**✅ Both engines bullish on these ({len(consensus['agree_buy'])})**")
+                    rows = [{"symbol": s, "DSS action": d.get("action"), "DSS score": d.get("score"),
+                            "psx_brain verdict": b.get("verdict"), "psx_brain confidence": b.get("confidence")}
+                            for s, d, b in consensus["agree_buy"]]
+                    cdf = pd.DataFrame(rows)
+                    csel = st.dataframe(cdf, use_container_width=True, hide_index=True,
+                                        on_select="rerun", selection_mode="single-row", key="consensus_buy_table",
+                                        column_config={
+                                            "DSS score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f"),
+                                            "psx_brain confidence": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f")})
+                    crows = csel.selection.rows if csel and csel.selection else []
+                    if crows:
+                        st.session_state.research_symbol = cdf.iloc[crows[0]]["symbol"]
+                        st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
+                else:
+                    st.info("No symbols right now where both engines are independently bullish — an honest "
+                            "result, not a bug. Check back after the next auto-refresh.")
+
+                if consensus["agree_avoid"]:
+                    st.markdown(f"**🔴 Both engines bearish on these ({len(consensus['agree_avoid'])})**")
+                    rows = [{"symbol": s, "DSS action": d.get("action"), "DSS score": d.get("score"),
+                            "psx_brain verdict": b.get("verdict")} for s, d, b in consensus["agree_avoid"]]
                     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    st.markdown('<div class="psx-section-eyebrow">PRIMARY RANKING</div>'
-                '<div class="psx-section-title">🎯 Decision Support Market Scanner</div>', unsafe_allow_html=True)
-    with st.container(border=True):
-        st.caption("Runs the full Decision Support System (confluence matrix, evidence score, Wyckoff, "
-                   "candlesticks, real backtest stats) over every symbol with stored true-OHLC, then ranks "
-                   "into named buckets. Same engine each stock's own Stock Research page uses. The backend "
-                   "auto-refreshes this in the background, so loading this tab is instant — prices are "
-                   "patched live on top of the cached analysis.")
-        status = _get("/dss-scan/status")
-        if status.get("status") == "ok":
-            age_min = round(status["age_seconds"] / 60, 1)
-            running_note = " · a background refresh is running right now" if status.get("job_running") else ""
-            st.caption(f"📦 Cached scan: {status['scanned']} symbols · last full analysis {age_min} min ago "
-                       f"(auto-refreshes every {round(status['max_age_seconds']/60)} min) · "
-                       f"prices refreshed live{running_note}.")
-        elif status.get("status") == "never_run":
-            st.info("No scan cached yet — the backend runs one automatically shortly after startup "
-                    "(can take a few minutes for the full backfilled universe), or force one now below.")
-        scan_token = _admin_token_input("dssscan_token")
-        force_col1, force_col2 = st.columns([1, 3])
-        with force_col1:
-            force_rescan = st.button("Refresh in background", type="secondary")
-        # The backend ALWAYS returns real data instantly if any exists — a full
-        # universe scan can take several minutes, so this never blocks the page
-        # on it. force just kicks off a background recompute; the response you
-        # get back right after clicking is still last known good data, and the
-        # fresh result shows up next time this section reloads once it lands.
-        params = {}
-        if force_rescan:
-            params["force"] = "true"
-            if scan_token:
-                params["token"] = scan_token
-            kickoff = requests.get(f"{BACKEND}/dss-scan", params=params, timeout=30).json()
-            if kickoff.get("status") == "forbidden":
-                st.error(kickoff.get("reason"))
-            else:
-                st.session_state["dss_scan_result"] = kickoff
-                if kickoff.get("_background_refresh_running"):
-                    st.toast("Full recompute started in the background — showing last known data below; "
-                             "reload this section in a few minutes for the fresh scan.", icon="🔄")
-        elif "dss_scan_result" not in st.session_state:
-            st.session_state["dss_scan_result"] = _get("/dss-scan")
-        sr = st.session_state.get("dss_scan_result")
-        if sr and "top_10_strongest_buy_setups" in sr:
-            if sr.get("_background_refresh_running"):
-                st.caption("🔄 A background refresh is in progress — the data below is the last completed scan.")
-            st.caption(f"Scanned {sr.get('scanned')} symbols · market regime "
-                       f"{(sr.get('market_regime') or {}).get('label','—')}")
-            buckets = [
-                ("🟢 Top 10 Strongest Buy Setups", "top_10_strongest_buy_setups"),
-                ("🔵 Top 10 Accumulation Setups", "top_10_accumulation_setups"),
-                ("🔷 Top 10 Reaccumulation Setups", "top_10_reaccumulation_setups"),
-                ("🚀 Top 10 Breakout Setups", "top_10_breakout_setups"),
-                ("👀 Top 10 Early Reversal Watchlist", "top_10_early_reversal_watchlist"),
-                ("💪 Top 10 Strongest Relative-Strength Stocks", "top_10_strongest_relative_strength"),
-                ("🟠 Top 10 Distribution Warnings", "top_10_distribution_warnings"),
-                ("🔴 Top 10 Markdown / Avoid Stocks", "top_10_markdown_avoid"),
-            ]
-            cols_per_row = ["symbol", "name", "sector", "price", "pct", "phase", "signal_stage", "score",
-                            "grade", "action", "rs_vs_index", "rs_class", "entry", "stop", "target", "rr"]
-            for label, key in buckets:
-                items = sr.get(key, [])
-                if not items:
-                    continue
-                st.markdown(f"**{label}** ({len(items)})")
-                df_ = pd.DataFrame(items)
-                shown_cols = [c for c in cols_per_row if c in df_.columns]
-                col_cfg = {"score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
-                           "price": st.column_config.NumberColumn("Price", format="%.2f"),
-                           "pct": st.column_config.NumberColumn("Chg %", format="%.2f%%")}
-                dsel = st.dataframe(df_[shown_cols],
-                            use_container_width=True, hide_index=True, height=min(38 * (len(items) + 1) + 3, 420),
-                            on_select="rerun", selection_mode="single-row", key=f"dss_bucket_{key}",
-                            column_config={k: v for k, v in col_cfg.items() if k in shown_cols})
-                drows = dsel.selection.rows if dsel and dsel.selection else []
-                if drows:
-                    st.session_state.research_symbol = df_.iloc[drows[0]]["symbol"]
+                if consensus["disagree"]:
+                    with st.expander(f"⚠️ Where they disagree ({len(consensus['disagree'])}) — shown, not hidden"):
+                        rows = [{"symbol": s, "DSS reads": f"{d.get('action')} (score {d.get('score')})",
+                                "psx_brain reads": f"{b.get('verdict')} (confidence {b.get('confidence')})",
+                                "note": note} for s, d, b, note in consensus["disagree"]]
+                        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        st.markdown('<div class="psx-section-eyebrow">PRIMARY RANKING</div>'
+                    '<div class="psx-section-title">🎯 Decision Support Market Scanner</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.caption("Runs the full Decision Support System (confluence matrix, evidence score, Wyckoff, "
+                       "candlesticks, real backtest stats) over every symbol with stored true-OHLC, then ranks "
+                       "into named buckets. Same engine each stock's own Stock Research page uses. The backend "
+                       "auto-refreshes this in the background, so loading this tab is instant — prices are "
+                       "patched live on top of the cached analysis.")
+            status = _get("/dss-scan/status")
+            if status.get("status") == "ok":
+                age_min = round(status["age_seconds"] / 60, 1)
+                running_note = " · a background refresh is running right now" if status.get("job_running") else ""
+                st.caption(f"📦 Cached scan: {status['scanned']} symbols · last full analysis {age_min} min ago "
+                           f"(auto-refreshes every {round(status['max_age_seconds']/60)} min) · "
+                           f"prices refreshed live{running_note}.")
+            elif status.get("status") == "never_run":
+                st.info("No scan cached yet — the backend runs one automatically shortly after startup "
+                        "(can take a few minutes for the full backfilled universe), or force one now below.")
+            scan_token = _admin_token_input("dssscan_token")
+            force_col1, force_col2 = st.columns([1, 3])
+            with force_col1:
+                force_rescan = st.button("Refresh in background", type="secondary")
+            # The backend ALWAYS returns real data instantly if any exists — a full
+            # universe scan can take several minutes, so this never blocks the page
+            # on it. force just kicks off a background recompute; the response you
+            # get back right after clicking is still last known good data, and the
+            # fresh result shows up next time this section reloads once it lands.
+            params = {}
+            if force_rescan:
+                params["force"] = "true"
+                if scan_token:
+                    params["token"] = scan_token
+                kickoff = requests.get(f"{BACKEND}/dss-scan", params=params, timeout=30).json()
+                if kickoff.get("status") == "forbidden":
+                    st.error(kickoff.get("reason"))
+                else:
+                    st.session_state["dss_scan_result"] = kickoff
+                    if kickoff.get("_background_refresh_running"):
+                        st.toast("Full recompute started in the background — showing last known data below; "
+                                 "reload this section in a few minutes for the fresh scan.", icon="🔄")
+            elif "dss_scan_result" not in st.session_state:
+                st.session_state["dss_scan_result"] = _get("/dss-scan")
+            sr = st.session_state.get("dss_scan_result")
+            if sr and "top_10_strongest_buy_setups" in sr:
+                if sr.get("_background_refresh_running"):
+                    st.caption("🔄 A background refresh is in progress — the data below is the last completed scan.")
+                st.caption(f"Scanned {sr.get('scanned')} symbols · market regime "
+                           f"{(sr.get('market_regime') or {}).get('label','—')}")
+                buckets = [
+                    ("🟢 Top 10 Strongest Buy Setups", "top_10_strongest_buy_setups"),
+                    ("🔵 Top 10 Accumulation Setups", "top_10_accumulation_setups"),
+                    ("🔷 Top 10 Reaccumulation Setups", "top_10_reaccumulation_setups"),
+                    ("🚀 Top 10 Breakout Setups", "top_10_breakout_setups"),
+                    ("👀 Top 10 Early Reversal Watchlist", "top_10_early_reversal_watchlist"),
+                    ("💪 Top 10 Strongest Relative-Strength Stocks", "top_10_strongest_relative_strength"),
+                    ("🟠 Top 10 Distribution Warnings", "top_10_distribution_warnings"),
+                    ("🔴 Top 10 Markdown / Avoid Stocks", "top_10_markdown_avoid"),
+                ]
+                cols_per_row = ["symbol", "name", "sector", "price", "pct", "phase", "signal_stage", "score",
+                                "grade", "action", "rs_vs_index", "rs_class", "entry", "stop", "target", "rr"]
+                for label, key in buckets:
+                    items = sr.get(key, [])
+                    if not items:
+                        continue
+                    st.markdown(f"**{label}** ({len(items)})")
+                    df_ = pd.DataFrame(items)
+                    shown_cols = [c for c in cols_per_row if c in df_.columns]
+                    col_cfg = {"score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
+                               "price": st.column_config.NumberColumn("Price", format="%.2f"),
+                               "pct": st.column_config.NumberColumn("Chg %", format="%.2f%%")}
+                    dsel = st.dataframe(df_[shown_cols],
+                                use_container_width=True, hide_index=True, height=min(38 * (len(items) + 1) + 3, 420),
+                                on_select="rerun", selection_mode="single-row", key=f"dss_bucket_{key}",
+                                column_config={k: v for k, v in col_cfg.items() if k in shown_cols})
+                    drows = dsel.selection.rows if dsel and dsel.selection else []
+                    if drows:
+                        st.session_state.research_symbol = df_.iloc[drows[0]]["symbol"]
+                        st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
+
+        st.markdown('<div class="psx-section-eyebrow">SECOND OPINION</div>'
+                    '<div class="psx-section-title">🧠 Conviction Ranking</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.caption("A different methodology: liquidity/momentum/trend/structure/Wyckoff/fundamentals blend "
+                       "over every liquid symbol in the live market (not just the backfilled-history subset the "
+                       "primary ranking above uses). Worth checking when it agrees or disagrees with the primary "
+                       "ranking — it isn't a subset or a looser version of it.")
+            ranked = _get("/ranked-opportunities", limit=40)
+            if isinstance(ranked, list) and ranked:
+                names_ = _company_names()
+                rdf = pd.DataFrame(ranked)
+                rdf.insert(1, "company", rdf["symbol"].map(lambda s: names_.get(str(s).upper(), "")))
+                display_cols = [c for c in ["symbol", "company", "sector", "price", "pct", "score", "label"]
+                                if c in rdf.columns]
+                conv_col_cfg = {"score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
+                                "price": st.column_config.NumberColumn("Price", format="%.2f"),
+                                "pct": st.column_config.NumberColumn("Chg %", format="%.2f%%")}
+                sel = st.dataframe(rdf[display_cols], use_container_width=True, hide_index=True, height=380,
+                                   on_select="rerun", selection_mode="single-row", key="conviction_rank_table",
+                                   column_config={k: v for k, v in conv_col_cfg.items() if k in display_cols})
+                rows_sel = sel.selection.rows if sel and sel.selection else []
+                if rows_sel:
+                    st.session_state.research_symbol = rdf.iloc[rows_sel[0]]["symbol"]
                     st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
+            else:
+                st.info("Conviction ranking unavailable.")
 
-    st.markdown('<div class="psx-section-eyebrow">SECOND OPINION</div>'
-                '<div class="psx-section-title">🧠 Conviction Ranking</div>', unsafe_allow_html=True)
-    with st.container(border=True):
-        st.caption("A different methodology: liquidity/momentum/trend/structure/Wyckoff/fundamentals blend "
-                   "over every liquid symbol in the live market (not just the backfilled-history subset the "
-                   "primary ranking above uses). Worth checking when it agrees or disagrees with the primary "
-                   "ranking — it isn't a subset or a looser version of it.")
-        ranked = _get("/ranked-opportunities", limit=40)
-        if isinstance(ranked, list) and ranked:
-            names_ = _company_names()
-            rdf = pd.DataFrame(ranked)
-            rdf.insert(1, "company", rdf["symbol"].map(lambda s: names_.get(str(s).upper(), "")))
-            display_cols = [c for c in ["symbol", "company", "sector", "price", "pct", "score", "label"]
-                            if c in rdf.columns]
-            conv_col_cfg = {"score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
-                            "price": st.column_config.NumberColumn("Price", format="%.2f"),
-                            "pct": st.column_config.NumberColumn("Chg %", format="%.2f%%")}
-            sel = st.dataframe(rdf[display_cols], use_container_width=True, hide_index=True, height=380,
-                               on_select="rerun", selection_mode="single-row", key="conviction_rank_table",
-                               column_config={k: v for k, v in conv_col_cfg.items() if k in display_cols})
-            rows_sel = sel.selection.rows if sel and sel.selection else []
-            if rows_sel:
-                st.session_state.research_symbol = rdf.iloc[rows_sel[0]]["symbol"]
-                st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
-        else:
-            st.info("Conviction ranking unavailable.")
-
-    st.markdown('<div class="psx-section-eyebrow">SECOND OPINION</div>'
-                '<div class="psx-section-title">📈 Whole-Book Scan (psx_brain)</div>', unsafe_allow_html=True)
-    with st.container(border=True):
-        st.caption("A third, independent methodology: full-indicator trade-plan verdicts (BUY/WAIT/SELL with "
-                   "entry/stop/target) over the most liquid names. Expensive — fetches OHLCV + runs the full "
-                   "indicator engine per symbol. Requires PSX_ADMIN_TOKEN on the backend unless called from "
-                   "localhost.")
-        admin_token = _admin_token_input("scan_token")
-        is_default_scan = op_min_vol == _SYNC_DEFAULTS.get("home_min_vol", 50_000)
-        if st.button("Run scan", type="primary"):
-            params = {"min_volume": op_min_vol, "limit": 40, "top": 20}
-            if admin_token:
-                params["token"] = admin_token
-            # With min_volume/limit/top at their defaults this returns real
-            # cached data instantly (and refreshes in the background if
-            # stale) — never blocks the page. A non-default min_volume runs
-            # synchronously and can take a little while, hence the spinner.
-            with st.spinner("Scanning..."):
-                r = requests.get(f"{BACKEND}/scan", params=params, timeout=180).json()
-            if is_default_scan and r.get("ranked"):
-                st.session_state["brain_scan_result"] = r
-        else:
-            # No click this run — show whatever was already pre-fetched at
-            # the top of this tab (for the consensus section) rather than an
-            # empty panel until someone clicks. Non-default min_volume still
-            # needs an explicit click since it's not the pre-fetched default.
-            r = _br_pre if is_default_scan else None
-        if r is None:
-            st.caption("Adjust the min-volume filter above, then click **Run scan** for this custom view.")
-        elif r.get("status") == "forbidden":
-            st.error(r.get("reason"))
-        elif r.get("status") == "running":
-            st.info(r.get("reason", "First scan is running in the background — check back shortly."))
-        elif r.get("ranked"):
-            if r.get("_background_refresh_running"):
-                st.caption("🔄 A background refresh is in progress — showing the last completed scan.")
-            st.text(r.get("commentary", ""))
-            bdf = _with_company(pd.DataFrame(r["ranked"]))
-            brain_col_cfg = {"confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=100, format="%.0f"),
-                             "price": st.column_config.NumberColumn("Price", format="%.2f")}
-            bsel = st.dataframe(bdf, use_container_width=True, hide_index=True, height=420,
-                                on_select="rerun", selection_mode="single-row", key="brain_scan_table",
-                                column_config={k: v for k, v in brain_col_cfg.items() if k in bdf.columns})
-            brows = bsel.selection.rows if bsel and bsel.selection else []
-            if brows and "symbol" in bdf.columns:
-                st.session_state.research_symbol = bdf.iloc[brows[0]]["symbol"]
-                st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
-            if r.get("skipped"):
-                with st.expander(f"Skipped ({len(r['skipped'])})"):
-                    st.json(r["skipped"])
-        else:
-            st.warning(r.get("reason", "Scan returned nothing."))
+        st.markdown('<div class="psx-section-eyebrow">SECOND OPINION</div>'
+                    '<div class="psx-section-title">📈 Whole-Book Scan (psx_brain)</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.caption("A third, independent methodology: full-indicator trade-plan verdicts (BUY/WAIT/SELL with "
+                       "entry/stop/target) over the most liquid names. Expensive — fetches OHLCV + runs the full "
+                       "indicator engine per symbol. Requires PSX_ADMIN_TOKEN on the backend unless called from "
+                       "localhost.")
+            admin_token = _admin_token_input("scan_token")
+            is_default_scan = op_min_vol == _SYNC_DEFAULTS.get("home_min_vol", 50_000)
+            if st.button("Run scan", type="primary"):
+                params = {"min_volume": op_min_vol, "limit": 40, "top": 20}
+                if admin_token:
+                    params["token"] = admin_token
+                # With min_volume/limit/top at their defaults this returns real
+                # cached data instantly (and refreshes in the background if
+                # stale) — never blocks the page. A non-default min_volume runs
+                # synchronously and can take a little while, hence the spinner.
+                with st.spinner("Scanning..."):
+                    r = requests.get(f"{BACKEND}/scan", params=params, timeout=180).json()
+                if is_default_scan and r.get("ranked"):
+                    st.session_state["brain_scan_result"] = r
+            else:
+                # No click this run — show whatever was already pre-fetched at
+                # the top of this tab (for the consensus section) rather than an
+                # empty panel until someone clicks. Non-default min_volume still
+                # needs an explicit click since it's not the pre-fetched default.
+                r = _br_pre if is_default_scan else None
+            if r is None:
+                st.caption("Adjust the min-volume filter above, then click **Run scan** for this custom view.")
+            elif r.get("status") == "forbidden":
+                st.error(r.get("reason"))
+            elif r.get("status") == "running":
+                st.info(r.get("reason", "First scan is running in the background — check back shortly."))
+            elif r.get("ranked"):
+                if r.get("_background_refresh_running"):
+                    st.caption("🔄 A background refresh is in progress — showing the last completed scan.")
+                st.text(r.get("commentary", ""))
+                bdf = _with_company(pd.DataFrame(r["ranked"]))
+                brain_col_cfg = {"confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=100, format="%.0f"),
+                                 "price": st.column_config.NumberColumn("Price", format="%.2f")}
+                bsel = st.dataframe(bdf, use_container_width=True, hide_index=True, height=420,
+                                    on_select="rerun", selection_mode="single-row", key="brain_scan_table",
+                                    column_config={k: v for k, v in brain_col_cfg.items() if k in bdf.columns})
+                brows = bsel.selection.rows if bsel and bsel.selection else []
+                if brows and "symbol" in bdf.columns:
+                    st.session_state.research_symbol = bdf.iloc[brows[0]]["symbol"]
+                    st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
+                if r.get("skipped"):
+                    with st.expander(f"Skipped ({len(r['skipped'])})"):
+                        st.json(r["skipped"])
+            else:
+                st.warning(r.get("reason", "Scan returned nothing."))
 
 # --------------------------------------------------------------- Pulse ----
 with tab_pulse:
@@ -1945,13 +1880,17 @@ with tab_more:
                 run = bt_status["run"]
                 st.caption(f"Last run: {run.get('run_at')} · {run.get('universe_symbols')} symbols · "
                            f"{run.get('universe_bars')} bars · horizon {bt_status.get('horizon')}d")
-                bdf = pd.DataFrame(bt_status["patterns"]).sort_values("expectancy", ascending=False)
-                st.dataframe(bdf[["pattern", "n", "win_rate", "avg_return", "median_return", "expectancy", "low_sample"]],
-                            use_container_width=True, hide_index=True, height=300)
-                st.markdown("**Baselines (Grimes-style — does any pattern above actually beat these?)**")
-                base_df = pd.DataFrame(bt_status["baselines"])
-                st.dataframe(base_df[["baseline", "n", "win_rate", "avg_return", "expectancy"]],
-                            use_container_width=True, hide_index=True)
+                if bt_status.get("patterns"):
+                    bdf = pd.DataFrame(bt_status["patterns"]).sort_values("expectancy", ascending=False)
+                    st.dataframe(bdf[["pattern", "n", "win_rate", "avg_return", "median_return", "expectancy", "low_sample"]],
+                                use_container_width=True, hide_index=True, height=300)
+                else:
+                    st.caption("No patterns recorded in this run.")
+                if bt_status.get("baselines"):
+                    st.markdown("**Baselines (Grimes-style — does any pattern above actually beat these?)**")
+                    base_df = pd.DataFrame(bt_status["baselines"])
+                    st.dataframe(base_df[["baseline", "n", "win_rate", "avg_return", "expectancy"]],
+                                use_container_width=True, hide_index=True)
             else:
                 st.info(bt_status.get("reason", "No backtest run yet — the background scheduler runs one "
                                                 "automatically within its first cycle after startup."))
