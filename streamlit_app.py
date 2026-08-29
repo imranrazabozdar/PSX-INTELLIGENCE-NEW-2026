@@ -640,6 +640,17 @@ def _render_watchlist_section(key_prefix):
     st.caption("A curated set refreshed every 30 minutes while PSX is open (~09:30-15:30 PKT, weekdays) — "
                "faster than the rest of the market, which uses the 3x/day full scan. Click a row to open "
                "that symbol in Stock Research.")
+    wl_token = _admin_token_input(f"watchlist_token_{key_prefix}")
+    if st.button("Refresh watchlist now (89 symbols)", type="secondary", key=f"wl_refresh_btn_{key_prefix}"):
+        params = {"force": "true"}
+        if wl_token:
+            params["token"] = wl_token
+        kickoff = requests.get(f"{BACKEND}/watchlist/scan", params=params, timeout=30).json()
+        if kickoff.get("status") == "forbidden":
+            st.error(kickoff.get("reason"))
+        elif kickoff.get("_background_refresh_running"):
+            st.toast("Watchlist refresh started in the background — reload this section in a "
+                     "minute or two for the fresh result.", icon="🔄")
     wl = _get("/watchlist/scan")
     if not isinstance(wl, dict) or wl.get("status") != "ok":
         st.info("Watchlist hasn't completed its first refresh yet — check back once the market's open.")
@@ -721,11 +732,13 @@ if not _backend_ok:
 _SYNC_GROUPS = {
     "min_volume": ["home_min_vol", "op_vol", "al_vol"],
     "limit": ["op_limit", "al_limit", "bf_limit"],
-    "admin_token": ["scan_token", "al_token", "dssscan_token", "more_admin_token"],
+    "admin_token": ["scan_token", "al_token", "dssscan_token", "more_admin_token",
+                    "watchlist_token_home", "watchlist_token_screener"],
 }
 _SYNC_DEFAULTS = {"home_min_vol": 50_000, "op_vol": 50_000, "al_vol": 50_000,
                   "op_limit": 50, "al_limit": 50, "bf_limit": 50,
-                  "scan_token": "", "al_token": "", "dssscan_token": "", "more_admin_token": ""}
+                  "scan_token": "", "al_token": "", "dssscan_token": "", "more_admin_token": "",
+                  "watchlist_token_home": "", "watchlist_token_screener": ""}
 for _k, _v in _SYNC_DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v

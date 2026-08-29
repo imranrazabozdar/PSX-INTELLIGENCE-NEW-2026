@@ -2713,28 +2713,33 @@ async def _fast_refresh_loop():
         await asyncio.sleep(EVENT_CHECK_INTERVAL)
 
 
+def _run_watchlist_scan():
+    """The actual 89-symbol watchlist pass -- extracted so the background
+    30-min loop and the on-demand /watchlist/scan?force=true endpoint share
+    one implementation instead of drifting apart."""
+    results = {}
+    errors = 0
+    for sym in WATCHLIST_SYMBOLS:
+        try:
+            results[sym] = dss(sym)
+        except Exception as e:
+            errors += 1
+            results[sym] = {"symbol": sym, "status": "error", "reason": f"{type(e).__name__}: {e}"}
+    print(f"[scan_cache] watchlist_scan refreshed: {len(WATCHLIST_SYMBOLS)} symbols, {errors} errors")
+    return {"status": "ok", "results": results, "symbols": WATCHLIST_SYMBOLS}
+
+
 async def _watchlist_refresh_loop():
-    """Runs the full /dss/{symbol} analysis for every WATCHLIST_SYMBOLS
-    entry every WATCHLIST_REFRESH_INTERVAL (30 min), but only during actual
-    trading hours -- there's nothing new to analyse once the market's shut.
-    Results are cached under 'watchlist_scan' so the frontend can show
-    near-live analysis for these symbols without recomputing per page view.
+    """Runs _run_watchlist_scan every WATCHLIST_REFRESH_INTERVAL (30 min),
+    but only during actual trading hours -- there's nothing new to analyse
+    once the market's shut. Results are cached under 'watchlist_scan' so the
+    frontend can show near-live analysis without recomputing per page view.
     """
     while True:
         if _is_trading_hours():
-            results = {}
-            errors = 0
-            for sym in WATCHLIST_SYMBOLS:
-                try:
-                    results[sym] = await asyncio.to_thread(dss, sym)
-                except Exception as e:
-                    errors += 1
-                    results[sym] = {"symbol": sym, "status": "error", "reason": f"{type(e).__name__}: {e}"}
-            try:
-                _scan_cache.save("watchlist_scan", {"results": results, "symbols": WATCHLIST_SYMBOLS})
-                print(f"[scan_cache] watchlist_scan refreshed: {len(WATCHLIST_SYMBOLS)} symbols, {errors} errors")
-            except Exception as e:
-                print(f"[scan_cache] watchlist_scan cache save failed: {type(e).__name__}: {e}")
+            ran, result = await asyncio.to_thread(lambda: _run_guarded("watchlist_scan", _run_watchlist_scan))
+            if not ran:
+                print("[scan_cache] watchlist_scan tick skipped — an on-demand force-run was already in flight")
             try:
                 alerts_result = await asyncio.to_thread(_run_alerts_watchlist)
                 _scan_cache.save("watchlist_alerts", alerts_result)
@@ -2756,16 +2761,21 @@ def watchlist_alerts():
 
 
 @app.get("/watchlist/scan")
-def watchlist_scan():
+def watchlist_scan(request:Request, force:bool=False):
     """Cached results of the last watchlist refresh (see
-    _watchlist_refresh_loop) -- near-live (<=30 min stale during market
-    hours) DSS analysis for the curated WATCHLIST_SYMBOLS set."""
+    _run_watchlist_scan) -- near-live (<=30 min stale during market hours)
+    DSS analysis for the curated WATCHLIST_SYMBOLS set. force=true (admin
+    token required, same as /dss-scan) kicks off an immediate re-run instead
+    of waiting for the next 30-min background tick -- useful right after a
+    deploy or outside the loop's own cadence."""
     cached = _scan_cache.latest("watchlist_scan")
-    if not cached:
-        return {"status": "never_run", "symbols": WATCHLIST_SYMBOLS}
-    return {"status": "ok", "age_seconds": cached.get("_cache_age_seconds"),
-            "run_at": cached.get("_cache_run_at"), "symbols": cached.get("symbols"),
-            "results": cached.get("results")}
+    result, err = _serve_cached_and_refresh("watchlist_scan", _run_watchlist_scan, cached,
+                                             WATCHLIST_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    return {"status": "ok", "age_seconds": result.get("_cache_age_seconds"),
+            "run_at": result.get("_cache_run_at"), "symbols": result.get("symbols"),
+            "results": result.get("results"),
+            "_background_refresh_running": _bg_job_running("watchlist_scan")}
 
 
 async def _heavy_refresh_loop():
