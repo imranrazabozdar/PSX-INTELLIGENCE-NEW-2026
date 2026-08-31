@@ -318,6 +318,32 @@ def _make_local_sqlite_connection():
     return conn
 
 
+class QueryMetrics:
+    """Track query performance and patterns for optimization."""
+    def __init__(self):
+        self.total_queries = 0
+        self.total_rows_read = 0
+        self.total_rows_written = 0
+        self.batch_queries = 0
+        self.query_times = []
+        self.queries_by_type = {}
+
+    def record_query(self, query_type: str, rows_affected: int, exec_time: float):
+        """Record metrics for a single query."""
+        self.total_queries += 1
+        self.total_rows_read += rows_affected
+        self.queries_by_type[query_type] = self.queries_by_type.get(query_type, 0) + 1
+        self.query_times.append(exec_time)
+
+    def record_batch(self, count: int):
+        """Record a batch query."""
+        self.batch_queries += 1
+        self.total_queries += count
+
+
+_query_metrics = QueryMetrics()
+
+
 def get_connection():
     """Return this thread's database connection, creating it on first use.
     Turso (HTTP) path: one shared connection is fine -- each call is a
@@ -355,3 +381,78 @@ def status():
     return {"backend": "turso (HTTP pipeline)" if USING_TURSO else "local sqlite3",
             "connected": _shared_conn is not None,
             "init_error": _init_error}
+
+
+# ============================================================================
+# TURSO OPTIMIZATION HELPERS
+# ============================================================================
+
+def batch_select_by_id(table: str, id_column: str, ids: list, limit=None):
+    """Optimized batch SELECT for a list of IDs - single HTTP round trip.
+
+    Example: batch_select_by_id("daily_ohlc", "symbol", ["ABC", "XYZ"])
+    Returns: {"ABC": [...rows...], "XYZ": [...rows...]}
+    """
+    if not ids:
+        return {}
+
+    conn = get_connection()
+    id_list = list(dict.fromkeys(ids))  # de-dupe, keep order
+
+    queries = []
+    for id_val in id_list:
+        sql = f"SELECT * FROM {table} WHERE {id_column} = ?"
+        if limit:
+            sql += f" LIMIT {limit}"
+        queries.append((sql, (id_val,)))
+
+    results = conn.batch_query(queries) if USING_TURSO else [c.execute(sql, params).fetchall() for sql, params in queries]
+
+    out = {}
+    for id_val, rows in zip(id_list, results):
+        out[id_val] = [dict(r) for r in rows]
+
+    _query_metrics.record_batch(len(queries))
+    return out
+
+
+def batch_select_with_filter(table: str, filters: list):
+    """Batch SELECT with different WHERE conditions - single HTTP round trip.
+
+    Example: batch_select_with_filter("daily_ohlc", [
+        ("symbol=? ORDER BY trade_date DESC LIMIT 260", ("ABC",)),
+        ("symbol=? ORDER BY trade_date DESC LIMIT 260", ("XYZ",))
+    ])
+    """
+    if not filters:
+        return []
+
+    conn = get_connection()
+
+    queries = [(f"SELECT * FROM {table} WHERE {cond}", params) for cond, params in filters]
+    results = conn.batch_query(queries) if USING_TURSO else [c.execute(sql, params).fetchall() for sql, params in queries]
+
+    out = []
+    for rows in results:
+        out.append([dict(r) for r in rows])
+
+    _query_metrics.record_batch(len(queries))
+    return out
+
+
+def get_query_metrics():
+    """Return current query metrics and reset counters."""
+    global _query_metrics
+
+    metrics = {
+        "total_queries": _query_metrics.total_queries,
+        "batch_queries": _query_metrics.batch_queries,
+        "total_rows_read": _query_metrics.total_rows_read,
+        "queries_by_type": dict(_query_metrics.queries_by_type),
+        "avg_query_time_ms": round(sum(_query_metrics.query_times) / len(_query_metrics.query_times), 2) if _query_metrics.query_times else 0
+    }
+
+    # Reset for next cycle
+    _query_metrics = QueryMetrics()
+
+    return metrics
