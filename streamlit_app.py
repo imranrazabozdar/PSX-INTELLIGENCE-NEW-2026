@@ -15,6 +15,8 @@ Run:
 import os
 import sys
 import threading
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -134,6 +136,15 @@ html, body, [class*="css"] {font-family: -apple-system, "Segoe UI", Inter, Robot
 .psx-idx-pill .val {font-size: 1.12rem; font-weight: 800; color: var(--ink); margin-top: 2px;}
 .psx-idx-pill .chg {font-size: 0.8rem; font-weight: 700; margin-top: 2px;}
 .psx-idx-pill .chg.up {color: var(--up);} .psx-idx-pill .chg.down {color: var(--down);}
+/* CHANGE 2: day-range bar (low->high track, dot at close) -- bottom ~25%
+   of the card. No intraday data source exists (see /live-market's
+   daily-OHLCV-only shape) so this is an honest today's-range indicator,
+   not a fabricated intraday sparkline. */
+.psx-idx-pill .idx-range {margin-top: 7px; height: 12px;}
+.psx-idx-pill .idx-range svg {width: 100%; height: 100%; display: block; overflow: visible;}
+.idx-range-track {stroke: rgba(255,255,255,0.25); stroke-width: 3; stroke-linecap: round;}
+.idx-range-flat {stroke: var(--sub); stroke-width: 3; stroke-linecap: round;}
+.idx-range-dot.up {fill: var(--up);} .idx-range-dot.down {fill: var(--down);} .idx-range-dot.flat {fill: var(--sub);}
 
 /* ---- section headers ---- */
 .psx-section-eyebrow {font-size: 0.74rem; font-weight: 800; color: var(--teal); letter-spacing: 0.08em; margin-bottom: 2px;}
@@ -628,19 +639,61 @@ def _with_company(df, symbol_col="symbol"):
     return df
 
 
-def _render_watchlist_section(key_prefix):
+_BULLISH_DSS_ACTIONS = {"STRONG BUY", "BUY", "ACCUMULATE"}
+_BEARISH_DSS_ACTIONS = {"STRONG SELL / AVOID", "SELL / REDUCE", "AVOID"}
+
+
+def _action_badge(action):
+    """Color-codes a DSS `final_action` value for display (🟢 bullish /
+    🔴 bearish / ⚪ neutral-or-watch) without collapsing the original label
+    — STRONG BUY still reads as STRONG BUY, just with a color cue in front."""
+    a = str(action or "").strip().upper()
+    if a in _BULLISH_DSS_ACTIONS:
+        return f"🟢 {action}"
+    if a in _BEARISH_DSS_ACTIONS:
+        return f"🔴 {action}"
+    return f"⚪ {action}" if action else action
+
+
+def _grade_badge(grade):
+    """Color-codes a confidence letter grade (A+/A/B/C/D/F). ProgressColumn
+    can't render a non-numeric letter grade, so this uses the same emoji
+    color cue as _action_badge for a comparable visual hierarchy instead."""
+    g = str(grade or "").strip().upper()
+    if g in ("A+", "A"):
+        return f"🟢 {grade}"
+    if g in ("B", "C"):
+        return f"🟡 {grade}"
+    if g in ("D", "F"):
+        return f"🔴 {grade}"
+    return grade
+
+
+def _render_watchlist_section(key_prefix, show_token_input=True):
     """Shared by the Home and Screener tabs -- the curated ~90-symbol
     watchlist the backend refreshes every 30 min during PSX trading hours
     (see backend/app.py's _watchlist_refresh_loop), shown here as a
     click-to-open ranked table matching the pattern used by the other
     ranking tables (Consensus, DSS buckets, Conviction) elsewhere in this
-    file."""
+    file.
+
+    show_token_input=False (Home tab, see CHANGE 1): skips rendering the
+    admin-token widget itself, but the force-refresh button below still
+    works -- every admin-token widget in the app shares one synced value
+    via _SYNC_GROUPS["admin_token"] (see _sync_cb), and
+    f"watchlist_token_{key_prefix}" is pre-seeded into session_state by
+    _SYNC_DEFAULTS at module load regardless of whether its own widget
+    ever renders. So reading it directly here picks up whatever token was
+    entered elsewhere (e.g. the More tab), with no functionality lost."""
     st.markdown('<div class="psx-section-eyebrow">WATCHLIST</div>'
-                '<div class="psx-section-title">🎯 Intraday Watchlist</div>', unsafe_allow_html=True)
+                '<div class="psx-section-title">🎯 Watchlist</div>', unsafe_allow_html=True)
     st.caption("A curated set refreshed every 30 minutes while PSX is open (~09:30-15:30 PKT, weekdays) — "
                "faster than the rest of the market, which uses the 3x/day full scan. Click a row to open "
                "that symbol in Stock Research.")
-    wl_token = _admin_token_input(f"watchlist_token_{key_prefix}")
+    if show_token_input:
+        wl_token = _admin_token_input(f"watchlist_token_{key_prefix}")
+    else:
+        wl_token = st.session_state.get(f"watchlist_token_{key_prefix}", "")
     if st.button("Refresh watchlist now (89 symbols)", type="secondary", key=f"wl_refresh_btn_{key_prefix}"):
         params = {"force": "true"}
         if wl_token:
@@ -665,8 +718,8 @@ def _render_watchlist_section(key_prefix):
             continue
         q = r.get("quote") or {}
         rows.append({"symbol": sym, "price": q.get("price"), "chg %": q.get("pct"),
-                     "evidence score": r.get("evidence_score"), "grade": r.get("confidence_grade"),
-                     "action": r.get("final_action")})
+                     "evidence score": r.get("evidence_score"), "grade": _grade_badge(r.get("confidence_grade")),
+                     "action": _action_badge(r.get("final_action"))})
     if not rows:
         st.info("No watchlist results yet — check back once the market's open and the first refresh completes.")
         return
@@ -677,17 +730,6 @@ def _render_watchlist_section(key_prefix):
         "price": st.column_config.NumberColumn(format="%.2f"),
         "chg %": st.column_config.NumberColumn(format="%.2f%%"),
     }
-
-    st.markdown(f"**🏆 Top 10 Right Now** (of {len(rows)} tracked, ranked by evidence score)")
-    top10 = wdf.head(10)
-    tsel = st.dataframe(
-        top10, use_container_width=True, hide_index=True,
-        on_select="rerun", selection_mode="single-row", key=f"watchlist_top10_{key_prefix}",
-        column_config=watchlist_col_cfg)
-    trows = tsel.selection.rows if tsel and tsel.selection else []
-    if trows:
-        st.session_state.research_symbol = top10.iloc[trows[0]]["symbol"]
-        st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
 
     with st.expander(f"All {len(rows)} watchlist symbols"):
         wsel = st.dataframe(
@@ -733,12 +775,14 @@ _SYNC_GROUPS = {
     "min_volume": ["home_min_vol", "op_vol", "al_vol"],
     "limit": ["op_limit", "al_limit", "bf_limit"],
     "admin_token": ["scan_token", "al_token", "dssscan_token", "more_admin_token",
-                    "watchlist_token_home", "watchlist_token_screener"],
+                    "watchlist_token_home", "watchlist_token_screener", "patterns_scan_token",
+                    "morning_star_scan_token"],
 }
 _SYNC_DEFAULTS = {"home_min_vol": 50_000, "op_vol": 50_000, "al_vol": 50_000,
                   "op_limit": 50, "al_limit": 50, "bf_limit": 50,
                   "scan_token": "", "al_token": "", "dssscan_token": "", "more_admin_token": "",
-                  "watchlist_token_home": "", "watchlist_token_screener": ""}
+                  "watchlist_token_home": "", "watchlist_token_screener": "", "patterns_scan_token": "",
+                  "morning_star_scan_token": ""}
 for _k, _v in _SYNC_DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -760,9 +804,290 @@ def _admin_token_input(key):
                           on_change=_sync_cb("admin_token", key))
 
 
-tab_home, tab_screener, tab_pulse, tab_dss, tab_more = st.tabs(
-    ["🏠 Home", "🔍 Screener", "📰 Pulse", "🎯 Stock Research", "⚙️ More"]
+st.session_state.setdefault("research_symbol", "OGDC")
+_gs_col, _gs_btn_col = st.columns([3, 1])
+with _gs_col:
+    _gs_query = st.text_input("Search symbol or company", value="",
+                               key="global_symbol_search", label_visibility="collapsed",
+                               placeholder="🔎 Search any symbol or company name...")
+_gs_matches = []
+if _gs_query.strip():
+    _gs_q = _gs_query.strip().lower()
+    for _gs_sym, _gs_name in _company_names().items():
+        if _gs_q in _gs_sym.lower() or (_gs_name and _gs_q in _gs_name.lower()):
+            _gs_matches.append((_gs_sym, _gs_name or ""))
+    _gs_matches = _gs_matches[:8]
+if _gs_matches:
+    _gs_options = [f"{s} — {n}" if n else s for s, n in _gs_matches]
+    with _gs_col:
+        _gs_pick = st.selectbox("Results", _gs_options, key="global_symbol_search_pick",
+                                 label_visibility="collapsed")
+    with _gs_btn_col:
+        if st.button("→ Research", key="global_symbol_search_go", use_container_width=True):
+            st.session_state.research_symbol = _gs_pick.split(" — ")[0].strip()
+            st.rerun()
+elif _gs_query.strip():
+    with _gs_btn_col:
+        st.caption("No matches")
+
+tab_home, tab_intraday, tab_screener, tab_pulse, tab_dss, tab_patterns, tab_more = st.tabs(
+    ["🏠 Home", "⚡ Intraday", "🔍 Screener", "📰 Pulse", "🎯 Stock Research", "🕯️ Patterns", "⚙️ More"]
 )
+
+
+def _day_range_bar_html(open_v, high_v, low_v, close_v):
+    """CHANGE 2: honest day-range indicator for one index card -- a
+    horizontal low->high track with a dot marking where today's close
+    sits. /live-market only has daily OHLCV (confirmed: psx_live.py's
+    index_snapshot() fetches limit=1 daily klines), so this deliberately
+    does NOT pretend to be an intraday sparkline. Falls back to a flat
+    grey line (never an error, never empty space) if any of the four
+    values is missing or the range is degenerate (high <= low)."""
+    try:
+        o, h, l, c = float(open_v), float(high_v), float(low_v), float(close_v)
+        if h <= l:
+            raise ValueError("degenerate range")
+    except (TypeError, ValueError):
+        return ('<div class="idx-range"><svg viewBox="0 0 100 12" preserveAspectRatio="none">'
+                '<line x1="2" y1="6" x2="98" y2="6" class="idx-range-flat"/></svg></div>')
+    pos = max(2.0, min(98.0, (c - l) / (h - l) * 96 + 2))
+    color_cls = "up" if c > o else "down" if c < o else "flat"
+    return (
+        '<div class="idx-range"><svg viewBox="0 0 100 12" preserveAspectRatio="none">'
+        '<line x1="2" y1="6" x2="98" y2="6" class="idx-range-track"/>'
+        f'<circle cx="{pos:.1f}" cy="6" r="4" class="idx-range-dot {color_cls}"/>'
+        '</svg></div>'
+    )
+
+
+def _rank_label(i):
+    return ["🥇", "🥈", "🥉"][i] if i < 3 else str(i + 1)
+
+
+def _rr_label(v, coloured=False):
+    try:
+        f = float(v)
+        label = f"{f:.1f}×"
+        if not coloured:
+            return label
+        if f >= 1.5:
+            colour = "green"
+        elif f >= 1.0:
+            colour = "orange"
+        else:
+            colour = "red"
+        return f'<span style="color:{colour}">{label}</span>'
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _colour_rr(val):
+    try:
+        f = float(str(val).replace("×", ""))
+        if f >= 1.5:
+            return "color: rgba(34,197,94,1)"
+        elif f >= 1.0:
+            return "color: rgba(234,179,8,1)"
+        else:
+            return "color: rgba(240,71,91,1)"
+    except Exception:
+        return ""
+
+
+def _safe_rr(entry, stop, target):
+    try:
+        rr = (target - entry) / (entry - stop)
+        return rr if (entry - stop) != 0 else None
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _render_top10_grid():
+    """Render the 2x2 Top-10 grid on the Home tab.
+    Reads from cached scan endpoints only — never
+    triggers a fresh scan. Replaces the old single
+    'Top 10 Right Now' table (removed in Change 3).
+    """
+    wl = _get("/watchlist/scan")
+    pr = _get("/patterns/bullish-engulfing-scan")
+    msr = _get("/patterns/morning-star-scan")
+    adv = _get("/patterns/advanced-scan")
+    names = _company_names()
+
+    def _select_row(sel, df):
+        rows = sel.selection.rows if sel and sel.selection else []
+        if rows:
+            sym = df.iloc[rows[0]]["Symbol"]
+            st.session_state.research_symbol = sym
+            st.toast(f"Opened {sym} in Stock Research →", icon="🎯")
+
+    def _top10_action_tint(row):
+        # CHANGE 10: tints List A/B rows off the emoji _action_badge()
+        # already encoded into the Action column (🟢 = BUY-class DSS
+        # action, 🔴 = AVOID/SHORT-class, ⚪ = WATCH/neutral) -- this is
+        # the same BUY/AVOID/WATCH distinction the task asked for, just
+        # read from the badge instead of re-matching the raw action
+        # string a second time.
+        a = str(row.get("Action", ""))
+        if "🟢" in a:
+            color = "rgba(34,197,94,0.12)"
+        elif "🔴" in a:
+            color = "rgba(240,71,91,0.12)"
+        else:
+            return [""] * len(row)
+        return [f"background-color: {color}"] * len(row)
+
+    # ---- shared source for List A + List B: watchlist_scan cache ------
+    wl_ok = isinstance(wl, dict) and wl.get("status") == "ok"
+    wl_age = wl.get("age_seconds") if wl_ok else None
+    wl_rows = []
+    if wl_ok:
+        results = wl.get("results") or {}
+        for sym in wl.get("symbols") or []:
+            r = results.get(sym) or {}
+            if r.get("status") != "ok":
+                continue
+            q = r.get("quote") or {}
+            wl_rows.append({
+                "symbol": sym, "price": q.get("price"), "chg_pct": q.get("pct"),
+                "evidence_score": r.get("evidence_score"),
+                "grade": r.get("confidence_grade"), "action": r.get("final_action"),
+            })
+
+    col1, col2 = st.columns(2)
+
+    # ---- LIST A: Top 10 by Technical Indicators ------------------------
+    with col1:
+        with st.container(border=True):
+            st.markdown("**📈 Top 10 by Technical Indicators**")
+            st.caption("Ranked by evidence score from the cached watchlist scan (the same "
+                       "DSS analysis used app-wide) — updates every 30 min during market hours.")
+            if wl_age is not None:
+                st.caption(f"Updated {int(wl_age // 60)} min ago")
+            if not wl_rows:
+                st.caption("No data — refresh scan to populate")
+            else:
+                a_sorted = sorted(
+                    wl_rows, key=lambda r: (r["evidence_score"] is None, -(r["evidence_score"] or 0)))[:10]
+                a_df = pd.DataFrame([{
+                    "Rank": _rank_label(i), "Symbol": r["symbol"],
+                    "Company": names.get(r["symbol"], ""), "Score": r["evidence_score"],
+                    "Grade": _grade_badge(r["grade"]), "Action": _action_badge(r["action"]),
+                } for i, r in enumerate(a_sorted)])
+                a_sel = st.dataframe(
+                    a_df.style.apply(_top10_action_tint, axis=1), use_container_width=True, hide_index=True,
+                    on_select="rerun", selection_mode="single-row", key="top10_technical_table",
+                    column_config={"Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f")})
+                _select_row(a_sel, a_df)
+
+    # ---- LIST B: Top 10 by Price Momentum -------------------------------
+    with col2:
+        with st.container(border=True):
+            st.markdown("**📈 Top 10 by Price Momentum**")
+            st.caption("Ranked by today's % change, from the same cached watchlist scan as the "
+                       "Technical list — a different lens on the same data, not a new source.")
+            if wl_age is not None:
+                st.caption(f"Updated {int(wl_age // 60)} min ago")
+            if not wl_rows:
+                st.caption("No data — refresh scan to populate")
+            else:
+                b_sorted = sorted(
+                    wl_rows, key=lambda r: (r["chg_pct"] is None, -(r["chg_pct"] or 0)))[:10]
+                b_df = pd.DataFrame([{
+                    "Rank": _rank_label(i), "Symbol": r["symbol"], "Chg %": r["chg_pct"],
+                    "Price": r["price"], "Action": _action_badge(r["action"]),
+                } for i, r in enumerate(b_sorted)])
+                b_sel = st.dataframe(
+                    b_df.style.apply(_top10_action_tint, axis=1), use_container_width=True, hide_index=True,
+                    on_select="rerun", selection_mode="single-row", key="top10_momentum_table",
+                    column_config={
+                        "Chg %": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Price": st.column_config.NumberColumn(format="%.2f"),
+                    })
+                _select_row(b_sel, b_df)
+
+    col3, col4 = st.columns(2)
+
+    # ---- LIST C: Top 10 Candlestick Signals ------------------------------
+    with col3:
+        with st.container(border=True):
+            st.markdown("**🕯️ Top 10 Candlestick Signals**")
+            st.caption("Merges the latest Bullish Engulfing and Morning Star hits from the cached "
+                       "market-wide scans, newest signal first. Bullish Engulfing is geometry-only "
+                       "(no entry/stop/target in this backend), so those fields show \"—\" for it.")
+            pr_ok = isinstance(pr, dict) and pr.get("status") == "ok"
+            msr_ok = isinstance(msr, dict) and msr.get("status") == "ok"
+            c_rows = []
+            if pr_ok:
+                for h in pr.get("hits") or []:
+                    # normalize pattern_date -> signal_date (frontend-only merge key)
+                    c_rows.append({"symbol": h.get("symbol"), "pattern": "Bull Eng",
+                                   "direction": "▲ BULL", "signal_date": h.get("pattern_date")})
+            if msr_ok:
+                for h in msr.get("hits") or []:
+                    # normalize date -> signal_date (frontend-only merge key)
+                    c_rows.append({"symbol": h.get("symbol"), "pattern": "Morn ★",
+                                   "direction": "▲ BULL", "signal_date": h.get("date")})
+            fresh_ages = [x.get("_cache_age_seconds") for x, ok in ((pr, pr_ok), (msr, msr_ok))
+                         if ok and x.get("_cache_age_seconds") is not None]
+            if fresh_ages:
+                st.caption(f"Updated {int(min(fresh_ages) // 60)} min ago")
+            if not c_rows:
+                st.caption("No data — refresh scan to populate")
+            else:
+                c_sorted = sorted(c_rows, key=lambda r: r["signal_date"] or "", reverse=True)[:10]
+                c_df = pd.DataFrame([{
+                    "Rank": _rank_label(i), "Symbol": r["symbol"],
+                    "Company": names.get(r["symbol"], ""), "Pattern": r["pattern"],
+                    "Direction": r["direction"], "Date": r["signal_date"] or "—",
+                } for i, r in enumerate(c_sorted)])
+
+                def _c_row_color(row):
+                    color = "rgba(34, 197, 94, 0.16)" if "BULL" in row["Direction"] else "rgba(240, 71, 91, 0.16)"
+                    return [f"background-color: {color}"] * len(row)
+
+                c_sel = st.dataframe(
+                    c_df.style.apply(_c_row_color, axis=1), use_container_width=True, hide_index=True,
+                    on_select="rerun", selection_mode="single-row", key="top10_candlestick_table")
+                _select_row(c_sel, c_df)
+
+    # ---- LIST D: Top 10 Chart Pattern Signals ----------------------------
+    with col4:
+        with st.container(border=True):
+            st.markdown("**📐 Top 10 Chart Pattern Signals**")
+            st.caption("From the cached Inverse H&S / Double Bottom scan (advanced_pattern_scan). "
+                       "No market-wide Wyckoff/accumulation-phase scan exists in this backend "
+                       "(only per-symbol /wyckoff-pro), so this shows the actual chart-pattern "
+                       "signal data available, ranked by confidence score.")
+            adv_ok = isinstance(adv, dict) and adv.get("status") == "ok"
+            if adv_ok and adv.get("_cache_age_seconds") is not None:
+                st.caption(f"Updated {int(adv['_cache_age_seconds'] // 60)} min ago")
+            d_hits = (adv.get("hits") or []) if adv_ok else []
+            if not d_hits:
+                st.caption("No data — refresh scan to populate")
+            else:
+                d_sorted = sorted(
+                    d_hits, key=lambda h: (h.get("confidence_score") is None, -(h.get("confidence_score") or 0)))[:10]
+                d_df = pd.DataFrame([{
+                    "Rank": _rank_label(i), "Symbol": h.get("symbol"),
+                    "Company": names.get(h.get("symbol"), ""), "Phase": h.get("pattern_type"),
+                    "Score": h.get("confidence_score"), "Date": h.get("signal_date") or "—",
+                } for i, h in enumerate(d_sorted)])
+                # Always BUY-equivalent: advanced_pattern_scan has no
+                # geometry-only/failed tier (same fact the Patterns tab's
+                # own Chart Patterns table relies on for its "Action" ==
+                # "BUY SIGNAL" always) -- so this list tints every row
+                # green rather than re-deriving a direction that isn't
+                # present in these columns.
+                def _d_row_tint(row):
+                    return ["background-color: rgba(34,197,94,0.12)"] * len(row)
+
+                d_sel = st.dataframe(
+                    d_df.style.apply(_d_row_tint, axis=1), use_container_width=True, hide_index=True,
+                    on_select="rerun", selection_mode="single-row", key="top10_chartpattern_table",
+                    column_config={"Score": st.column_config.ProgressColumn(min_value=0.0, max_value=1.0, format="%.2f")})
+                _select_row(d_sel, d_df)
+
 
 # ---------------------------------------------------------------- Home ----
 with tab_home:
@@ -780,17 +1105,159 @@ with tab_home:
             cls = "up" if (chg or 0) >= 0 else "down"
             arrow = "▲" if (chg or 0) >= 0 else "▼"
             pts_str = f"{pts:+,.1f} " if pts is not None else ""
+            range_html = _day_range_bar_html(d.get("open"), d.get("high"), d.get("low"), close_v)
             pills.append(
                 f'<div class="psx-idx-pill"><div class="lbl">{name}</div>'
                 f'<div class="val">{close_str}</div>'
-                f'<div class="chg {cls}">{arrow} {pts_str}({abs(chg):.2f}%)</div></div>'
+                f'<div class="chg {cls}">{arrow} {pts_str}({abs(chg):.2f}%)</div>'
+                f'{range_html}</div>'
                 if chg is not None else
                 f'<div class="psx-idx-pill"><div class="lbl">{name}</div>'
-                f'<div class="val">{close_str}</div></div>'
+                f'<div class="val">{close_str}</div>{range_html}</div>'
             )
         st.markdown(f'<div class="psx-idx-row">{"".join(pills)}</div>', unsafe_allow_html=True)
 
-    _render_watchlist_section("home")
+    # CHANGE 8: market breadth stats. Both calls below duplicate fetches
+    # made later in _render_top10_grid()/the signal feed -- unavoidable
+    # given these cards must render ABOVE that code, and _get() has no
+    # caching layer of its own. Both endpoints are cache-reads on the
+    # backend (no fresh scan triggered), so this is an extra round-trip,
+    # not an extra scan.
+    # Duplicate call — asr is also fetched
+    # inside _feed_col below. Both read from
+    # cache (no fresh scan). Refactor by
+    # hoisting shared fetches to module scope
+    # if Home tab render time becomes a concern.
+    _bs_asr = _get("/patterns/all-scan")
+    _bs_asr_ok = isinstance(_bs_asr, dict) and _bs_asr.get("status") == "ok"
+    _bs_hits = _bs_asr.get("hits") or [] if _bs_asr_ok else []
+    _bs_bulls = sum(1 for h in _bs_hits if h.get("direction") == "bullish")
+    _bs_bears = sum(1 for h in _bs_hits if h.get("direction") == "bearish")
+    _bs_rr_vals = [h["risk_reward_measured"] for h in _bs_hits
+                   if h.get("risk_reward_measured") is not None]
+
+    # Duplicate call — watchlist data is also
+    # fetched inside _render_top10_grid().
+    # Same cache-read-only caveat as above.
+    _bs_wl = _get("/watchlist/scan")
+    _bs_wl_ok = isinstance(_bs_wl, dict) and _bs_wl.get("status") == "ok"
+    _bs_adv = _bs_dec = 0
+    if _bs_wl_ok:
+        _bs_results = _bs_wl.get("results") or {}
+        for _bs_sym in _bs_wl.get("symbols") or []:
+            _bs_pct = ((_bs_results.get(_bs_sym) or {}).get("quote") or {}).get("pct")
+            if _bs_pct is None:
+                continue
+            if _bs_pct > 0:
+                _bs_adv += 1
+            elif _bs_pct < 0:
+                _bs_dec += 1
+
+    _stat_col1, _stat_col2, _stat_col3, _stat_col4 = st.columns(4)
+    with _stat_col1:
+        st.metric("Signals Today", str(len(_bs_hits)) if _bs_asr_ok else "—",
+                   delta=f"{_bs_bulls} bull / {_bs_bears} bear" if _bs_asr_ok else None)
+    with _stat_col2:
+        st.metric("Advancers / Decliners", f"{_bs_adv} / {_bs_dec}" if _bs_wl_ok else "—",
+                   delta=(_bs_adv - _bs_dec) if _bs_wl_ok else None)
+    with _stat_col3:
+        st.metric("Best Pattern Win Rate", "53.9% · Morning Star (742 signals, 5yr)")
+    with _stat_col4:
+        st.metric("Avg R:R (Today's Signals)",
+                   f"{(sum(_bs_rr_vals) / len(_bs_rr_vals)):.1f}×" if _bs_rr_vals else "—")
+
+    _render_top10_grid()
+
+    _feed_col, _news_col = st.columns([2, 1])
+    with _feed_col:
+        st.markdown("### 🔔 Live Signal Feed")
+        asr = _get("/patterns/all-scan")
+        if not asr or asr.get("status") != "ok" or not asr.get("hits"):
+            st.info("No signals today — scans refresh every 15 minutes")
+        else:
+            _feed_rows = []
+            for h in asr["hits"]:
+                _feed_rows.append({
+                    "Symbol": h.get("symbol"),
+                    "Pattern": h.get("pattern_type") or h.get("pattern") or h.get("strength_rating", ""),
+                    "Direction": "▲ Bull" if h.get("direction") == "bullish" else "▼ Bear",
+                    "R:R": _rr_label(h.get("risk_reward_measured") or _safe_rr(
+                        h.get("entry_price"), h.get("stop_loss"), h.get("target_1"))),
+                    "Entry": h.get("entry_price"),
+                    "Stop": h.get("stop_loss"),
+                    "Date": h.get("signal_date"),
+                    "_direction_raw": h.get("direction"),
+                })
+            _feed_df = pd.DataFrame(_feed_rows)
+
+            _feed_filter = st.radio("Filter", ["All", "▲ Bullish", "▼ Bearish"],
+                                     horizontal=True, key="feed_direction_filter",
+                                     label_visibility="collapsed")
+            if _feed_filter == "▲ Bullish":
+                _feed_df = _feed_df[_feed_df["_direction_raw"] == "bullish"]
+            elif _feed_filter == "▼ Bearish":
+                _feed_df = _feed_df[_feed_df["_direction_raw"] == "bearish"]
+            _feed_df = _feed_df.drop(columns=["_direction_raw"])
+
+            _feed_df = _feed_df.sort_values("Date", ascending=False, kind="stable").head(20).reset_index(drop=True)
+
+            def _tint_signal_row(row):
+                if "▲" in str(row.get("Direction", "")):
+                    return ["background-color: rgba(34,197,94,0.12)"] * len(row)
+                elif "▼" in str(row.get("Direction", "")):
+                    return ["background-color: rgba(240,71,91,0.12)"] * len(row)
+                return [""] * len(row)
+
+            _feed_styled = _feed_df.style.apply(_tint_signal_row, axis=1).map(_colour_rr, subset=["R:R"])
+
+            st.dataframe(
+                _feed_styled, use_container_width=True, hide_index=True,
+                column_config={
+                    "Entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+                    "Stop": st.column_config.NumberColumn("Stop", format="Rs %.2f"),
+                    "R:R": st.column_config.TextColumn("R:R"),
+                    "Date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                },
+            )
+            st.caption("Merged from 8 pattern scans, each refreshed on its own cycle · "
+                       "Showing up to 20 most recent signals")
+    with _news_col:
+        st.markdown("### 📰 Latest News")
+        nr = _get("/news-feed")
+        if not nr or nr.get("status") != "ok" or not nr.get("symbols_with_news"):
+            st.caption("No recent news · See Pulse tab for full feed")
+        else:
+            _sent_map = {
+                "positive": ("BULLISH", "rgba(34,197,94,0.2)", "rgba(34,197,94,1)"),
+                "negative": ("BEARISH", "rgba(240,71,91,0.2)", "rgba(240,71,91,1)"),
+            }
+            for _nitem in (nr.get("stocks") or [])[:3]:
+                _label, _bg, _fg = _sent_map.get(
+                    _nitem.get("direction"),
+                    ("NEUTRAL", "rgba(139,150,163,0.2)", "rgba(139,150,163,1)"))
+                _headlines = _nitem.get("headlines") or []
+                _headline_text = (_headlines[0] if _headlines else _nitem.get("summary")) or ""
+                if len(_headline_text) > 80:
+                    _headline_text = _headline_text[:80] + "…"
+                st.markdown(
+                    f'<div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.08);">'
+                    f'<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">'
+                    f'<span style="font-weight:700;font-size:12px;">{_nitem.get("symbol", "")}</span>'
+                    f'<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;'
+                    f'background:{_bg};color:{_fg};">{_label}</span>'
+                    f'</div>'
+                    f'<div style="font-size:11px;color:#8B96A3;line-height:1.4;">{_headline_text}</div>'
+                    f'<div style="font-size:10px;color:#475569;margin-top:2px;">{_nitem.get("sector", "") or ""}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            _news_age = nr.get("age_minutes")
+            if _news_age is not None:
+                st.caption(f"Feed updated {_news_age} min ago")
+            else:
+                st.caption("News feed · See Pulse tab for full detail")
+
+    _render_watchlist_section("home", show_token_input=False)
 
     st.markdown('<div class="psx-section-eyebrow">MARKET COMMAND CENTER</div>'
                 '<div class="psx-section-title">Regime, Momentum, Volatility & Sector Leadership</div>',
@@ -840,6 +1307,209 @@ with tab_home:
                "Screener tab.")
 
 # ----------------------------------------------------------- Screener ----
+with tab_intraday:
+    from collections import Counter
+
+    # ---- SECTION 1: Market Status Bar -----------------------------------
+    _pkt_now = datetime.now(ZoneInfo("Asia/Karachi"))
+    _wd, _hr, _mn = _pkt_now.weekday(), _pkt_now.hour, _pkt_now.minute
+    _mins_now = _hr * 60 + _mn
+    # WATCHLIST_HOURS_PKT schedule, replicated here since _is_trading_hours()
+    # only exists in backend/app.py (a separate process) -- same convention
+    # already established for the (now-removed) Home tab Session Anomalies
+    # section.
+    if _wd < 4:
+        _market_open = (9 * 60 + 30) <= _mins_now <= (15 * 60 + 30)
+    elif _wd == 4:
+        _market_open = ((9 * 60 + 15) <= _mins_now <= (12 * 60)
+                         or (14 * 60 + 15) <= _mins_now <= (16 * 60 + 5))
+    else:
+        _market_open = False
+
+    if _market_open:
+        st.markdown(
+            f'<div style="background: rgba(34,197,94,0.15); padding:10px 14px; '
+            f'border-radius:6px; font-weight:600; margin-bottom:12px;">'
+            f'🟢 PSX LIVE · Session in progress · PKT {_pkt_now.strftime("%H:%M")}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'<div style="background: rgba(240,71,91,0.15); padding:10px 14px; '
+            f'border-radius:6px; font-weight:600; margin-bottom:12px;">'
+            f'🔴 PSX CLOSED · Intraday monitoring paused</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ---- Cached /intraday/alerts (60s TTL) -- shared by every section below
+    _IA_CACHE_KEY = "intraday_alerts_cache"
+    _IA_TIME_KEY = "intraday_alerts_time"
+    if (_IA_CACHE_KEY not in st.session_state
+            or time.time() - st.session_state.get(_IA_TIME_KEY, 0) > 60):
+        st.session_state[_IA_CACHE_KEY] = _get("/intraday/alerts")
+        st.session_state[_IA_TIME_KEY] = time.time()
+    _ia = st.session_state[_IA_CACHE_KEY]
+    _alerts = (_ia or {}).get("alerts", [])
+    _alert_count = len(_alerts)
+
+    if _alert_count == 0 and not _market_open:
+        st.info(
+            "📴 Market is closed. Intraday monitoring activates automatically "
+            "at next session open. Mon-Thu: 09:30 PKT · Friday: 09:15 PKT"
+        )
+    else:
+        # ---- SECTION 2: Session Stats Row --------------------------------
+        _IBC_CACHE_KEY = "intraday_bars_count_cache"
+        _IBC_TIME_KEY = "intraday_bars_count_time"
+        if (_IBC_CACHE_KEY not in st.session_state
+                or time.time() - st.session_state.get(_IBC_TIME_KEY, 0) > 60):
+            st.session_state[_IBC_CACHE_KEY] = _get("/intraday/bars-count")
+            st.session_state[_IBC_TIME_KEY] = time.time()
+        _bars_count = (st.session_state[_IBC_CACHE_KEY] or {}).get("count", 0)
+
+        _bull_types = ("AD_BULL_DIVERGENCE", "RANGE_HIGH_VOLUME")
+        _bear_types = ("AD_BEAR_DIVERGENCE", "RANGE_LOW_VOLUME")
+        _bull_count = sum(1 for a in _alerts if a.get("alert_type") in _bull_types)
+        _bear_count = sum(1 for a in _alerts if a.get("alert_type") in _bear_types)
+
+        _type_counts = Counter(a["alert_type"] for a in _alerts)
+        _top_type, _top_count = _type_counts.most_common(1)[0] if _type_counts else ("—", 0)
+
+        _last = _alerts[0] if _alerts else None
+
+        _stat_c1, _stat_c2, _stat_c3, _stat_c4 = st.columns(4)
+        with _stat_c1:
+            st.metric("⚡ Alerts Today", _alert_count, delta=f"{_bull_count} bull · {_bear_count} bear")
+        with _stat_c2:
+            st.metric("📊 Bars Collected", _bars_count, delta="Since market open")
+        with _stat_c3:
+            st.metric("🔥 Most Active Alert", _top_type, delta=f"{_top_count} times today")
+        with _stat_c4:
+            st.metric("🕐 Last Alert", _last["triggered_at"][11:16] if _last else "—",
+                       delta=_last["symbol"] if _last else "—")
+
+        # ---- SECTION 3: Session Anomaly Alerts Table ---------------------
+        st.markdown("### ⚡ Session Anomalies")
+
+        _feed_filter = st.radio(
+            "Filter", ["All", "📈 Volume", "🌊 A/D Divergence"],
+            horizontal=True, key="intraday_feed_filter",
+        )
+        _volume_types = ("EXTREME_VOLUME", "HIGH_VOLUME", "RANGE_HIGH_VOLUME", "RANGE_LOW_VOLUME")
+        _diverge_types = ("AD_BULL_DIVERGENCE", "AD_BEAR_DIVERGENCE")
+        if _feed_filter == "📈 Volume":
+            _filtered_alerts = [a for a in _alerts if a.get("alert_type") in _volume_types]
+        elif _feed_filter == "🌊 A/D Divergence":
+            _filtered_alerts = [a for a in _alerts if a.get("alert_type") in _diverge_types]
+        else:
+            _filtered_alerts = _alerts
+
+        if not _filtered_alerts:
+            st.info("No anomalies detected this session — volume and price monitoring active during market hours")
+        else:
+            _ia_df = pd.DataFrame(_filtered_alerts)
+
+            _ia_df["Time"] = pd.to_datetime(_ia_df["triggered_at"]).dt.strftime("%H:%M")
+            _ia_df["Vol Ratio"] = _ia_df["volume_ratio"].apply(lambda v: f"{v:.1f}×" if v else "—")
+            _ia_df["Range"] = _ia_df["range_position"].apply(lambda v: f"{v:.0%}" if v else "—")
+            _ia_df["Price"] = _ia_df["price_at_trigger"].apply(lambda v: f"Rs {v:.2f}" if v else "—")
+
+            _ia_display = _ia_df[["symbol", "alert_type", "Price", "Vol Ratio", "Range", "Time"]].rename(
+                columns={"symbol": "Symbol", "alert_type": "Alert"})
+
+            _ALERT_TINTS = {
+                "EXTREME_VOLUME": "background-color: rgba(240,71,91,0.20)",
+                "HIGH_VOLUME": "background-color: rgba(234,179,8,0.20)",
+                "RANGE_HIGH_VOLUME": "background-color: rgba(34,197,94,0.20)",
+                "RANGE_LOW_VOLUME": "background-color: rgba(240,71,91,0.12)",
+                "AD_BULL_DIVERGENCE": "background-color: rgba(34,197,94,0.15)",
+                "AD_BEAR_DIVERGENCE": "background-color: rgba(240,71,91,0.15)",
+            }
+
+            def _tint_alert_row(row):
+                tint = _ALERT_TINTS.get(_ia_df.loc[row.name, "alert_type"], "")
+                return [tint] * len(row)
+
+            st.caption(
+                "⚠️ These flags highlight unusual session activity for manual review. "
+                "High volume alone does not predict direction — PSX data shows volume "
+                "surges are followed by down moves as often as up moves. Always confirm "
+                "with daily pattern analysis before acting."
+            )
+
+            st.dataframe(
+                _ia_display.style.apply(_tint_alert_row, axis=1),
+                use_container_width=True, hide_index=True,
+            )
+
+            st.caption(f"{len(_filtered_alerts)} anomaly flag(s) shown · Updated {(_ia or {}).get('as_of', '—')}")
+
+        # ---- SECTION 4: Alert Type Breakdown ------------------------------
+        if _alerts:
+            st.markdown("### 📊 Alert Distribution Today")
+            _dist_df = pd.DataFrame({
+                "Alert Type": list(_type_counts.keys()),
+                "Count": list(_type_counts.values()),
+            }).set_index("Alert Type")
+            st.bar_chart(_dist_df)
+
+        # ---- SECTION 5: Symbol Deep-Dive ----------------------------------
+        st.markdown("### 🔍 Symbol Deep-Dive")
+        _symbols_today = sorted(set(a["symbol"] for a in _alerts))
+
+        if not _symbols_today:
+            st.caption("No symbols with alerts today.")
+        else:
+            _selected = st.selectbox(
+                "🔍 Inspect symbol intraday", options=_symbols_today, key="intraday_symbol_select",
+            )
+
+            _sym_alerts = [a for a in _alerts if a["symbol"] == _selected]
+            st.markdown(f"**{_selected}** — {len(_sym_alerts)} alert(s) today")
+
+            _sym_df = pd.DataFrame(_sym_alerts)[
+                ["alert_type", "triggered_at", "price_at_trigger", "volume_ratio", "range_position"]
+            ]
+            st.dataframe(_sym_df, use_container_width=True, hide_index=True)
+
+            # Lazy-load intraday bars -- only fetch when symbol changes,
+            # cached in session_state until the tab/session is closed.
+            _bars_key = f"bars_{_selected}"
+            if _bars_key not in st.session_state:
+                st.session_state[_bars_key] = _get(f"/intraday/bars/{_selected}")
+            _bars_resp = st.session_state[_bars_key]
+            _bars = (_bars_resp or {}).get("bars", [])
+
+            if _bars:
+                _bars_df = pd.DataFrame(_bars)
+                _bars_df["time"] = pd.to_datetime(_bars_df["time"])
+                _bars_df = _bars_df.set_index("time")
+                st.markdown("**Intraday Price**")
+                st.line_chart(_bars_df[["price"]], use_container_width=True, height=200)
+                st.markdown("**Cumulative Volume**")
+                st.line_chart(_bars_df[["volume_cumulative"]], use_container_width=True, height=150)
+            else:
+                st.caption(f"No intraday bar data for {_selected} today yet.")
+
+        # ---- SECTION 6: Top 10 by Volume Ratio ----------------------------
+        if _alerts:
+            _vol_alerts = [a for a in _alerts if a.get("volume_ratio")]
+            if _vol_alerts:
+                _vol_df = pd.DataFrame(_vol_alerts)
+                _top_vol = (
+                    _vol_df.groupby("symbol")
+                    .agg(peak_vol_ratio=("volume_ratio", "max"),
+                         peak_range=("range_position", "max"),
+                         alert_count=("alert_type", "count"))
+                    .reset_index()
+                    .sort_values("peak_vol_ratio", ascending=False)
+                    .head(10)
+                )
+                _top_vol.columns = ["Symbol", "Peak Vol Ratio", "Peak Range", "Alert Count"]
+                st.markdown("### 🔥 Highest Volume Ratio Today")
+                st.dataframe(_top_vol, use_container_width=True, hide_index=True)
+
+
 with tab_screener:
     st.markdown('<div class="psx-section-eyebrow">SCREENER</div>'
                 '<div class="psx-section-title">Whole-Market Rankings</div>', unsafe_allow_html=True)
@@ -899,7 +1569,7 @@ with tab_screener:
             else:
                 if consensus["agree_buy"]:
                     st.markdown(f"**✅ Both engines bullish on these ({len(consensus['agree_buy'])})**")
-                    rows = [{"symbol": s, "DSS action": d.get("action"), "DSS score": d.get("score"),
+                    rows = [{"symbol": s, "DSS action": _action_badge(d.get("action")), "DSS score": d.get("score"),
                             "psx_brain verdict": b.get("verdict"), "psx_brain confidence": b.get("confidence")}
                             for s, d, b in consensus["agree_buy"]]
                     cdf = pd.DataFrame(rows)
@@ -918,7 +1588,7 @@ with tab_screener:
 
                 if consensus["agree_avoid"]:
                     st.markdown(f"**🔴 Both engines bearish on these ({len(consensus['agree_avoid'])})**")
-                    rows = [{"symbol": s, "DSS action": d.get("action"), "DSS score": d.get("score"),
+                    rows = [{"symbol": s, "DSS action": _action_badge(d.get("action")), "DSS score": d.get("score"),
                             "psx_brain verdict": b.get("verdict")} for s, d, b in consensus["agree_avoid"]]
                     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
@@ -995,6 +1665,10 @@ with tab_screener:
                         continue
                     st.markdown(f"**{label}** ({len(items)})")
                     df_ = pd.DataFrame(items)
+                    if "action" in df_.columns:
+                        df_["action"] = df_["action"].map(_action_badge)
+                    if "grade" in df_.columns:
+                        df_["grade"] = df_["grade"].map(_grade_badge)
                     shown_cols = [c for c in cols_per_row if c in df_.columns]
                     col_cfg = {"score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
                                "price": st.column_config.NumberColumn("Price", format="%.2f"),
@@ -1100,11 +1774,19 @@ with tab_pulse:
             st.caption(f"As of {feed.get('as_of')} · age {feed.get('age_minutes')} min · "
                        f"{feed.get('symbols_with_news')} symbols with news")
             if feed.get("stocks"):
+                _news_df = pd.DataFrame(feed["stocks"])[
+                    ["symbol", "sector", "price", "observed_move_pct", "direction",
+                     "materiality", "confidence", "agreement", "summary"]
+                ].copy()
+                _direction_label = {"positive": "🟢 Positive", "negative": "🔴 Negative"}
+                _news_df["direction"] = _news_df["direction"].map(lambda d: _direction_label.get(d, d))
+                _news_df["agreement"] = _news_df["agreement"].map(
+                    lambda a: "✅ Confirmed" if a is True else ("❌ Diverging" if a is False else "—"))
                 st.dataframe(
-                    pd.DataFrame(feed["stocks"])[
-                        ["symbol", "sector", "price", "observed_move_pct", "direction",
-                         "materiality", "confidence", "agreement", "summary"]
-                    ],
+                    _news_df.rename(columns={
+                        "direction": "News Sentiment", "materiality": "Market Impact",
+                        "agreement": "Source Consensus",
+                    }),
                     use_container_width=True, height=420,
                 )
             if feed.get("macro_headlines"):
@@ -1260,10 +1942,36 @@ with tab_dss:
                 f'<div class="chg {cls}">{arrow} {abs(q.get("pct") or 0):.2f}%</div></div></div>',
                 unsafe_allow_html=True)
 
+            with st.spinner("Generating AI Analyst Synthesis..."):
+                try:
+                    _ai_resp = requests.post(
+                        f"{BACKEND}/ai/stock-research-summary",
+                        json={
+                            "ticker": dss_symbol,
+                            "dss_score": d.get("evidence_score"),
+                            "technical_data": {
+                                "confidence_grade": d.get("confidence_grade"),
+                                "final_action": d.get("final_action"),
+                                "confluence_matrix": d.get("confluence_matrix"),
+                            },
+                            "recent_news": (d.get("event_risk") or {}).get("items"),
+                        },
+                        timeout=30,
+                    ).json()
+                    _ai_summary = _ai_resp.get("summary", "AI summary unavailable.")
+                except Exception:
+                    _ai_summary = ("AI Analyst Synthesis unavailable right now — the backend's "
+                                    "/ai/stock-research-summary endpoint could not be reached.")
+            st.info(f"**AI Analyst Synthesis**\n\n{_ai_summary}", icon="🧠")
+
             event_risk = d.get("event_risk") or {}
             if event_risk.get("level") == "HIGH":
-                st.warning(f"⚠️ EVENT RISK: HIGH — {event_risk.get('reason','')} "
-                           f"Score capped at {event_risk.get('score_cap')}/100 as a result.")
+                st.error(f"🚨 EVENT RISK: HIGH — {event_risk.get('reason','')} "
+                         f"Score capped at {event_risk.get('score_cap')}/100 as a result.")
+                for it in event_risk.get("items", [])[:2]:
+                    st.caption(f"• {it.get('date','')}: {it.get('title','')}")
+            elif event_risk.get("level") == "MEDIUM":
+                st.warning(f"⚠️ EVENT RISK: MEDIUM — {event_risk.get('reason','')}")
                 for it in event_risk.get("items", [])[:2]:
                     st.caption(f"• {it.get('date','')}: {it.get('title','')}")
 
@@ -1491,7 +2199,7 @@ with tab_dss:
 
                 st.markdown('<div class="psx-section-eyebrow">CONFLUENCE MATRIX</div>'
                             '<div class="psx-section-title">Signal Confluence</div>', unsafe_allow_html=True)
-                with st.container(border=True):
+                with st.expander("⚖️ View Raw DSS Scoring"):
                     rows_html = []
                     for c in d.get("confluence_matrix", []):
                         stance = c["stance"]
@@ -1552,7 +2260,8 @@ with tab_dss:
                 st.markdown('<div class="psx-section-eyebrow">SUPPORTING DETAIL</div>'
                             '<div class="psx-section-title">Technical Stack & Candlestick Structure</div>',
                             unsafe_allow_html=True)
-                tcol1, tcol2, tcol3 = st.columns(3)
+                _tech_raw_expander = st.expander("🛠️ View Raw Technical Breakdown")
+                tcol1, tcol2, tcol3 = _tech_raw_expander.columns(3)
                 with tcol1, st.container(border=True):
                     st.markdown('<div class="psx-panel-title">📐 Wyckoff (quick read)</div>', unsafe_allow_html=True)
                     w = _get(f"/wyckoff-pro/{dss_symbol}")
@@ -1827,6 +2536,519 @@ with tab_dss:
                 else:
                     st.info("Sector unavailable for this symbol — can't find peers.")
 
+# ------------------------------------------------------------ Patterns ----
+with tab_patterns:
+    _regime = _get("/patterns/regime")
+    if _regime.get("status") == "ok":
+        if _regime["label"] == "BULL":
+            st.success("📈 Market Regime: BULL — KSE-100 above 200-day MA. Pattern reliability historically higher.")
+        elif _regime["label"] == "BEAR":
+            st.warning("⚠️ Market Regime: BEAR — KSE-100 below 200-day MA. Reduce position sizes. Chart patterns "
+                       "showed elevated failure rates in bear conditions on PSX.")
+        else:
+            st.info("Market regime: KSE-100 is essentially flat against its 200-day MA.")
+    else:
+        st.info("Market regime: KSE-100 data unavailable.")
+
+    with st.sidebar:
+        # CHANGE 7: regime snapshot card. No 52-week high/low in
+        # /patterns/regime's response (only label/current/ma_200) --
+        # no progress bar here, since that would be a fabricated range.
+        if _regime.get("status") == "ok":
+            _rg_label = _regime.get("label")
+            _rg_current = _regime.get("current")
+            _rg_ma = _regime.get("ma_200")
+            _rg_pct = ((_rg_current - _rg_ma) / _rg_ma * 100) if _rg_ma else None
+            if _rg_label == "BULL":
+                _rg_header, _rg_fg, _rg_bg = "📈 BULL", "rgba(34,197,94,1)", "rgba(34,197,94,0.15)"
+            elif _rg_label == "BEAR":
+                _rg_header, _rg_fg, _rg_bg = "⚠️ BEAR", "rgba(240,71,91,1)", "rgba(240,71,91,0.15)"
+            else:
+                _rg_header, _rg_fg, _rg_bg = "➡️ FLAT", "rgba(139,150,163,1)", "rgba(139,150,163,0.15)"
+            _rg_pct_line = (f"{abs(_rg_pct):.1f}% {'above' if _rg_pct >= 0 else 'below'} MA"
+                             if _rg_pct is not None else "—")
+            st.markdown(
+                f'<div style="padding:12px;border-radius:8px;background:{_rg_bg};margin-bottom:12px;">'
+                f'<div style="font-size:13px;font-weight:700;color:{_rg_fg};margin-bottom:4px;">{_rg_header}</div>'
+                f'<div style="font-size:22px;font-weight:700;">{_rg_current:,.0f}</div>'
+                f'<div style="font-size:11px;color:#8B96A3;margin-top:4px;">200-day MA: {_rg_ma:,.0f}</div>'
+                f'<div style="font-size:11px;color:{_rg_fg};">{_rg_pct_line}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("Regime data unavailable")
+
+        st.markdown("### 🕯️ Patterns Control Panel")
+        patterns_admin_token = st.text_input(
+            "Admin token (if set on backend)", type="password", key="patterns_sidebar_admin_token")
+        patterns_force_refresh = st.button(
+            "🔄 Force Market-Wide Refresh", type="primary", use_container_width=True,
+            key="patterns_force_refresh_all")
+        st.caption("Forces every pattern scan on this page to re-run immediately, instead of "
+                   "waiting for its normal once-daily background refresh.")
+        st.divider()
+
+    _pat_refresh_params = {}
+    if patterns_force_refresh:
+        _pat_refresh_params["force"] = "true"
+        if patterns_admin_token:
+            _pat_refresh_params["token"] = patterns_admin_token
+
+    MOBILE_ROW_CAP = 50
+
+    def _render_pattern_table(df, color_fn, key, column_config, date_col=None, rr_colour_col=None):
+        """Shared table renderer for every pattern section below: caps to the
+        MOBILE_ROW_CAP most recent rows (a full unlimited signals table --
+        e.g. bearish engulfing's 1,600+ backtested-sample scale -- risks a
+        silent render failure/blank screen on mobile browsers' DOM), applies
+        the row-coloring style (if any), wires row-selection to open that
+        symbol in Stock Research, and renders with the given column_config.
+
+        rr_colour_col (Change 4): name of an R:R column to colour green/
+        amber/red via _colour_rr. Chained onto the SAME Styler object
+        color_fn already created (df.style.apply(...).map(...)) rather
+        than a second, conflicting .style call -- a Styler only ever gets
+        built once here, whether from row-tinting, R:R colouring, or both."""
+        total = len(df)
+        if date_col and date_col in df.columns:
+            df = df.sort_values(date_col, ascending=False, kind="stable").reset_index(drop=True)
+        if total > MOBILE_ROW_CAP:
+            df = df.head(MOBILE_ROW_CAP).reset_index(drop=True)
+        styled = df.style.apply(color_fn, axis=1) if color_fn else df
+        if rr_colour_col and rr_colour_col in df.columns:
+            if not hasattr(styled, "map"):  # still a plain DataFrame -- color_fn was None
+                styled = styled.style
+            styled = styled.map(_colour_rr, subset=[rr_colour_col])
+        sel = st.dataframe(
+            styled, use_container_width=True, hide_index=True,
+            on_select="rerun", selection_mode="single-row", key=key,
+            column_config=column_config)
+        if total > MOBILE_ROW_CAP:
+            st.caption(f"Showing top {MOBILE_ROW_CAP} of {total} signals "
+                       f"({'most recent' if date_col else 'unsorted'}) to optimize mobile performance.")
+        srows = sel.selection.rows if sel and sel.selection else []
+        if srows:
+            sym_col = "symbol" if "symbol" in df.columns else "Symbol"
+            sym = df.iloc[srows[0]][sym_col]
+            st.session_state.research_symbol = sym
+            st.toast(f"Opened {sym} in Stock Research →", icon="🎯")
+
+    def _scan_status_banner(result, label):
+        """Returns True if `result` has real hits to render, after handling
+        the forbidden/running/error states every scan endpoint can return."""
+        if result.get("status") == "forbidden":
+            st.error(result.get("reason"))
+            return False
+        if result.get("status") == "running":
+            st.info(result.get("reason") or "Scan running in the background for the first time — check back shortly.")
+            return False
+        if result.get("status") != "ok":
+            st.warning(result.get("reason") or f"{label} scan unavailable right now.")
+            return False
+        return True
+
+    RECENT_SIGNAL_DAYS = 14
+
+    def _filter_recent(hits, date_key, checkbox_key):
+        """Retail users don't want 2-month-old signals mixed in with today's
+        — hide anything older than RECENT_SIGNAL_DAYS by default, with a
+        checkbox to see the full history on demand. A hit with no/unparsable
+        date is kept rather than silently dropped."""
+        show_all = st.checkbox("Show Historical Signals", key=checkbox_key)
+        if show_all or not hits:
+            return hits, 0
+        cutoff = (datetime.now() - timedelta(days=RECENT_SIGNAL_DAYS)).date()
+
+        def _is_recent(h):
+            try:
+                return datetime.strptime(str(h.get(date_key) or "")[:10], "%Y-%m-%d").date() >= cutoff
+            except ValueError:
+                return True
+
+        kept = [h for h in hits if _is_recent(h)]
+        return kept, len(hits) - len(kept)
+
+    tab_long, tab_short, tab_structural = st.tabs(
+        ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
+
+    # ---------------------------------------------------- Long-Side tab ----
+    with tab_long:
+        st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS</div>'
+                    '<div class="psx-section-title">🕯️ Bullish Engulfing — 1D</div>', unsafe_allow_html=True)
+        pr = _get("/patterns/bullish-engulfing-scan", **_pat_refresh_params)
+        if _scan_status_banner(pr, "Bullish Engulfing"):
+            age = pr.get("_cache_age_seconds")
+            age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+            running_note = " · a background refresh is running right now" if pr.get("_background_refresh_running") else ""
+            hits_all = pr.get("hits") or []
+            hits, hidden_n = _filter_recent(hits_all, "pattern_date", "be_bull_hist_checkbox")
+            st.caption(f"📦 Scanned {pr.get('scanned', 0)} symbols with stored daily history · last run "
+                       f"{age_str}{running_note} · {len(hits)} symbol(s) currently showing engulfing geometry"
+                       f"{f' ({hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if hidden_n else ''}.")
+
+            if not hits:
+                st.info("No symbol currently shows Bullish Engulfing geometry on its latest completed daily candles.")
+            else:
+                names_pat = _company_names()
+                rows = [{
+                    "symbol": h["symbol"],
+                    "company": names_pat.get(h["symbol"], ""),
+                    "action": "🟢 BUY SIGNAL" if "VALID" in str(h.get("classification") or "") else "⚪ WAIT (No Setup)",
+                    "date": h.get("pattern_date"),
+                } for h in hits]
+                pdf = pd.DataFrame(rows)
+                # Bullish Engulfing's hit dict has no entry/stop/target
+                # fields (geometry-only detector) -- these three columns
+                # are added for a consistent table shape with the other
+                # pattern tables, always "—", never a fabricated value.
+                pdf["Stop"] = "—"
+                pdf["Target"] = "—"
+                pdf["R:R"] = "—"
+
+                def _row_color(row):
+                    color = "rgba(40, 167, 69, 0.22)" if row["action"] == "🟢 BUY SIGNAL" else "rgba(108, 117, 125, 0.18)"
+                    return [f"background-color: {color}"] * len(row)
+
+                _render_pattern_table(pdf, _row_color, "patterns_scan_table", {
+                    "symbol": "Symbol", "company": "Company", "action": "Action",
+                    "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                    "Stop": st.column_config.TextColumn("Stop"),
+                    "Target": st.column_config.TextColumn("Target"),
+                    "R:R": st.column_config.TextColumn("R:R"),
+                }, date_col="date")
+
+            with st.expander("📖 View Rules & Metrics for Bullish Engulfing"):
+                st.caption("Market-wide scan, on the latest completed daily candles — real bodies per Steve "
+                           "Nison's classical definition, not wicks/shadows. Detection only: no targets, stop "
+                           "losses, or indicator filters. 🟢 = geometry confirmed by a preceding downtrend (a "
+                           "full, valid reversal signal). 🔴 = engulfing geometry present but with **no "
+                           "confirmed prior downtrend** — flagged, not a valid classical signal on its own.")
+                st.caption("**Rules used** — Candle 1 (previous) bearish, Candle 2 (latest) bullish, and "
+                           "Candle 2's real body engulfs Candle 1's real body (STRICT: open₂<close₁ and "
+                           "close₂>open₁; BOUNDARY_MATCH: one boundary equal, the other strictly beyond). "
+                           "Prior downtrend (automation-only rule, not from Nison): of the 3 close-to-close "
+                           "moves ending at Candle 1's close, at least 2 must be negative, and Candle 1's "
+                           "close must be below the close 3 sessions earlier. An unfinished current-day "
+                           "candle is always excluded. Refreshed once daily in the background (daily-bar "
+                           "geometry doesn't shift within a session) — use the sidebar's Force Market-Wide "
+                           "Refresh for an immediate re-run.")
+
+        st.divider()
+        st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS</div>'
+                    '<div class="psx-section-title">🌅 Morning Star — 1D</div>', unsafe_allow_html=True)
+        msr = _get("/patterns/morning-star-scan", **_pat_refresh_params)
+        if _scan_status_banner(msr, "Morning Star"):
+            ms_age = msr.get("_cache_age_seconds")
+            ms_age_str = f"{int(ms_age // 60)} min ago" if isinstance(ms_age, (int, float)) else "—"
+            ms_running_note = " · a background refresh is running right now" if msr.get("_background_refresh_running") else ""
+            ms_hits_all = msr.get("hits") or []
+            ms_hits, ms_hidden_n = _filter_recent(ms_hits_all, "date", "be_ms_hist_checkbox")
+            st.caption(f"📦 Scanned {msr.get('scanned', 0)} symbols with stored daily history · last run "
+                       f"{ms_age_str}{ms_running_note} · {len(ms_hits)} symbol(s) with a Morning Star "
+                       f"completing on their latest stored session"
+                       f"{f' ({ms_hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if ms_hidden_n else ''}.")
+
+            if not ms_hits:
+                st.info("No symbol currently shows a Morning Star completing on its latest stored daily session.")
+            else:
+                names_ms = _company_names()
+                # Every hit here is already a confirmed Morning Star detection
+                # (the backend has no geometry-only/failed tier for this
+                # pattern) -- so it's always an actionable signal.
+                ms_rows = [{
+                    "symbol": h["symbol"], "company": names_ms.get(h["symbol"], ""),
+                    "action": "🟢 BUY SIGNAL",
+                    "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+                    "target 1": h.get("target_1"), "date": h.get("date"),
+                } for h in ms_hits]
+                msdf = pd.DataFrame(ms_rows)
+                msdf["R:R"] = msdf.apply(lambda r: _rr_label(
+                    (r["target 1"] - r["entry"]) / (r["entry"] - r["stop"])
+                    if r.get("entry") and r.get("stop") and r.get("target 1")
+                    and (r["entry"] - r["stop"]) != 0
+                    else None
+                ), axis=1)
+
+                def _ms_row_color(row):
+                    color = "rgba(40, 167, 69, 0.22)"
+                    return [f"background-color: {color}"] * len(row)
+
+                _render_pattern_table(msdf, _ms_row_color, "morning_star_scan_table", {
+                    "symbol": "Symbol", "company": "Company", "action": "Action",
+                    "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+                    "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+                    "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+                    "R:R": st.column_config.TextColumn("R:R"),
+                    "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                }, date_col="date", rr_colour_col="R:R")
+
+            with st.expander("📖 View Rules & Metrics for Morning Star"):
+                st.caption("Market-wide scan, on the latest completed daily candles — Thomas Bulkowski's "
+                           "empirical 3-candle criteria (50% midpoint penetration, small-star geometry) plus "
+                           "Steve Nison's classical description. Two deliberate PSX exceptions: no physical "
+                           "gap is required between candles (±10% circuit breakers can prevent one from ever "
+                           "printing) and Day 1 volume is never filtered (a lower-circuit lock trades almost "
+                           "nothing by definition). 🟢 STRONG = full 4-way confluence (volume >1.5x, Day 2 is "
+                           "a doji, >75% penetration, Day 2 RSI(14)<35). 🔵 MODERATE = passes the base "
+                           "geometry, 50% midpoint rule, and ≥1.3x volume, but not the full STRONG bar.")
+                st.caption("Backtested on 742 PSX signals (2021-2026). Win rate 53.9%, median P&L +2.3%. "
+                           "STRONG signals (4 strict conditions) show 55.6% win rate. Target 2 hit rate "
+                           "13.7% — highest of all pattern modules.")
+                st.caption("**Rules used** — Day 1: bearish, real body larger than its trailing 10-day "
+                           "average. Day 2: real body ≤30% of Day 1's, closing in the lower third of Day 1's "
+                           "range. Day 3: bullish, closing above the 50% midpoint of Day 1's body (Bulkowski's "
+                           "non-negotiable rule). Context: Day 1 close below its SMA10 OR ≥4 lower-lows in "
+                           "the preceding 6 days; Day 3 volume ≥1.3x its trailing 20-day average. Stop loss = "
+                           "Day 2 low − 0.5×ATR(14); Target 1 = entry + (Day 1 high − Day 2 low); Target 2 = "
+                           "Target 1 + 1.0×ATR(14). Refreshed once daily in the background — use the "
+                           "sidebar's Force Market-Wide Refresh for an immediate re-run.")
+
+        st.divider()
+        st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS</div>'
+                    '<div class="psx-section-title">🟢 Bullish Three-Line Strike — 1D</div>', unsafe_allow_html=True)
+        tlsr = _get("/patterns/three-line-strike-scan", **_pat_refresh_params)
+        if _scan_status_banner(tlsr, "Three-Line Strike"):
+            tls_age = tlsr.get("_cache_age_seconds")
+            tls_age_str = f"{int(tls_age // 60)} min ago" if isinstance(tls_age, (int, float)) else "—"
+            tls_running_note = " · a background refresh is running right now" if tlsr.get("_background_refresh_running") else ""
+            tls_hits_all = tlsr.get("hits") or []
+            tls_hits, tls_hidden_n = _filter_recent(tls_hits_all, "pattern_date", "be_tls_hist_checkbox")
+            st.caption(f"📦 Scanned {tlsr.get('scanned', 0)} symbols with stored daily history · last run "
+                       f"{tls_age_str}{tls_running_note} · {len(tls_hits)} symbol(s) currently showing a "
+                       f"Three-Line Strike on their latest completed 4-candle window"
+                       f"{f' ({tls_hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if tls_hidden_n else ''}.")
+
+            st.warning("⚠️ Ultra-rare volatility trap. Target 1 has a 56% historical win rate, but Target 2 "
+                       "is structurally unvalidated (0%). Trade with caution. Backtested on only 64 "
+                       "resolvable PSX signals (PRODUCTION READY - RARE SIGNAL (MONITORED), not a "
+                       "full-confidence module) — low 6.25% timeout rate is the reason this was wired "
+                       "despite the thin sample.")
+
+            if not tls_hits:
+                st.info("No symbol currently shows a Bullish Three-Line Strike on its latest completed 4-candle window.")
+            else:
+                names_tls = _company_names()
+                tls_rows = [{
+                    "symbol": h["symbol"], "company": names_tls.get(h["symbol"], ""),
+                    "action": "🟢 BUY SIGNAL" if "VALID" in str(h.get("classification") or "") else "⚪ WAIT (No Setup)",
+                    "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+                    "target 1": h.get("target_1"), "date": h.get("pattern_date"),
+                } for h in tls_hits]
+                tlsdf = pd.DataFrame(tls_rows)
+
+                def _tls_row_color(row):
+                    color = "rgba(40, 167, 69, 0.22)" if row["action"] == "🟢 BUY SIGNAL" else "rgba(108, 117, 125, 0.18)"
+                    return [f"background-color: {color}"] * len(row)
+
+                _render_pattern_table(tlsdf, _tls_row_color, "three_line_strike_scan_table", {
+                    "symbol": "Symbol", "company": "Company", "action": "Action",
+                    "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+                    "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+                    "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+                    "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                }, date_col="date")
+
+            with st.expander("📖 View Rules & Metrics for Bullish Three-Line Strike"):
+                st.caption("Market-wide scan, on the latest completed 4-candle window — a rare "
+                           "volatility-trap reversal: three consecutive lower closes in a confirmed uptrend, "
+                           "fully engulfed by a single bullish strike candle on expanding volume (≥1.3x "
+                           "20-day average). Prior trend is the exact literal rule (close 10 sessions ago "
+                           "≥5% below Day 1's open), not the OLS heuristic used for the Engulfing detectors. "
+                           "🟢 VALID = volume confirmed. ⚪ GEOMETRY_ONLY = the 4-candle pattern and prior "
+                           "uptrend both confirmed, but Day 4 volume did not reach 1.3x average — tracked "
+                           "for visibility, not an actionable signal.")
+
+    # --------------------------------------------------- Short-Side tab ----
+    with tab_short:
+        st.error("Everything in this tab expects price to FALL, not rise. PSX short-selling carries "
+                  "different risk/settlement parameters than a long position — confirm your broker/NCCPL "
+                  "margin and settlement rules before acting on any of these.", icon="🚨")
+
+        st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS · BEARISH</div>'
+                    '<div class="psx-section-title">🔻 Bearish Engulfing — 1D</div>', unsafe_allow_html=True)
+        ber = _get("/patterns/bearish-engulfing-scan", **_pat_refresh_params)
+        if _scan_status_banner(ber, "Bearish Engulfing"):
+            be_age = ber.get("_cache_age_seconds")
+            be_age_str = f"{int(be_age // 60)} min ago" if isinstance(be_age, (int, float)) else "—"
+            be_running_note = " · a background refresh is running right now" if ber.get("_background_refresh_running") else ""
+            be_hits_all = ber.get("hits") or []
+            be_hits, be_hidden_n = _filter_recent(be_hits_all, "pattern_date", "be_bear_hist_checkbox")
+            st.caption(f"📦 Scanned {ber.get('scanned', 0)} symbols with stored daily history · last run "
+                       f"{be_age_str}{be_running_note} · {len(be_hits)} symbol(s) currently showing bearish "
+                       f"engulfing geometry"
+                       f"{f' ({be_hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if be_hidden_n else ''}.")
+
+            if not be_hits:
+                st.info("No symbol currently shows Bearish Engulfing geometry on its latest completed daily candles.")
+            else:
+                names_be = _company_names()
+                be_rows = [{
+                    "symbol": h["symbol"], "company": names_be.get(h["symbol"], ""),
+                    "action": "🔴 SHORT SIGNAL" if "VALID" in str(h.get("classification") or "") else "⚪ WAIT (No Setup)",
+                    "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+                    "target 1": h.get("target_1"), "date": h.get("pattern_date"),
+                } for h in be_hits]
+                bedf = pd.DataFrame(be_rows)
+                bedf["R:R"] = bedf.apply(lambda r: _rr_label(
+                    (r["target 1"] - r["entry"]) / (r["entry"] - r["stop"])
+                    if r.get("entry") and r.get("stop") and r.get("target 1")
+                    and (r["entry"] - r["stop"]) != 0
+                    else None
+                ), axis=1)
+
+                def _be_row_color(row):
+                    color = "rgba(220, 53, 69, 0.28)" if row["action"] == "🔴 SHORT SIGNAL" else "rgba(108, 117, 125, 0.18)"
+                    return [f"background-color: {color}"] * len(row)
+
+                _render_pattern_table(bedf, _be_row_color, "bearish_engulfing_scan_table", {
+                    "symbol": "Symbol", "company": "Company", "action": "Action",
+                    "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+                    "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+                    "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+                    "R:R": st.column_config.TextColumn("R:R"),
+                    "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                }, date_col="date", rr_colour_col="R:R")
+
+            with st.expander("📖 View Rules & Metrics for Bearish Engulfing"):
+                st.caption("Market-wide scan, on the latest completed daily candles — mirror of Bullish "
+                           "Engulfing, inverted. Day 1 bullish, Day 2 bearish and fully engulfing Day 1's "
+                           "body, prior uptrend confirmed by the same OLS-regression-slope heuristic Bullish "
+                           "Engulfing uses (sign-flipped), plus a volume filter (Day 2 ≥1.3x its 20-day "
+                           "average) and a near-resistance filter (Day 1's high within 3% of the trailing "
+                           "20-day swing high) that Bullish Engulfing does not have.")
+                st.caption("Backtested on the full PSX universe: Target 1 win rate 66.8%, Target 2 win rate "
+                           "8.3%, stop-hit rate 31.6% (n=1,620 VALID signals).")
+
+        st.divider()
+        st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS · BEARISH</div>'
+                    '<div class="psx-section-title">🔻 Evening Star — 1D</div>', unsafe_allow_html=True)
+        esr = _get("/patterns/evening-star-scan", **_pat_refresh_params)
+        if _scan_status_banner(esr, "Evening Star"):
+            es_age = esr.get("_cache_age_seconds")
+            es_age_str = f"{int(es_age // 60)} min ago" if isinstance(es_age, (int, float)) else "—"
+            es_running_note = " · a background refresh is running right now" if esr.get("_background_refresh_running") else ""
+            es_hits_all = esr.get("hits") or []
+            es_hits, es_hidden_n = _filter_recent(es_hits_all, "date", "be_es_hist_checkbox")
+            st.caption(f"📦 Scanned {esr.get('scanned', 0)} symbols with stored daily history · last run "
+                       f"{es_age_str}{es_running_note} · {len(es_hits)} symbol(s) with an Evening Star "
+                       f"completing on their latest stored session"
+                       f"{f' ({es_hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if es_hidden_n else ''}.")
+
+            st.warning("⚠️ Backtested on the full PSX universe: Target 1 win rate 64.1%, stop-hit rate "
+                       "30.8% (n=39 — a very thin sample; Target 2 win rate is 0% at this sample size, so "
+                       "treat this pattern's edge as unvalidated, not just unbacktested).")
+
+            if not es_hits:
+                st.info("No symbol currently shows an Evening Star completing on its latest stored daily session.")
+            else:
+                names_es = _company_names()
+                # Every hit here is already a confirmed Evening Star detection
+                # (no geometry-only/failed tier for this pattern) -- always
+                # actionable when present.
+                es_rows = [{
+                    "symbol": h["symbol"], "company": names_es.get(h["symbol"], ""),
+                    "action": "🔴 SHORT SIGNAL",
+                    "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+                    "target 1": h.get("target_1"), "date": h.get("date"),
+                } for h in es_hits]
+                esdf = pd.DataFrame(es_rows)
+
+                def _es_row_color(row):
+                    color = "rgba(220, 53, 69, 0.28)"
+                    return [f"background-color: {color}"] * len(row)
+
+                _render_pattern_table(esdf, _es_row_color, "evening_star_scan_table", {
+                    "symbol": "Symbol", "company": "Company", "action": "Action",
+                    "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+                    "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+                    "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+                    "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                }, date_col="date")
+
+            with st.expander("📖 View Rules & Metrics for Evening Star"):
+                st.caption("Market-wide scan, on the latest completed daily candles — bearish mirror of "
+                           "Morning Star. Day 1 large bullish, Day 2 small body in the UPPER third of Day "
+                           "1's range, Day 3 large bearish closing below Day 1's 50% midpoint, Day 3 volume "
+                           "≥1.3x its 20-day average.")
+
+    # ----------------------------------------------- Structural Patterns ----
+    with tab_structural:
+        st.markdown('<div class="psx-section-eyebrow">CHART PATTERNS</div>'
+                    '<div class="psx-section-title">📐 Chart Patterns (IHS & Double Bottom)</div>',
+                    unsafe_allow_html=True)
+        adv = _get("/patterns/advanced-scan", **_pat_refresh_params)
+        if adv.get("status") not in ("ok",):
+            st.info(adv.get("reason") or "Chart pattern scan unavailable right now.")
+        else:
+            _ADV_PATTERN_LABELS = {"INVERSE_HS": "Inverse Head & Shoulders", "DOUBLE_BOTTOM": "Double Bottom"}
+            adv_hits_all = adv.get("hits") or []
+            adv_filter = st.selectbox(
+                "Pattern type", ["All", "Inverse Head & Shoulders", "Double Bottom"], key="adv_pattern_filter")
+            if adv_filter != "All":
+                _adv_filter_raw = {v: k for k, v in _ADV_PATTERN_LABELS.items()}[adv_filter]
+                adv_hits_all = [h for h in adv_hits_all if h.get("pattern_type") == _adv_filter_raw]
+            adv_hits, adv_hidden_n = _filter_recent(adv_hits_all, "signal_date", "be_adv_hist_checkbox")
+            if adv_hidden_n:
+                st.caption(f"{adv_hidden_n} signal(s) older than {RECENT_SIGNAL_DAYS}d hidden.")
+            if not adv_hits:
+                st.info("No Inverse Head & Shoulders or Double Bottom signals right now.")
+            else:
+                names_adv = _company_names()
+                adv_rows = [{
+                    "Symbol": h.get("symbol"), "Company": names_adv.get(h.get("symbol"), ""),
+                    # Every hit here is already a confirmed detection (both
+                    # patterns are long-side setups, and the backend has no
+                    # geometry-only/failed tier for this scanner) -- always
+                    # actionable when present.
+                    "Pattern": ("⚠️ " if h.get("pattern_type") == "INVERSE_HS" else "")
+                               + _ADV_PATTERN_LABELS.get(h.get("pattern_type"), str(h.get("pattern_type"))),
+                    "Action": "🟢 BUY SIGNAL",
+                    "Entry": h.get("entry_price"), "Stop": h.get("stop_loss"),
+                    "Target": h.get("target_1"),
+                    "R:R": _rr_label(h.get("risk_reward_measured")),
+                    "Date": h.get("signal_date"),
+                } for h in adv_hits]
+
+                def _adv_row_color(row):
+                    color = "rgba(34,197,94,0.12)" if row["Action"] == "🟢 BUY SIGNAL" else "rgba(139,150,163,0.06)"
+                    return [f"background-color: {color}"] * len(row)
+
+                _render_pattern_table(pd.DataFrame(adv_rows), _adv_row_color, "advanced_pattern_scan_table", {
+                    "Date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                    "Entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+                    "Stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+                    "Target": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+                    "R:R": st.column_config.TextColumn("R:R"),
+                }, date_col="Date", rr_colour_col="R:R")
+
+            with st.expander("📖 View Rules & Metrics for Chart Patterns (IHS & Double Bottom)"):
+                st.caption("⚠️ \"Pattern Quality\" is a deterministic geometric/volume score, NOT a "
+                           "validated predictor of trade outcome — backtesting found zero statistically "
+                           "significant correlation between this score and win/loss. Use it to understand "
+                           "why a pattern matched, not to decide whether to trust it. Higher scores suggest "
+                           "larger moves when the pattern succeeds, not higher win probability. Consider "
+                           "using for position sizing only. IHS (⚠️) signals have structurally "
+                           "underperformed Double Bottom signals in PSX backtesting. \"Regime\" is a "
+                           "placeholder pending a KSE-100 index data feed.")
+
+        # Cup & Handle suspended — see CALIBRATION_LOG.md "MARKET STRUCTURE
+        # CONCLUSION". Insufficient PSX signal density (2 signals in a 5yr,
+        # 443-symbol universe scan) -- rejection-funnel medians sit nowhere
+        # near the thresholds, so this isn't a parameter-tuning problem.
+        # Re-enable when market structure supports the pattern (see the log
+        # entry for the two specific conditions). Code, tests, and the
+        # /patterns/cup-handle-scan backend endpoint are untouched and still
+        # fully functional -- only this dashboard section is hidden.
+
+        # Ascending Triangle suspended — see CALIBRATION_LOG. Insufficient PSX
+        # signal density (5 signals in 5yr universe scan). Re-enable when
+        # market structure supports the pattern.
+
+    st.caption("More patterns (Hammer, Piercing Pattern, Harami, Three White Soldiers) will be added to "
+               "this tab as separate detectors, each scanned the same way.")
+
+
 # ---------------------------------------------------------------- More ----
 with tab_more:
     st.markdown('<div class="psx-section-eyebrow">TOOLS & STATUS</div>'
@@ -1836,8 +3058,10 @@ with tab_more:
                "don't have to scroll past everything to find one thing.")
 
     more_token = _admin_token_input("more_admin_token")
-    st.caption("One admin token, reused by every force-run/backfill action below \u2014 enter it once here "
-               "(only needed if PSX_ADMIN_TOKEN is set on the backend; on localhost it's optional).")
+    st.caption("Admin token \u2014 required for full scan access. One admin token, reused by every "
+               "force-run/backfill action below and by the Home tab's watchlist refresh (they all "
+               "share this same value) \u2014 enter it once here (only needed if PSX_ADMIN_TOKEN is "
+               "set on the backend; on localhost it's optional).")
 
     subtab_data, subtab_quant, subtab_status = st.tabs(
         ["\U0001F5C4\uFE0F DATA & BACKFILL", "\U0001F9EA QUANT VALIDATION LAB", "\u2699\uFE0F SYSTEM STATUS"]
@@ -1874,6 +3098,24 @@ with tab_more:
             st.markdown(f"[Download full market export (.xlsx)]({BACKEND}/export.xlsx)")
 
     with subtab_quant:
+        bt_status = _get("/backtest/status")
+        _regime_for_ai = _get("/patterns/regime")
+        with st.spinner("Generating AI Edge Analysis..."):
+            try:
+                _ai_edge_resp = requests.post(
+                    f"{BACKEND}/ai/edge-analysis-summary",
+                    json={
+                        "backtest_metrics": bt_status.get("patterns") if bt_status.get("status") == "ok" else None,
+                        "regime_status": _regime_for_ai.get("label") if _regime_for_ai.get("status") == "ok" else None,
+                    },
+                    timeout=30,
+                ).json()
+                _ai_edge_summary = _ai_edge_resp.get("summary", "AI summary unavailable.")
+            except Exception:
+                _ai_edge_summary = ("AI Edge Analysis unavailable right now — the backend's "
+                                     "/ai/edge-analysis-summary endpoint could not be reached.")
+        st.info(f"**AI Edge Analysis**\n\n{_ai_edge_summary}", icon="🤖")
+
         st.caption("Five tools, one question each: does a pattern beat random chance, does "
                    "its edge survive data it never trained on, does it hold across bull/bear "
                    "regimes, is there a genuine PSX-specific combination worth tracking, and "
@@ -1887,7 +3129,6 @@ with tab_more:
                        "numbers instead of PENDING. No win-rate is fabricated; sample sizes are always shown. "
                        "Auto-refreshes once a day in the background (pattern stats come from daily bars that "
                        "don't shift within a day) — no click needed for routine use.")
-            bt_status = _get("/backtest/status")
             if bt_status.get("status") == "ok":
                 run = bt_status["run"]
                 st.caption(f"Last run: {run.get('run_at')} · {run.get('universe_symbols')} symbols · "

@@ -36,6 +36,21 @@ def _load_cache():
 _CACHE = _load_cache()
 
 
+def reload_cache():
+    """Re-reads fundamentals.json from disk and drops the memoized
+    sector-peer index so the next analyze()/_sector_peer_values() call
+    picks up whatever's on disk right now. Needed by any caller that
+    updates fundamentals.json AFTER this module has already been
+    imported (e.g. pdf_reporter.py's just-in-time fetch for symbols
+    missing from the cache) — without this, _CACHE and _SECTOR_VALUES
+    stay frozen at whatever they were at import time, silently ignoring
+    the fresh data. Does not change analyze()'s existing behavior for
+    anyone who never calls this."""
+    global _CACHE, _SECTOR_VALUES
+    _CACHE = _load_cache()
+    _SECTOR_VALUES = None
+
+
 _SECTOR_VALUES = None
 
 

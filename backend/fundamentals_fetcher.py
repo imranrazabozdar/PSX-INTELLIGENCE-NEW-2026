@@ -78,8 +78,40 @@ def fetch(symbol, session):
     return out
 
 
+def load_cache():
+    """Current on-disk cache, or an empty payload if it doesn't exist yet /
+    is unreadable. Never raises — a corrupt cache is treated the same as
+    no cache, not a crash."""
+    try:
+        with open(CACHE_PATH, encoding="utf-8") as f:
+            payload = json.load(f)
+        payload.setdefault("data", {})
+        return payload
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {"as_of": None, "source": "stockanalysis.com (PSX)", "data": {}}
+
+
+def merge_and_save(new_data):
+    """Merge `new_data` ({symbol: ratios}) into the EXISTING cache on disk
+    and write the result — a caller fetching 3 new symbols must not wipe
+    out the other N already cached (the bug fixed here: fetch_all() used
+    to overwrite fundamentals.json with ONLY the symbols just fetched).
+    New entries win over old ones for the same symbol (freshest wins);
+    `as_of` bumps to today whenever anything new was actually written.
+    Returns the merged payload."""
+    payload = load_cache()
+    if new_data:
+        payload["data"].update(new_data)
+        payload["as_of"] = date.today().isoformat()
+    payload["source"] = "stockanalysis.com (PSX)"
+    with open(CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    return payload
+
+
 def fetch_all(symbols=None):
-    """Fetch every symbol, write fundamentals.json, return the payload."""
+    """Fetch every symbol, MERGE into the existing fundamentals.json
+    (not overwrite it), return the merged payload."""
     symbols = symbols or config.STOCKS
     s = requests.Session()
     s.headers.update(UA)
@@ -90,11 +122,7 @@ def fetch_all(symbols=None):
             data[sym] = d
         log.info("%-7s -> %s", sym, d or "no data")
         time.sleep(0.5)                          # be polite to the source
-    payload = {"as_of": date.today().isoformat(),
-               "source": "stockanalysis.com (PSX)", "data": data}
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-    return payload
+    return merge_and_save(data)
 
 
 if __name__ == "__main__":

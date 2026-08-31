@@ -299,19 +299,63 @@ def build_baseline(symbols, hist_lookup=None):
     return _BASELINE
 
 
-def session_progress():
-    """Fraction of the PSX session elapsed (0..1). Used to normalise volume."""
-    from datetime import datetime, timedelta, timezone
-    now = datetime.now(timezone(timedelta(hours=5)))
-    if now.weekday() > 4:
+def session_progress() -> float:
+    """
+    Fraction of today's PSX trading session elapsed (0.0 to 1.0).
+    Used to normalise intraday volume against expected daily volume.
+
+    Mon-Thu: single session 09:30-15:30 PKT (360 minutes total)
+    Friday:  two sessions 09:15-12:00 (165 min) + 14:15-16:05 (110 min)
+             = 275 minutes total
+    Weekend: returns 1.0
+
+    Reconciled (Fix 3) against WATCHLIST_HOURS_PKT in app.py -- the two
+    previously used different Mon-Thu open times (09:15 here vs 09:45
+    there) and this function had no Friday-awareness at all.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Karachi"))
+    wd = now.weekday()  # 0=Mon, 4=Fri, 5=Sat
+
+    if wd >= 5:          # weekend
         return 1.0
-    m = now.hour * 60 + now.minute
-    start, end = 9 * 60 + 15, 15 * 60 + 30
-    if m <= start:
-        return 0.01
-    if m >= end:
-        return 1.0
-    return (m - start) / (end - start)
+
+    def t(h, m):         # helper: time on today
+        return now.replace(hour=h, minute=m, second=0, microsecond=0)
+
+    if wd == 4:          # Friday
+        total = 275.0
+        s1_start = t(9, 15)
+        s1_end = t(12, 0)
+        s2_start = t(14, 15)
+        s2_end = t(16, 5)
+
+        if now < s1_start:
+            return 0.01
+        elif now <= s1_end:
+            elapsed = (now - s1_start).total_seconds() / 60
+            return min(elapsed / total, 1.0)
+        elif now < s2_start:
+            # Jumu'ah break -- freeze at session 1 completion fraction
+            return 165.0 / total   # ~= 0.600
+        elif now <= s2_end:
+            elapsed = 165 + (now - s2_start).total_seconds() / 60
+            return min(elapsed / total, 1.0)
+        else:
+            return 1.0
+
+    else:                # Monday-Thursday
+        total = 360.0
+        s_start = t(9, 30)
+        s_end = t(15, 30)
+
+        if now <= s_start:
+            return 0.01
+        if now >= s_end:
+            return 1.0
+        elapsed = (now - s_start).total_seconds() / 60
+        return elapsed / total
 
 
 def tape_signals(symbols=None, min_value=100_000):

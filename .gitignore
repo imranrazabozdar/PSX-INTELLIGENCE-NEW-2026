@@ -1,3 +1,8 @@
+# Secrets — API keys, tokens; never committed
+.env
+.env.*
+!.env.example
+
 # Python
 __pycache__/
 *.pyc
@@ -45,3 +50,4 @@ android/**/*.apk
 Thumbs.db
 .vscode/
 .idea/
+.aider*

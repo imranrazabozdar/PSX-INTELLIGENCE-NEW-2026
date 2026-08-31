@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PSX Indicator Backtest Results</title>
+    <style>
+        :root {
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --bg-light: #f9fafb;
+            --bg-card: #ffffff;
+            --border: #e5e7eb;
+            --green: #10b981;
+            --red: #ef4444;
+            --blue: #3b82f6;
+            --amber: #f59e0b;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text-primary: #f3f4f6;
+                --text-secondary: #9ca3af;
+                --bg-light: #111827;
+                --bg-card: #1f2937;
+                --border: #374151;
+                --green: #34d399;
+                --red: #f87171;
+                --blue: #60a5fa;
+                --amber: #fbbf24;
+            }
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg-light);
+            color: var(--text-primary);
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin-bottom: 0.5rem;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--blue);
+        }
+
+        .table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            margin-bottom: 2rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: var(--blue);
+            color: white;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.85rem;
+            border: 1px solid var(--border);
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tbody tr:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .positive {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .negative {
+            color: var(--red);
+            font-weight: 600;
+        }
+
+        .neutral {
+            color: var(--text-secondary);
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .filter-btn.active {
+            background: var(--blue);
+            color: white;
+            border-color: var(--blue);
+        }
+
+        .filter-btn:hover {
+            border-color: var(--blue);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-best {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--green);
+        }
+
+        .badge-baseline {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--blue);
+        }
+
+        .note {
+            background: rgba(245, 158, 11, 0.1);
+            border-left: 4px solid var(--amber);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 2rem;
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 PSX Indicator Backtest Results</h1>
+        <p class="subtitle">Testing 23 signals across 564K daily bars | Forward returns at 1, 5, 10, 20-day horizons</p>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Signal Firings</div>
+                <div class="stat-value">623,519</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Baseline Win Rate (10d)</div>
+                <div class="stat-value">44.55%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Best Signal</div>
+                <div class="stat-value positive">BB_OVERSOLD 55.11%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Scan Time</div>
+                <div class="stat-value">76.6 seconds</div>
+            </div>
+        </div>
+
+        <div class="filter-bar">
+            <button class="filter-btn active" onclick="filterTable('all')">All Signals (24)</button>
+            <button class="filter-btn" onclick="filterTable('above')">✅ Above Baseline (18)</button>
+            <button class="filter-btn" onclick="filterTable('below')">❌ Below Baseline (6)</button>
+        </div>
+
+        <div class="table-container">
+            <table id="results-table">
+                <thead>
+                    <tr>
+                        <th>Indicator</th>
+                        <th>Signal Type</th>
+                        <th># Signals</th>
+                        <th>Win Rate 1d</th>
+                        <th>Win Rate 10d</th>
+                        <th>vs Baseline</th>
+                        <th>Avg Return 10d</th>
+                        <th>Frequency</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                </tbody>
+            </table>
+        </div>
+
+        <div class="note">
+            <strong>📌 Interpretation:</strong>
+            <ul style="margin-top: 0.75rem; margin-left: 1.5rem;">
+                <li><strong>Win Rate 10d</strong> = % of signals where price went up in next 10 days</li>
+                <li><strong>vs Baseline</strong> = edge above randomly picking any eligible bar (green = profitable edge)</li>
+                <li><strong>Avg Return 10d</strong> = average % return 10 days after signal fires</li>
+                <li><strong>Frequency</strong> = how often this signal appears (rare signals = less noise, common = more opportunities)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const baselineRate = 44.55;
+        const allData = [
+            {indicator: "Bollinger", signal_type: "BB_OVERSOLD", n_signals: 12562, win_rate_1d: 47.48, win_rate_5d: 52.99, win_rate_10d: 55.11, win_rate_20d: 54.50, avg_return_10d: 2.24, median_return_10d: 0.96, signal_frequency_pct: 2.39},
+            {indicator: "MACD", signal_type: "MACD_CROSS_DOWN", n_signals: 19974, win_rate_1d: 42.43, win_rate_5d: 50.60, win_rate_10d: 51.96, win_rate_20d: 52.19, avg_return_10d: 1.95, median_return_10d: 0.35, signal_frequency_pct: 3.80},
+            {indicator: "EMA", signal_type: "EMA20_CROSS_DN", n_signals: 32208, win_rate_1d: 43.82, win_rate_5d: 50.80, win_rate_10d: 51.90, win_rate_20d: 51.80, avg_return_10d: 1.94, median_return_10d: 0.32, signal_frequency_pct: 6.13},
+            {indicator: "EMA", signal_type: "DEATH_CROSS", n_signals: 5088, win_rate_1d: 41.27, win_rate_5d: 49.15, win_rate_10d: 51.83, win_rate_20d: 52.52, avg_return_10d: 1.82, median_return_10d: 0.27, signal_frequency_pct: 0.97},
+            {indicator: "EMA", signal_type: "EMA50_CROSS_DN", n_signals: 20889, win_rate_1d: 44.18, win_rate_5d: 51.02, win_rate_10d: 51.61, win_rate_20d: 51.44, avg_return_10d: 1.82, median_return_10d: 0.27, signal_frequency_pct: 3.98},
+            {indicator: "RSI", signal_type: "RSI_OVERSOLD", n_signals: 16380, win_rate_1d: 41.62, win_rate_5d: 50.26, win_rate_10d: 51.20, win_rate_20d: 51.59, avg_return_10d: 1.50, median_return_10d: 0.20, signal_frequency_pct: 3.12},
+            {indicator: "Momentum", signal_type: "MOM_CROSS_NEG", n_signals: 27745, win_rate_1d: 40.22, win_rate_5d: 48.35, win_rate_10d: 49.37, win_rate_20d: 50.25, avg_return_10d: 1.54, median_return_10d: 0.00, signal_frequency_pct: 5.28},
+            {indicator: "Bollinger", signal_type: "BB_SQUEEZE_BREAK", n_signals: 32383, win_rate_1d: 39.84, win_rate_5d: 46.95, win_rate_10d: 49.05, win_rate_20d: 50.61, avg_return_10d: 1.55, median_return_10d: 0.00, signal_frequency_pct: 6.17},
+            {indicator: "CMF", signal_type: "CMF_NEG", n_signals: 16819, win_rate_1d: 40.28, win_rate_5d: 46.59, win_rate_10d: 48.38, win_rate_20d: 49.70, avg_return_10d: 1.31, median_return_10d: 0.00, signal_frequency_pct: 3.20},
+            {indicator: "OBV", signal_type: "OBV_DIVERGE_BULL", n_signals: 111821, win_rate_1d: 38.71, win_rate_5d: 46.30, win_rate_10d: 48.18, win_rate_20d: 50.21, avg_return_10d: 1.15, median_return_10d: 0.00, signal_frequency_pct: 21.30},
+            {indicator: "ADX", signal_type: "ADX_TRENDING", n_signals: 7887, win_rate_1d: 39.83, win_rate_5d: 45.87, win_rate_10d: 47.83, win_rate_20d: 49.30, avg_return_10d: 1.87, median_return_10d: 0.00, signal_frequency_pct: 1.50},
+            {indicator: "CMF", signal_type: "CMF_POS", n_signals: 16907, win_rate_1d: 41.60, win_rate_5d: 46.93, win_rate_10d: 47.63, win_rate_20d: 49.66, avg_return_10d: 1.95, median_return_10d: -0.05, signal_frequency_pct: 3.22},
+            {indicator: "Bollinger", signal_type: "BB_OVERBOUGHT", n_signals: 14654, win_rate_1d: 44.67, win_rate_5d: 46.16, win_rate_10d: 47.03, win_rate_20d: 49.22, avg_return_10d: 2.68, median_return_10d: -0.28, signal_frequency_pct: 2.79},
+            {indicator: "RSI", signal_type: "RSI_OVERBOUGHT", n_signals: 14259, win_rate_1d: 40.39, win_rate_5d: 44.25, win_rate_10d: 46.92, win_rate_20d: 47.77, avg_return_10d: 1.87, median_return_10d: -0.31, signal_frequency_pct: 2.72},
+            {indicator: "ADX", signal_type: "ADX_WEAK", n_signals: 8332, win_rate_1d: 37.15, win_rate_5d: 44.74, win_rate_10d: 46.06, win_rate_20d: 48.32, avg_return_10d: 0.87, median_return_10d: -0.26, signal_frequency_pct: 1.59},
+            {indicator: "RSI", signal_type: "RSI_HEALTHY", n_signals: 30387, win_rate_1d: 36.04, win_rate_5d: 43.44, win_rate_10d: 45.62, win_rate_20d: 48.04, avg_return_10d: 1.03, median_return_10d: -0.40, signal_frequency_pct: 5.79},
+            {indicator: "Momentum", signal_type: "MOM_CROSS_POS", n_signals: 27562, win_rate_1d: 35.58, win_rate_5d: 42.71, win_rate_10d: 45.22, win_rate_20d: 47.25, avg_return_10d: 1.26, median_return_10d: -0.33, signal_frequency_pct: 5.25},
+            {indicator: "BASELINE", signal_type: "ANY_RANDOM_BAR", n_signals: 525024, win_rate_1d: 35.36, win_rate_5d: 42.53, win_rate_10d: 44.55, win_rate_20d: 46.39, avg_return_10d: 1.34, median_return_10d: 0.00, signal_frequency_pct: 100.00},
+            {indicator: "MACD", signal_type: "MACD_CROSS_UP", n_signals: 19883, win_rate_1d: 36.41, win_rate_5d: 42.71, win_rate_10d: 44.42, win_rate_20d: 48.12, avg_return_10d: 1.39, median_return_10d: -0.42, signal_frequency_pct: 3.79},
+            {indicator: "MACD", signal_type: "MACD_HIST_POS", n_signals: 19883, win_rate_1d: 36.41, win_rate_5d: 42.71, win_rate_10d: 44.42, win_rate_20d: 48.12, avg_return_10d: 1.39, median_return_10d: -0.42, signal_frequency_pct: 3.79},
+            {indicator: "EMA", signal_type: "EMA20_CROSS_UP", n_signals: 32218, win_rate_1d: 36.73, win_rate_5d: 42.16, win_rate_10d: 44.33, win_rate_20d: 46.48, avg_return_10d: 1.21, median_return_10d: -0.65, signal_frequency_pct: 6.14},
+            {indicator: "EMA", signal_type: "EMA50_CROSS_UP", n_signals: 20949, win_rate_1d: 37.30, win_rate_5d: 41.62, win_rate_10d: 42.99, win_rate_20d: 45.05, avg_return_10d: 0.89, median_return_10d: -0.89, signal_frequency_pct: 3.99},
+            {indicator: "EMA", signal_type: "GOLDEN_CROSS", n_signals: 5220, win_rate_1d: 35.59, win_rate_5d: 40.25, win_rate_10d: 42.18, win_rate_20d: 45.21, avg_return_10d: 1.51, median_return_10d: -0.83, signal_frequency_pct: 0.99},
+            {indicator: "Volume", signal_type: "VOLUME_SPIKE", n_signals: 109509, win_rate_1d: 31.10, win_rate_5d: 34.91, win_rate_10d: 36.63, win_rate_20d: 38.81, avg_return_10d: 1.96, median_return_10d: 0.00, signal_frequency_pct: 20.86}
+        ];
+
+        function renderTable(filteredData) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            filteredData.forEach(row => {
+                const winRate = parseFloat(row.win_rate_10d);
+                const vsDiff = winRate - baselineRate;
+                const isBest = row.indicator === 'Bollinger' && row.signal_type === 'BB_OVERSOLD';
+                const isBaseline = row.indicator === 'BASELINE';
+
+                const tr = document.createElement('tr');
+                const vsClass = isBaseline ? 'neutral' : (vsDiff > 0 ? 'positive' : 'negative');
+                const vsText = isBaseline ? 'Baseline' : (vsDiff > 0 ? '+' : '') + vsDiff.toFixed(2) + '%';
+
+                tr.innerHTML = `
+                    <td><strong>${row.indicator}</strong> ${isBest ? '<span class="badge badge-best">Best</span>' : ''} ${isBaseline ? '<span class="badge badge-baseline">Baseline</span>' : ''}</td>
+                    <td>${row.signal_type}</td>
+                    <td>${parseInt(row.n_signals).toLocaleString()}</td>
+                    <td>${winRate.toFixed(2)}% →</td>
+                    <td><strong>${parseFloat(row.win_rate_10d).toFixed(2)}%</strong></td>
+                    <td class="${vsClass}">${vsText}</td>
+                    <td>${parseFloat(row.avg_return_10d).toFixed(2)}%</td>
+                    <td>${parseFloat(row.signal_frequency_pct).toFixed(1)}%</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filterTable(mode) {
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            let filtered = [...allData];
+
+            if (mode === 'above') {
+                filtered = allData.filter(d => d.indicator !== 'BASELINE' && parseFloat(d.win_rate_10d) > baselineRate);
+            } else if (mode === 'below') {
+                filtered = allData.filter(d => d.indicator !== 'BASELINE' && parseFloat(d.win_rate_10d) < baselineRate);
+            }
+
+            filtered.sort((a, b) => parseFloat(b.win_rate_10d) - parseFloat(a.win_rate_10d));
+            renderTable(filtered);
+        }
+
+        // Initial render
+        const sorted = [...allData].sort((a, b) => parseFloat(b.win_rate_10d) - parseFloat(a.win_rate_10d));
+        renderTable(sorted);
+    </script>
+</body>
+</html>

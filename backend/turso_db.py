@@ -51,8 +51,9 @@ LOCAL_REPLICA_PATH = os.getenv("PSX_DB", "psx_v2.db")
 USING_TURSO = bool(LIBSQL_URL and LIBSQL_AUTH_TOKEN)
 
 _lock = threading.Lock()
-_shared_conn = None
+_shared_conn = None  # Turso (HTTP) path only — see get_connection()
 _init_error = None
+_local = threading.local()  # plain-sqlite3 path: one connection per thread
 
 
 class _Row(dict):
@@ -295,14 +296,22 @@ def _make_connection():
         conn = _TursoConnection(http_url, LIBSQL_AUTH_TOKEN)
         conn.execute("SELECT 1")  # fail fast here if the URL/token are wrong
         return conn
-    # check_same_thread=False: this connection is now a shared, process-wide
-    # singleton (get_connection() below), reused across FastAPI's request
-    # threadpool AND the background refresh-loop threads — sqlite3's default
-    # same-thread check rejects exactly that, since every prior call site
-    # used to get a brand-new connection per call instead of sharing one.
-    # WAL mode + every caller's existing timeout=30/retry handling is what
-    # actually keeps concurrent access safe; this flag just stops sqlite3
-    # from refusing legitimate cross-thread use of that one connection.
+    conn = _make_local_sqlite_connection()
+    return conn
+
+
+def _make_local_sqlite_connection():
+    # A single sqlite3.Connection object is NOT safe to call concurrently
+    # from multiple threads -- check_same_thread=False only disables
+    # Python's thread-identity guard, it does not serialize access to the
+    # connection handle itself. FastAPI runs sync endpoints in a thread
+    # pool, and this dashboard fires many concurrent requests, so sharing
+    # one connection across threads produced real, intermittent
+    # "sqlite3.InterfaceError: bad parameter or other API misuse" failures
+    # (seen mid-scan in advanced_pattern_scan, discover_edges, watchlist_scan).
+    # WAL mode is what actually makes concurrent access safe -- but only
+    # across SEPARATE connections to the same file, one per thread, which
+    # is what get_connection() now hands out.
     conn = sqlite3.connect(LOCAL_REPLICA_PATH, timeout=30, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = _row_factory
@@ -310,29 +319,35 @@ def _make_connection():
 
 
 def get_connection():
-    """Return the shared, process-wide database connection, creating it on
-    first use. Callers still manage their own transactions/commits exactly
-    as before (this only replaces how the connection itself is obtained)."""
+    """Return this thread's database connection, creating it on first use.
+    Turso (HTTP) path: one shared connection is fine -- each call is a
+    stateless HTTPS round trip, not a handle to serialize access to.
+    Plain-sqlite3 path: one connection PER THREAD (see
+    _make_local_sqlite_connection) -- WAL mode makes that safe for
+    concurrent access; a single shared handle is not.
+    Callers still manage their own transactions/commits exactly as before
+    (this only replaces how the connection itself is obtained)."""
     global _shared_conn, _init_error
-    if _shared_conn is None:
-        with _lock:
-            if _shared_conn is None:
-                try:
-                    _shared_conn = _make_connection()
-                except Exception as e:
-                    _init_error = f"{type(e).__name__}: {e}"
-                    if USING_TURSO:
+    if USING_TURSO:
+        if _shared_conn is None:
+            with _lock:
+                if _shared_conn is None:
+                    try:
+                        _shared_conn = _make_connection()
+                    except Exception as e:
+                        _init_error = f"{type(e).__name__}: {e}"
                         print(f"[turso_db] Turso connection failed ({_init_error}) — "
                               f"falling back to a plain local SQLite file. Data will "
                               f"NOT persist across restarts on a host with no disk "
                               f"(e.g. Streamlit Community Cloud) until this is fixed.")
-                        conn = sqlite3.connect(LOCAL_REPLICA_PATH, timeout=30, check_same_thread=False)
-                        conn.execute("PRAGMA journal_mode=WAL")
-                        conn.row_factory = _row_factory
-                        _shared_conn = conn
-                    else:
-                        raise
-    return _shared_conn
+                        _shared_conn = _make_local_sqlite_connection()
+        return _shared_conn
+
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = _make_local_sqlite_connection()
+        _local.conn = conn
+    return conn
 
 
 def status():

@@ -260,20 +260,27 @@ def analyze(symbol, eod_df, quote, rs_score=None, ohlc=None):
         if hit_note:
             notes.append(hit_note)
 
-    # Trend via EMAs (25 pts)
+    # Trend via EMAs (8 pts, EMA200 only). EMA20_ABOVE/EMA50_ABOVE scoring
+    # removed per the sustained-position backtest (1,002,470 observations):
+    # EMA20_ABOVE scored 43.26% win_rate_10d, EMA50_ABOVE 43.60%, both
+    # below the 44.55% baseline -- see CALIBRATION_LOG.md. EMA200 was not
+    # tested and is left unchanged. Notes/labels kept for display.
     pts = 0
-    if price > float(ema20.iloc[-1]): pts += 8
-    if price > float(ema50.iloc[-1]): pts += 9
     if ema200 is not None and price > float(ema200.iloc[-1]): pts += 8
-    add(pts, 25 if ema200 is not None else 17, "trend",
+    add(pts, 8 if ema200 is not None else 0, "trend",
         f"Price vs EMAs: 20={ema20.iloc[-1]:.2f}, 50={ema50.iloc[-1]:.2f}"
         + (f", 200={ema200.iloc[-1]:.2f}" if ema200 is not None else " (no EMA-200)"))
 
-    # RSI (15 pts) — reward healthy zone, penalise extremes
+    # RSI (15 pts) — reward healthy zone, penalise extremes. Oversold tiers
+    # boosted per the indicator backtest: RSI_OVERSOLD scored 51.20%
+    # win_rate_10d vs a 44.55% baseline (+6.7%, n=16,380) -- see
+    # CALIBRATION_LOG.md.
     if last_rsi is not None:
         if 45 <= last_rsi <= 65: r_pts = 15
         elif 35 <= last_rsi < 45 or 65 < last_rsi <= 72: r_pts = 9
-        elif last_rsi < 30: r_pts = 5; notes.append("RSI oversold (<30) — possible bounce but weak trend")
+        elif last_rsi < 25: r_pts = 12; notes.append("RSI deeply oversold (<25) — backtested edge, possible bounce")
+        elif last_rsi < 30: r_pts = 8; notes.append("RSI oversold (<30) — backtested edge, possible bounce")
+        elif last_rsi < 35: r_pts = 5; notes.append("RSI approaching oversold (<35)")
         elif last_rsi > 75: r_pts = 2; notes.append("RSI overbought (>75) — chase risk")
         else: r_pts = 6
         add(r_pts, 15, "rsi", f"RSI(14)={last_rsi:.1f}")
@@ -290,11 +297,17 @@ def analyze(symbol, eod_df, quote, rs_score=None, ohlc=None):
     mo_pts = 10 if momentum_20d > 5 else 7 if momentum_20d > 0 else 3 if momentum_20d > -5 else 0
     add(mo_pts, 10, "momentum", f"20-day momentum {momentum_20d:+.1f}%")
 
-    # Volume/OBV (15 pts)
+    # Volume/OBV (8 pts). VOLUME_SPIKE scoring contribution removed per the
+    # indicator backtest (623,519-firing scan, 564,178 bars / 501 PSX
+    # symbols, 2021-2026): VOLUME_SPIKE alone scored 36.63% win_rate_10d
+    # vs a 44.55% baseline -- worst signal tested, on the largest sample
+    # (n=109,509). Detection itself is untouched (still used for Session
+    # Anomalies monitoring) -- only the scoring contribution is zeroed.
     v_pts = 0
-    if vol_spike: v_pts += 7; notes.append(f"Volume spike: today {today_vol:,.0f} vs 20d avg {avg_vol:,.0f}")
+    if vol_spike: notes.append(f"Volume spike: today {today_vol:,.0f} vs 20d avg {avg_vol:,.0f} "
+                                "(no longer scored -- see CALIBRATION_LOG.md)")
     if obv_trend_up: v_pts += 8
-    add(v_pts, 15, "volume")
+    add(v_pts, 8, "volume")
 
     # Breakout / breakdown (10 pts)
     if breakout:
@@ -332,11 +345,20 @@ def analyze(symbol, eod_df, quote, rs_score=None, ohlc=None):
         notes.append(f"Above upper Bollinger band (%B={bb_pct_b:.2f}) — strong but extended")
     elif 0.5 <= bb_pct_b <= 1.0:
         bb_pts = 7
+    # Oversold tiers boosted per the indicator backtest: BB_OVERSOLD was
+    # the single best-performing signal tested, 55.11% win_rate_10d vs a
+    # 44.55% baseline (+10.6%, n=12,562) -- see CALIBRATION_LOG.md.
+    elif bb_pct_b < 0.1:
+        bb_pts = 9
+        notes.append(f"Deeply below lower Bollinger band (%B={bb_pct_b:.2f}) — backtested edge")
     elif bb_pct_b < 0.2:
-        bb_pts = 2
-        notes.append(f"Hugging lower Bollinger band (%B={bb_pct_b:.2f}) — weak")
+        bb_pts = 6
+        notes.append(f"Hugging lower Bollinger band (%B={bb_pct_b:.2f}) — backtested edge")
+    elif bb_pct_b < 0.3:
+        bb_pts = 3
+        notes.append(f"Approaching lower Bollinger band (%B={bb_pct_b:.2f})")
     else:
-        bb_pts = 5
+        bb_pts = 2
     if bb_squeeze and bb_pct_b < 0.6:
         notes.append("Bollinger squeeze (low volatility) — breakout brewing, "
                      "direction unconfirmed")

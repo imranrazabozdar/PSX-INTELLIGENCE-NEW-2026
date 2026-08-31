@@ -1,0 +1,45 @@
+name: Refresh chart patterns (daily after market close)
+
+on:
+  schedule:
+    # Mon-Thu: 3:35 PM PKT (10:35 UTC)
+    - cron: '35 10 * * 1-4'
+    # Fri: 4:35 PM PKT (11:35 UTC)
+    - cron: '35 11 * * 5'
+  # Manual trigger for testing/backfill
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: 🔍 Detect chart patterns (latest bar only)
+        working-directory: backend
+        run: python run_chart_pattern_refresh.py
+
+      - name: 📊 Show pattern detection results
+        working-directory: backend
+        if: always()
+        run: |
+          echo ""
+          echo "✅ Chart pattern refresh workflow complete"
+          echo ""
+          echo "Key reminders:"
+          echo "  • Only patterns with TODAY's breakout are shown"
+          echo "  • Patterns use 200+ days of historical context to detect"
+          echo "  • But ONLY TODAY's confirmation/breakout is signaled"
+          echo "  • This keeps intraday traders focused on fresh signals"
