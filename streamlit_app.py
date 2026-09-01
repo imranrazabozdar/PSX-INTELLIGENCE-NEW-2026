@@ -610,6 +610,19 @@ def _post(path, **params):
         return {"status": "error", "reason": f"{type(e).__name__}: {e}"}
 
 
+def _session_cache(key, fetcher, ttl=300):
+    """Session-state cache with TTL. Re-fetches via `fetcher()` when the key
+    is missing or older than `ttl` seconds. Keeps the session_state caching
+    (so data persists across reruns/button clicks) but adds automatic refresh
+    so data doesn't go stale for the entire session."""
+    ts_key = f"_ts_{key}"
+    now = time.time()
+    if key not in st.session_state or now - st.session_state.get(ts_key, 0) > ttl:
+        st.session_state[key] = fetcher()
+        st.session_state[ts_key] = now
+    return st.session_state[key]
+
+
 def _backend_up():
     try:
         r = requests.get(f"{BACKEND}/health", timeout=5)
@@ -1472,12 +1485,8 @@ with tab_intraday:
             ]
             st.dataframe(_sym_df, use_container_width=True, hide_index=True)
 
-            # Lazy-load intraday bars -- only fetch when symbol changes,
-            # cached in session_state until the tab/session is closed.
             _bars_key = f"bars_{_selected}"
-            if _bars_key not in st.session_state:
-                st.session_state[_bars_key] = _get(f"/intraday/bars/{_selected}")
-            _bars_resp = st.session_state[_bars_key]
+            _bars_resp = _session_cache(_bars_key, lambda: _get(f"/intraday/bars/{_selected}"), ttl=120)
             _bars = (_bars_resp or {}).get("bars", [])
 
             if _bars:
@@ -1550,12 +1559,8 @@ with tab_screener:
         # Pre-fetch both scans (cheap — cached client- and server-side) so the
         # consensus section below can cross-reference them before either
         # section's own detailed UI renders further down this tab.
-        if "dss_scan_result" not in st.session_state:
-            st.session_state["dss_scan_result"] = _get("/dss-scan")
-        if "brain_scan_result" not in st.session_state:
-            st.session_state["brain_scan_result"] = _get("/scan")
-        _sr_pre = st.session_state.get("dss_scan_result")
-        _br_pre = st.session_state.get("brain_scan_result")
+        _sr_pre = _session_cache("dss_scan_result", lambda: _get("/dss-scan"), ttl=300)
+        _br_pre = _session_cache("brain_scan_result", lambda: _get("/scan"), ttl=300)
 
         consensus = _compute_consensus(_sr_pre, _br_pre)
         st.markdown('<div class="psx-section-eyebrow">CONSENSUS</div>'
@@ -1643,8 +1648,8 @@ with tab_screener:
                     if kickoff.get("_background_refresh_running"):
                         st.toast("Full recompute started in the background — showing last known data below; "
                                  "reload this section in a few minutes for the fresh scan.", icon="🔄")
-            elif "dss_scan_result" not in st.session_state:
-                st.session_state["dss_scan_result"] = _get("/dss-scan")
+            else:
+                _session_cache("dss_scan_result", lambda: _get("/dss-scan"), ttl=300)
             sr = st.session_state.get("dss_scan_result")
             if sr and "top_10_strongest_buy_setups" in sr:
                 if sr.get("_background_refresh_running"):
@@ -1855,9 +1860,7 @@ with tab_pulse:
                 st.info(f"Scanned {r.get('scanned', 0)} symbols — nothing crossed "
                         "the surge/accumulation thresholds right now.")
 
-        if "alerts_result" not in st.session_state:
-            st.session_state["alerts_result"] = _get("/watchlist/alerts")
-        _render_alerts(st.session_state["alerts_result"])
+        _render_alerts(_session_cache("alerts_result", lambda: _get("/watchlist/alerts"), ttl=300))
 
         with st.expander("Whole-market custom scan (on-demand, uses far more data than the watchlist above)"):
             a1, a2, a3 = st.columns(3)
@@ -3195,9 +3198,8 @@ with tab_more:
                 else:
                     st.error(fa.get("reason", "Failure analysis unavailable."))
 
-            if "failure_analysis_result" not in st.session_state:
-                st.session_state["failure_analysis_result"] = _get("/audit/failure-analysis")
-            _render_failure_analysis(st.session_state["failure_analysis_result"])
+            _render_failure_analysis(_session_cache(
+                "failure_analysis_result", lambda: _get("/audit/failure-analysis"), ttl=600))
 
             with st.expander("Custom window (runs live, not cached)"):
                 fa1, fa2 = st.columns(2)
@@ -3233,19 +3235,15 @@ with tab_more:
                                  "re-run this in a bit for the fresh one.", icon="🔄")
                 else:
                     st.error(wf.get("reason", "Walk-forward validation failed."))
-            if "wf_result" not in st.session_state:
-                # POST-only route (it also accepts non-default params), but with no
-                # `force` it checks the cache first and returns instantly if fresh —
-                # cheap, not a live recompute, UNLESS the background scheduler hasn't
-                # completed its first pass yet (e.g. right after a backend restart),
-                # in which case this can briefly block — caught below, not crashed.
+            def _fetch_wf():
                 try:
-                    cached_wf = requests.post(f"{BACKEND}/backtest/walkforward", timeout=15).json()
-                    if cached_wf.get("status") == "ok":
-                        st.session_state["wf_result"] = cached_wf
+                    r = requests.post(f"{BACKEND}/backtest/walkforward", timeout=15).json()
+                    return r if r.get("status") == "ok" else None
                 except requests.exceptions.Timeout:
-                    st.session_state["wf_result"] = None
-                    st.caption("⏳ Still computing in the background (first run after startup) — check back shortly.")
+                    return None
+            _session_cache("wf_result", _fetch_wf, ttl=600)
+            if st.session_state.get("wf_result") is None:
+                st.caption("⏳ Still computing in the background (first run after startup) — check back shortly.")
             wf = st.session_state.get("wf_result")
             if wf:
                 if "_cache_age_seconds" in wf:
@@ -3308,14 +3306,15 @@ with tab_more:
                         st.toast("Recompute running in the background — showing last known result.", icon="🔄")
                 else:
                     st.error(rg.get("reason", "Regime-split backtest failed."))
-            if "regime_result" not in st.session_state:
+            def _fetch_regime():
                 try:
-                    cached_rg = requests.post(f"{BACKEND}/backtest/regime-split", timeout=15).json()
-                    if cached_rg.get("status") == "ok":
-                        st.session_state["regime_result"] = cached_rg
+                    r = requests.post(f"{BACKEND}/backtest/regime-split", timeout=15).json()
+                    return r if r.get("status") == "ok" else None
                 except requests.exceptions.Timeout:
-                    st.session_state["regime_result"] = None
-                    st.caption("⏳ Still computing in the background (first run after startup) — check back shortly.")
+                    return None
+            _session_cache("regime_result", _fetch_regime, ttl=600)
+            if st.session_state.get("regime_result") is None:
+                st.caption("⏳ Still computing in the background (first run after startup) — check back shortly.")
             rg = st.session_state.get("regime_result")
             if rg:
                 if "_cache_age_seconds" in rg:
@@ -3354,14 +3353,15 @@ with tab_more:
                         st.toast("Recompute running in the background — showing last known result.", icon="🔄")
                 else:
                     st.error(ed.get("reason", "Edge discovery failed."))
-            if "edge_result" not in st.session_state:
+            def _fetch_edge():
                 try:
-                    cached_ed = requests.post(f"{BACKEND}/backtest/discover-edges", timeout=15).json()
-                    if cached_ed.get("status") == "ok":
-                        st.session_state["edge_result"] = cached_ed
+                    r = requests.post(f"{BACKEND}/backtest/discover-edges", timeout=15).json()
+                    return r if r.get("status") == "ok" else None
                 except requests.exceptions.Timeout:
-                    st.session_state["edge_result"] = None
-                    st.caption("⏳ Still computing in the background (first run after startup) — check back shortly.")
+                    return None
+            _session_cache("edge_result", _fetch_edge, ttl=600)
+            if st.session_state.get("edge_result") is None:
+                st.caption("⏳ Still computing in the background (first run after startup) — check back shortly.")
             ed = st.session_state.get("edge_result")
             if ed:
                 if "_cache_age_seconds" in ed:

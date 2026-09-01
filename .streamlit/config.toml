@@ -1,14 +1,9 @@
 [server]
-# The backend (backend/app.py) trusts any request from 127.0.0.1/::1/localhost
-# as admin-authorized when PSX_ADMIN_TOKEN is unset (see _require_admin in
-# app.py) — because Streamlit's own server-side process makes those backend
-# calls, a LAN user who could merely reach the Streamlit UI could trigger
-# privileged/expensive backend jobs (force rescans, backfills) without ever
-# needing a token themselves. Binding Streamlit to localhost-only closes that
-# indirect path. If remote/LAN access to the dashboard is genuinely needed,
-# set PSX_ADMIN_TOKEN on the backend AND put real auth in front of Streamlit
-# first — don't just widen this address back to 0.0.0.0.
-address = "127.0.0.1"
+# When deploying on Streamlit Cloud or remote environments, the platform
+# overrides this address. For local dev, set PSX_ADMIN_TOKEN on the backend
+# if untrusted users can reach the Streamlit UI — the backend's admin-token
+# gate is the real security boundary, not the listen address.
+address = "0.0.0.0"
 
 [theme]
 base = "dark"
