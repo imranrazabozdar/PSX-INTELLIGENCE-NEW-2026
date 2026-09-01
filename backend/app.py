@@ -2982,10 +2982,23 @@ async def dss(symbol:str):
     explicitly PENDING rather than fabricated.
     """
     sym = symbol.upper()
-    rows = market_watch()
+    try:
+        rows = market_watch()
+    except:
+        rows = []
+
     q = next((x for x in rows if x["symbol"] == sym), None)
     if not q:
-        return {"symbol": sym, "status": "not_found"}
+        try:
+            from turso_db import get_connection
+            conn = get_connection()
+            row = conn.execute(f"SELECT * FROM daily_ohlc WHERE symbol=? ORDER BY trade_date DESC LIMIT 1", (sym,)).fetchone()
+            if row and len(row) > 0:
+                q = {"symbol": sym, "price": row[3] if len(row) > 3 else 0, "pct": 0}
+            else:
+                return {"symbol": sym, "status": "not_found"}
+        except:
+            return {"symbol": sym, "status": "not_found"}
     _sync_sectors_from_psx(rows)
 
     regime = market_regime()
