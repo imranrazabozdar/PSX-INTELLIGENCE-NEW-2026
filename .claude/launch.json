@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000", "--app-dir", "backend"],
       "port": 8000
+    },
+    {
+      "name": "psx-streamlit",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": ["run", "streamlit_app.py", "--server.headless", "true"],
+      "port": 8501
     }
   ]
 }
