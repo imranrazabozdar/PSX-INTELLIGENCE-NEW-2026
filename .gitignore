@@ -51,3 +51,7 @@ Thumbs.db
 .vscode/
 .idea/
 .aider*
+
+# Backtest results (too large for GitHub)
+backend/*backtest*.csv
+backend/tools/cloudflared.exe
