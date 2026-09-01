@@ -4191,7 +4191,11 @@ async def _run_watchlist_scan():
     errors = 0
     for sym in WATCHLIST_SYMBOLS:
         try:
-            results[sym] = await dss(sym)
+            result = await dss(sym)
+            if isinstance(result, dict):
+                results[sym] = result
+            else:
+                raise TypeError(f"dss({sym}) returned {type(result)}, not dict")
         except Exception as e:
             errors += 1
             results[sym] = {"symbol": sym, "status": "error", "reason": f"{type(e).__name__}: {e}"}
@@ -4515,25 +4519,21 @@ def watchlist_alerts():
 
 
 @app.get("/watchlist/scan")
-async def watchlist_scan(request:Request, force:bool=False):
+def watchlist_scan(request:Request, force:bool=False):
     """Cached results of the last watchlist refresh (see
     _run_watchlist_scan) -- near-live (<=30 min stale during market hours)
-    DSS analysis for the curated WATCHLIST_SYMBOLS set. force=true (admin
-    token required, same as /dss-scan) kicks off an immediate re-run instead
-    of waiting for the next 30-min background tick -- useful right after a
-    deploy or outside the loop's own cadence."""
-    cached = _scan_cache.latest("watchlist_scan")
-    if force and _scan_cache.mark_running("watchlist_scan"):
-        try:
-            result = await _run_watchlist_scan()
-            _scan_cache.put("watchlist_scan", result)
-        except Exception as e:
-            logger.error(f"watchlist_scan force-run failed: {e}")
-    result = _scan_cache.latest("watchlist_scan") or {"results": {}, "symbols": []}
-    return {"status": "ok", "age_seconds": result.get("_cache_age_seconds"),
-            "run_at": result.get("_cache_run_at"), "symbols": result.get("symbols"),
-            "results": result.get("results"),
-            "_background_refresh_running": _bg_job_running("watchlist_scan")}
+    DSS analysis for the curated WATCHLIST_SYMBOLS set."""
+    try:
+        cached = _scan_cache.latest("watchlist_scan")
+        if not cached:
+            return {"status": "never_run", "age_seconds": None, "symbols": WATCHLIST_SYMBOLS, "results": {}, "_background_refresh_running": False}
+        return {"status": "ok", "age_seconds": cached.get("_cache_age_seconds"),
+                "run_at": cached.get("_cache_run_at"), "symbols": cached.get("symbols", WATCHLIST_SYMBOLS),
+                "results": cached.get("results", {}),
+                "_background_refresh_running": _bg_job_running("watchlist_scan")}
+    except Exception as e:
+        logger.error(f"watchlist_scan endpoint error: {e}")
+        return {"status": "error", "reason": str(e), "symbols": WATCHLIST_SYMBOLS, "results": {}}
 
 
 async def _heavy_refresh_loop():
