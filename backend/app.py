@@ -3827,7 +3827,7 @@ def _scan_one_symbol(r, rows, sec_all, regime):
         technical, _terr = v1_technical(sym, quote=q)
         candles = intelligence(sym)
         v = verdict(sym)
-        dec = decision(sym, record=False)
+        dec = None
         weekly = _weekly_structure(a)
         rs_multi = _rs_multi_for(sym, a, rows)
         wyckoff_events = {"accumulation": _wyckoff2.accumulation_events(a),
