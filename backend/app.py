@@ -4680,6 +4680,9 @@ def _run_guarded(cache_key, compute_fn, save_key=None,
     (ran: bool, result_or_None) — ran=False means a job for this key was
     already in flight and this call was skipped rather than double-computing.
     """
+    import asyncio
+    import inspect
+
     save_key = save_key or cache_key
     job = _bg_job(cache_key)
     with job["lock"]:
@@ -4687,7 +4690,11 @@ def _run_guarded(cache_key, compute_fn, save_key=None,
             return False, None
         job["running"] = True
     try:
-        result = compute_fn()
+        # Handle both sync and async compute functions
+        if inspect.iscoroutinefunction(compute_fn):
+            result = asyncio.run(compute_fn())
+        else:
+            result = compute_fn()
         if should_save(result):
             _scan_cache.save(save_key, result)
         return True, result
