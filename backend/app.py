@@ -4515,7 +4515,7 @@ def watchlist_alerts():
 
 
 @app.get("/watchlist/scan")
-def watchlist_scan(request:Request, force:bool=False):
+async def watchlist_scan(request:Request, force:bool=False):
     """Cached results of the last watchlist refresh (see
     _run_watchlist_scan) -- near-live (<=30 min stale during market hours)
     DSS analysis for the curated WATCHLIST_SYMBOLS set. force=true (admin
@@ -4523,9 +4523,13 @@ def watchlist_scan(request:Request, force:bool=False):
     of waiting for the next 30-min background tick -- useful right after a
     deploy or outside the loop's own cadence."""
     cached = _scan_cache.latest("watchlist_scan")
-    result, err = _serve_cached_and_refresh("watchlist_scan", _run_watchlist_scan, cached,
-                                             WATCHLIST_REFRESH_INTERVAL, force, lambda: _require_admin(request))
-    if err: return err
+    if force and _scan_cache.mark_running("watchlist_scan"):
+        try:
+            result = await _run_watchlist_scan()
+            _scan_cache.put("watchlist_scan", result)
+        except Exception as e:
+            logger.error(f"watchlist_scan force-run failed: {e}")
+    result = _scan_cache.latest("watchlist_scan") or {"results": {}, "symbols": []}
     return {"status": "ok", "age_seconds": result.get("_cache_age_seconds"),
             "run_at": result.get("_cache_run_at"), "symbols": result.get("symbols"),
             "results": result.get("results"),
