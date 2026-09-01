@@ -1487,7 +1487,11 @@ with tab_intraday:
                 st.markdown("**Intraday Price**")
                 st.line_chart(_bars_df[["price"]], use_container_width=True, height=200)
                 st.markdown("**Cumulative Volume**")
-                st.line_chart(_bars_df[["volume_cumulative"]], use_container_width=True, height=150)
+                if "volume" in _bars_df.columns:
+                    _bars_df["volume_cumulative"] = _bars_df["volume"].cumsum()
+                    st.line_chart(_bars_df[["volume_cumulative"]], use_container_width=True, height=150)
+                else:
+                    st.caption("Volume data not available")
             else:
                 st.caption(f"No intraday bar data for {_selected} today yet.")
 
