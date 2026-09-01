@@ -2994,7 +2994,10 @@ async def dss(symbol:str):
             conn = get_connection()
             row = conn.execute(f"SELECT * FROM daily_ohlc WHERE symbol=? ORDER BY trade_date DESC LIMIT 1", (sym,)).fetchone()
             if row and len(row) > 0:
-                q = {"symbol": sym, "price": row[3] if len(row) > 3 else 0, "pct": 0}
+                q = {"symbol": sym, "price": row[3] if len(row) > 3 else 0, "pct": 0,
+                     "sector": "", "volume": 0, "change": 0, "open": 0, "high": 0,
+                     "low": 0, "ldcp": 0, "name": None, "eligible": False,
+                     "shariah": False, "score": 0, "setup": "Neutral"}
             else:
                 return {"symbol": sym, "status": "not_found"}
         except:

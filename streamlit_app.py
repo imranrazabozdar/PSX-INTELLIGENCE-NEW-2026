@@ -1143,7 +1143,7 @@ with tab_home:
     # if Home tab render time becomes a concern.
     _bs_asr = _get("/patterns/all-scan")
     _bs_asr_ok = isinstance(_bs_asr, dict) and _bs_asr.get("status") == "ok"
-    _bs_hits = _bs_asr.get("hits") or [] if _bs_asr_ok else []
+    _bs_hits = (_bs_asr.get("hits") or []) if _bs_asr_ok else []
     _bs_bulls = sum(1 for h in _bs_hits if h.get("direction") == "bullish")
     _bs_bears = sum(1 for h in _bs_hits if h.get("direction") == "bearish")
     _bs_rr_vals = [h["risk_reward_measured"] for h in _bs_hits
