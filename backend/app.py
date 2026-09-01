@@ -2972,7 +2972,7 @@ def _weekly_structure(a):
 
 
 @app.get("/dss/{symbol}")
-def dss(symbol:str):
+async def dss(symbol:str):
     """Decision Support System — assembles market regime, sector regime,
     Wyckoff phase/effort-vs-result, structure, candlesticks, momentum,
     relative strength, psx_brain's trade plan and /decision's integrated
@@ -2998,7 +2998,7 @@ def dss(symbol:str):
     technical, _terr = v1_technical(sym, quote=q)
     candles = intelligence(sym)
     v = verdict(sym)
-    dec = decision(sym, record=False)
+    dec = await decision(sym, record=False)
 
     weekly = _weekly_structure(a) if a else {"status": "awaiting_true_ohlcv"}
     vol_regime = _wyckoff2.volatility_regime(a) if a else {"status": "awaiting_true_ohlcv"}
@@ -4183,7 +4183,7 @@ async def _fast_refresh_loop():
         await asyncio.sleep(EVENT_CHECK_INTERVAL)
 
 
-def _run_watchlist_scan():
+async def _run_watchlist_scan():
     """The actual 89-symbol watchlist pass -- extracted so the background
     30-min loop and the on-demand /watchlist/scan?force=true endpoint share
     one implementation instead of drifting apart."""
@@ -4191,7 +4191,7 @@ def _run_watchlist_scan():
     errors = 0
     for sym in WATCHLIST_SYMBOLS:
         try:
-            results[sym] = dss(sym)
+            results[sym] = await dss(sym)
         except Exception as e:
             errors += 1
             results[sym] = {"symbol": sym, "status": "error", "reason": f"{type(e).__name__}: {e}"}
@@ -4210,7 +4210,16 @@ async def _watchlist_refresh_loop():
             if _cache_fresh("watchlist_scan", WATCHLIST_REFRESH_INTERVAL):
                 print("[scan_cache] watchlist_scan tick skipped — cached result still fresh")
             else:
-                ran, result = await asyncio.to_thread(lambda: _run_guarded("watchlist_scan", _run_watchlist_scan))
+                try:
+                    ran = _scan_cache.mark_running("watchlist_scan")
+                    if ran:
+                        result = await _run_watchlist_scan()
+                        _scan_cache.put("watchlist_scan", result)
+                    else:
+                        print("[scan_cache] watchlist_scan skipped — already running")
+                except Exception as e:
+                    logger.error(f"watchlist_scan failed: {e}")
+                    ran = False
                 if not ran:
                     print("[scan_cache] watchlist_scan tick skipped — an on-demand force-run was already in flight")
             if _cache_fresh("watchlist_alerts", WATCHLIST_REFRESH_INTERVAL):
