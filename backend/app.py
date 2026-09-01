@@ -8,7 +8,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timezone, timedelta, time as dtime
 from zoneinfo import ZoneInfo
-import asyncio, csv, io, json, logging, math, os, statistics, requests, time
+import asyncio, csv, inspect, io, json, logging, math, os, statistics, requests, time
 import concurrent.futures as _cf
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -4680,9 +4680,6 @@ def _run_guarded(cache_key, compute_fn, save_key=None,
     (ran: bool, result_or_None) — ran=False means a job for this key was
     already in flight and this call was skipped rather than double-computing.
     """
-    import asyncio
-    import inspect
-
     save_key = save_key or cache_key
     job = _bg_job(cache_key)
     with job["lock"]:
