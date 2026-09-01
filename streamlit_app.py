@@ -342,6 +342,103 @@ div[data-testid="column"] div.stButton > button {padding: 4px 14px; height: 34px
 .psx-scard .score-block {margin-left: auto; text-align: right;}
 .psx-scard .score-block .sk {font-size: 0.68rem; color: var(--sub); font-weight: 700; letter-spacing: 0.04em;}
 .psx-scard .score-block .sv {font-size: 1.15rem; font-weight: 800; color: var(--ink);}
+
+/* ---- ENHANCED: pulse dot animation on LIVE badge ---- */
+.psx-live-badge.on .dot {animation: psx-pulse 2s ease-in-out infinite;}
+@keyframes psx-pulse {0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
+
+/* ---- ENHANCED: smoother card hover transitions ---- */
+.psx-card, .psx-glass, .psx-idx-pill, div[data-testid="stVerticalBlockBorderWrapper"] {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.psx-card:hover, div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    border-color: rgba(20,217,176,0.2) !important;
+    box-shadow: 0 6px 28px rgba(0,0,0,0.35);
+}
+
+/* ---- ENHANCED: metric cards refinement ---- */
+div[data-testid="stMetric"] {
+    transition: border-color 0.2s ease, transform 0.15s ease;
+    border-radius: 14px; padding: 16px 18px 12px;
+}
+div[data-testid="stMetric"]:hover {
+    border-color: rgba(20,217,176,0.25) !important;
+    transform: translateY(-1px);
+}
+div[data-testid="stMetricValue"] {font-size: 1.5rem !important; font-weight: 800 !important;}
+
+/* ---- ENHANCED: section eyebrow with accent bar ---- */
+.psx-section-eyebrow {
+    position: relative; padding-left: 12px;
+}
+.psx-section-eyebrow::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    border-radius: 2px; background: var(--teal);
+}
+
+/* ---- ENHANCED: tab bar polish ---- */
+.stTabs [data-baseweb="tab"] {
+    transition: background 0.2s ease, color 0.2s ease;
+    font-size: 0.88rem;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    background: rgba(20,217,176,0.06);
+}
+
+/* ---- ENHANCED: empty state styling ---- */
+.psx-empty-state {
+    text-align: center; padding: 28px 20px; color: var(--sub);
+    font-size: 0.88rem; border: 1px dashed rgba(255,255,255,0.1);
+    border-radius: 14px; margin: 10px 0;
+}
+.psx-empty-state .icon {font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.5;}
+.psx-empty-state .msg {font-weight: 600;}
+
+/* ---- ENHANCED: quick-pick symbol chips (horizontal flow) ---- */
+.psx-symbol-chips {display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px;}
+.psx-symbol-chips button, div[data-testid="column"] div.stButton > button {
+    padding: 6px 16px !important; height: 36px !important; font-size: 0.82rem !important;
+    border-radius: 999px !important; font-weight: 700 !important;
+    transition: all 0.15s ease !important;
+}
+
+/* ---- ENHANCED: scrollbar styling ---- */
+::-webkit-scrollbar {width: 6px; height: 6px;}
+::-webkit-scrollbar-track {background: transparent;}
+::-webkit-scrollbar-thumb {background: rgba(255,255,255,0.12); border-radius: 3px;}
+::-webkit-scrollbar-thumb:hover {background: rgba(255,255,255,0.2);}
+
+/* ---- ENHANCED: dataframe improvements ---- */
+[data-testid="stDataFrame"] {
+    border-radius: 12px !important; overflow: hidden;
+    border: 1px solid var(--line) !important;
+}
+
+/* ---- ENHANCED: info/warning/error boxes ---- */
+.stAlert {border-radius: 12px !important; border: none !important;}
+div[data-testid="stNotification"] {border-radius: 12px !important;}
+
+/* ---- ENHANCED: header brand polish ---- */
+.psx-brand .name {
+    background: linear-gradient(135deg, var(--ink) 0%, var(--teal) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.psx-topbar {padding: 6px 4px 20px; margin-bottom: 22px;}
+.psx-live-badge {font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase;}
+
+/* ---- ENHANCED: responsive mobile fixes ---- */
+@media (max-width: 768px) {
+    .block-container {padding-top: 0.8rem; padding-bottom: 1rem;}
+    .psx-topbar {flex-direction: column; align-items: flex-start; gap: 8px;}
+    .psx-brand .name {font-size: 1.1rem;}
+    .psx-brand .tagline {font-size: 0.72rem;}
+    .psx-section-title {font-size: 1.1rem;}
+    .psx-stock-hero {flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px;}
+    .psx-stock-hero .right {margin-left: 0; text-align: left;}
+    .psx-ring-wrap {flex-direction: column; align-items: center;}
+    div[data-testid="stMetricValue"] {font-size: 1.2rem !important;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -700,11 +797,10 @@ def _render_watchlist_section(key_prefix, show_token_input=True):
     entered elsewhere (e.g. the More tab), with no functionality lost."""
     st.markdown('<div class="psx-section-eyebrow">WATCHLIST</div>'
                 '<div class="psx-section-title">🎯 Watchlist</div>', unsafe_allow_html=True)
-    st.caption("A curated set refreshed every 30 minutes while PSX is open (~09:30-15:30 PKT, weekdays) — "
-               "faster than the rest of the market, which uses the 3x/day full scan. Click a row to open "
-               "that symbol in Stock Research.")
+    st.caption("89 curated symbols · refreshed every 30 min during market hours · click a row to research")
     if show_token_input:
-        wl_token = _admin_token_input(f"watchlist_token_{key_prefix}")
+        with st.expander("Admin settings", expanded=False):
+            wl_token = _admin_token_input(f"watchlist_token_{key_prefix}")
     else:
         wl_token = st.session_state.get(f"watchlist_token_{key_prefix}", "")
     if st.button("Refresh watchlist now (89 symbols)", type="secondary", key=f"wl_refresh_btn_{key_prefix}"):
@@ -719,7 +815,9 @@ def _render_watchlist_section(key_prefix, show_token_input=True):
                      "minute or two for the fresh result.", icon="🔄")
     wl = _get("/watchlist/scan")
     if not isinstance(wl, dict) or wl.get("status") != "ok":
-        st.info("Watchlist hasn't completed its first refresh yet — check back once the market's open.")
+        st.markdown('<div class="psx-empty-state"><span class="icon">📊</span>'
+                    '<span class="msg">Watchlist populates during market hours (Mon-Thu 09:30-15:30 PKT)</span></div>',
+                    unsafe_allow_html=True)
         return
     age = wl.get("age_seconds")
     age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
@@ -734,7 +832,9 @@ def _render_watchlist_section(key_prefix, show_token_input=True):
                      "evidence score": r.get("evidence_score"), "grade": _grade_badge(r.get("confidence_grade")),
                      "action": _action_badge(r.get("final_action"))})
     if not rows:
-        st.info("No watchlist results yet — check back once the market's open and the first refresh completes.")
+        st.markdown('<div class="psx-empty-state"><span class="icon">⏳</span>'
+                    '<span class="msg">Scan completed but no results yet — data populates during next trading session</span></div>',
+                    unsafe_allow_html=True)
         return
     st.caption(f"Last refreshed {age_str} · {len(rows)}/{len(wl.get('symbols') or [])} symbols with a result")
     wdf = pd.DataFrame(rows).sort_values("evidence score", ascending=False, na_position="last")
@@ -761,9 +861,9 @@ st.markdown(
     '<div class="mark">📈</div><div><div class="name">PSX Intelligence</div>'
     '<div class="tagline">Live technicals, fundamentals, driver-exposure & news for the Pakistan Stock Exchange</div>'
     '</div></div>'
-    + (f'<div class="psx-live-badge on"><span class="dot"></span>LIVE · {BACKEND}</div>'
+    + (f'<div class="psx-live-badge on"><span class="dot"></span>LIVE</div>'
        if _backend_ok else
-       f'<div class="psx-live-badge off"><span class="dot"></span>BACKEND UNREACHABLE</div>')
+       f'<div class="psx-live-badge off"><span class="dot"></span>OFFLINE</div>')
     + '</div>',
     unsafe_allow_html=True,
 )
@@ -1169,15 +1269,18 @@ with tab_home:
     _stat_col1, _stat_col2, _stat_col3, _stat_col4 = st.columns(4)
     with _stat_col1:
         st.metric("Signals Today", str(len(_bs_hits)) if _bs_asr_ok else "—",
-                   delta=f"{_bs_bulls} bull / {_bs_bears} bear" if _bs_asr_ok else None)
+                   delta=f"↑{_bs_bulls} bull · ↓{_bs_bears} bear" if _bs_asr_ok else None)
     with _stat_col2:
+        _ad_delta = (_bs_adv - _bs_dec) if _bs_wl_ok else None
         st.metric("Advancers / Decliners", f"{_bs_adv} / {_bs_dec}" if _bs_wl_ok else "—",
-                   delta=(_bs_adv - _bs_dec) if _bs_wl_ok else None)
+                   delta=f"Net {_ad_delta:+d}" if _ad_delta is not None else None)
     with _stat_col3:
-        st.metric("Best Pattern Win Rate", "53.9% · Morning Star (742 signals, 5yr)")
+        st.metric("Top Win Rate", "53.9%",
+                   delta="Morning Star · 5yr", delta_color="off")
     with _stat_col4:
-        st.metric("Avg R:R (Today's Signals)",
-                   f"{(sum(_bs_rr_vals) / len(_bs_rr_vals)):.1f}×" if _bs_rr_vals else "—")
+        st.metric("Avg R:R",
+                   f"{(sum(_bs_rr_vals) / len(_bs_rr_vals)):.1f}×" if _bs_rr_vals else "—",
+                   delta="Today's signals" if _bs_rr_vals else None, delta_color="off")
 
     _render_top10_grid()
 
@@ -1186,7 +1289,9 @@ with tab_home:
         st.markdown("### 🔔 Live Signal Feed")
         asr = _get("/patterns/all-scan")
         if not asr or asr.get("status") != "ok" or not asr.get("hits"):
-            st.info("No signals today — scans refresh every 15 minutes")
+            st.markdown('<div class="psx-empty-state"><span class="icon">🔔</span>'
+                        '<span class="msg">No signals yet — scans refresh every 15 min during market hours</span></div>',
+                        unsafe_allow_html=True)
         else:
             _feed_rows = []
             for h in asr["hits"]:
@@ -1273,7 +1378,7 @@ with tab_home:
     _render_watchlist_section("home", show_token_input=False)
 
     st.markdown('<div class="psx-section-eyebrow">MARKET COMMAND CENTER</div>'
-                '<div class="psx-section-title">Regime, Momentum, Volatility & Sector Leadership</div>',
+                '<div class="psx-section-title">Regime & Sector Leadership</div>',
                 unsafe_allow_html=True)
     with st.container(border=True):
         mcc = _get("/market-command-center")
@@ -1289,35 +1394,34 @@ with tab_home:
                           "alert" if risk_word == "Medium" else "up" if risk_word in ("Low", "Very Low") else "info")
             breadth = mr.get("breadth_pct")
             ring_color = "up" if (breadth or 0) >= 55 else "down" if (breadth or 0) <= 45 else "alert"
-            st.markdown(
-                '<div class="psx-ring-wrap">'
-                + _ring_html(breadth, max_value=100, sub_label="MARKET BREADTH", color=ring_color, size=116)
-                + '<div class="psx-ring-stats">'
-                + f'<div class="psx-ring-stat"><span class="k">Trend</span><span class="v {trend_color}">{trend_word} ({regime_label})</span></div>'
-                + f'<div class="psx-ring-stat"><span class="k">Risk</span><span class="v {risk_color}">{risk_word} volatility</span></div>'
-                + f'<div class="psx-ring-stat"><span class="k">Momentum</span><span class="v {"up" if (mr.get("avg_change_pct") or 0) >= 0 else "down"}">{mr.get("avg_change_pct", "—")}% avg chg</span></div>'
-                + '</div></div>',
-                unsafe_allow_html=True)
-            st.caption("Market Breadth Score = % of eligible stocks advancing today — a real, direct measure "
-                       "of participation, not a fabricated composite. Trend/Risk are the same regime and "
-                       "KSE-100 volatility classification used everywhere else in this app.")
+            _mcc_ring_col, _mcc_stats_col = st.columns([1, 2])
+            with _mcc_ring_col:
+                st.markdown(
+                    '<div style="display:flex;justify-content:center;padding:10px 0 20px;">'
+                    + _ring_html(breadth, max_value=100, sub_label="BREADTH", color=ring_color, size=120)
+                    + '</div>',
+                    unsafe_allow_html=True)
+            with _mcc_stats_col:
+                st.markdown(
+                    '<div class="psx-ring-stats" style="padding-top:8px;">'
+                    + f'<div class="psx-ring-stat"><span class="k">Trend</span><span class="v {trend_color}">{trend_word} ({regime_label})</span></div>'
+                    + f'<div class="psx-ring-stat"><span class="k">Risk</span><span class="v {risk_color}">{risk_word} volatility</span></div>'
+                    + f'<div class="psx-ring-stat"><span class="k">Momentum</span><span class="v {"up" if (mr.get("avg_change_pct") or 0) >= 0 else "down"}">{mr.get("avg_change_pct", "—")}% avg chg</span></div>'
+                    + '</div>',
+                    unsafe_allow_html=True)
             sc1, sc2 = st.columns(2)
             with sc1:
                 st.markdown("**🟢 Strongest sectors**")
                 for s in mcc.get("top_sectors", []):
-                    st.caption(f"{s['sector']} — strength {s['strength']}, breadth {s['breadth_pct']}%, "
-                               f"avg chg {s['avg_change_pct']:+.2f}%")
+                    st.caption(f"{s['sector']} · {s['breadth_pct']}% breadth · {s['avg_change_pct']:+.2f}%")
             with sc2:
                 st.markdown("**🔴 Weakest sectors**")
                 for s in mcc.get("bottom_sectors", []):
-                    st.caption(f"{s['sector']} — strength {s['strength']}, breadth {s['breadth_pct']}%, "
-                               f"avg chg {s['avg_change_pct']:+.2f}%")
+                    st.caption(f"{s['sector']} · {s['breadth_pct']}% breadth · {s['avg_change_pct']:+.2f}%")
         else:
-            st.caption("Market command center unavailable.")
-
-    st.caption("Home now shows only the curated watchlist above, not the exhaustive whole-market list — "
-               "keeps data usage down. A full whole-market snapshot is available on-demand from the "
-               "Screener tab.")
+            st.markdown('<div class="psx-empty-state"><span class="icon">📊</span>'
+                        '<span class="msg">Market data populates during trading hours</span></div>',
+                        unsafe_allow_html=True)
 
 # ----------------------------------------------------------- Screener ----
 with tab_intraday:
@@ -1526,21 +1630,18 @@ with tab_intraday:
 with tab_screener:
     st.markdown('<div class="psx-section-eyebrow">SCREENER</div>'
                 '<div class="psx-section-title">Whole-Market Rankings</div>', unsafe_allow_html=True)
-    st.caption("Three independent engines rank the whole market differently — shown here in order of rigor, "
-                "not just personal preference. The **Decision Support Scan** is the primary/default ranking "
-                "(same confluence-matrix + backtested-stats engine as a stock's own Stock Research page). "
-                "The other two are genuinely different methodologies, useful as a cross-check, not near-duplicates "
-                "of each other or of the primary ranking. Click any row to open that symbol in the Stock Research "
-                "tab. (The Home tab's table uses a much simpler price/volume heuristic — not a fourth ranking, "
-                "just a quick-glance tag.)")
+    with st.expander("About the ranking engines", expanded=False):
+        st.caption("Three independent engines rank the whole market differently — shown in order of rigor. "
+                    "The **Decision Support Scan** is the primary ranking (confluence-matrix + backtested-stats). "
+                    "The other two are genuinely different methodologies, useful as a cross-check. "
+                    "Click any row to open that symbol in Stock Research.")
 
     _render_watchlist_section("screener")
 
     if "show_whole_market_scan" not in st.session_state:
         st.session_state.show_whole_market_scan = False
     with st.container(border=True):
-        st.markdown("**📊 Full Whole-Market Scan** — on-demand only, since it reads far more "
-                    "data than the watchlist above.")
+        st.markdown("**📊 Full Whole-Market Scan**")
         wm_col1, wm_col2 = st.columns([1, 3])
         with wm_col1:
             if not st.session_state.show_whole_market_scan:
@@ -1567,17 +1668,13 @@ with tab_screener:
                     '<div class="psx-section-title">🤝 Where The Two Independent Engines Agree</div>',
                     unsafe_allow_html=True)
         with st.container(border=True):
-            st.caption("DSS (Wyckoff + regime + backtested stats) and psx_brain (trend/momentum trade-plan "
-                       "verdicts) are built independently and can legitimately disagree — this cross-references "
-                       "their named buy/avoid buckets rather than blending scores into one fabricated number. "
-                       "Agreement here is a stronger signal than either engine alone; disagreement is worth "
-                       "investigating, not a bug.")
+            st.caption("Cross-referencing DSS and psx_brain buy/avoid buckets — agreement is a stronger signal than either alone.")
             if consensus is None:
                 st.info("Waiting on both scans below to finish loading — consensus appears once the Primary "
                         "Ranking and Whole-Book Scan sections have real data.")
             else:
                 if consensus["agree_buy"]:
-                    st.markdown(f"**✅ Both engines bullish on these ({len(consensus['agree_buy'])})**")
+                    st.markdown(f"**✅ Both engines bullish ({len(consensus['agree_buy'])})**")
                     rows = [{"symbol": s, "DSS action": _action_badge(d.get("action")), "DSS score": d.get("score"),
                             "psx_brain verdict": b.get("verdict"), "psx_brain confidence": b.get("confidence")}
                             for s, d, b in consensus["agree_buy"]]
@@ -1592,11 +1689,10 @@ with tab_screener:
                         st.session_state.research_symbol = cdf.iloc[crows[0]]["symbol"]
                         st.toast(f"Opened {st.session_state.research_symbol} in Stock Research →", icon="🎯")
                 else:
-                    st.info("No symbols right now where both engines are independently bullish — an honest "
-                            "result, not a bug. Check back after the next auto-refresh.")
+                    st.info("No consensus bullish picks right now.")
 
                 if consensus["agree_avoid"]:
-                    st.markdown(f"**🔴 Both engines bearish on these ({len(consensus['agree_avoid'])})**")
+                    st.markdown(f"**🔴 Both engines bearish ({len(consensus['agree_avoid'])})**")
                     rows = [{"symbol": s, "DSS action": _action_badge(d.get("action")), "DSS score": d.get("score"),
                             "psx_brain verdict": b.get("verdict")} for s, d, b in consensus["agree_avoid"]]
                     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
@@ -1611,21 +1707,14 @@ with tab_screener:
         st.markdown('<div class="psx-section-eyebrow">PRIMARY RANKING</div>'
                     '<div class="psx-section-title">🎯 Decision Support Market Scanner</div>', unsafe_allow_html=True)
         with st.container(border=True):
-            st.caption("Runs the full Decision Support System (confluence matrix, evidence score, Wyckoff, "
-                       "candlesticks, real backtest stats) over every symbol with stored true-OHLC, then ranks "
-                       "into named buckets. Same engine each stock's own Stock Research page uses. The backend "
-                       "auto-refreshes this in the background, so loading this tab is instant — prices are "
-                       "patched live on top of the cached analysis.")
+            st.caption("Full DSS confluence analysis across all symbols · auto-refreshed in the background")
             status = _get("/dss-scan/status")
             if status.get("status") == "ok":
                 age_min = round(status["age_seconds"] / 60, 1)
                 running_note = " · a background refresh is running right now" if status.get("job_running") else ""
-                st.caption(f"📦 Cached scan: {status['scanned']} symbols · last full analysis {age_min} min ago "
-                           f"(auto-refreshes every {round(status['max_age_seconds']/60)} min) · "
-                           f"prices refreshed live{running_note}.")
+                st.caption(f"📦 {status['scanned']} symbols · {age_min} min ago{running_note}")
             elif status.get("status") == "never_run":
-                st.info("No scan cached yet — the backend runs one automatically shortly after startup "
-                        "(can take a few minutes for the full backfilled universe), or force one now below.")
+                st.info("No scan cached yet — first run starts automatically after backend startup.")
             scan_token = _admin_token_input("dssscan_token")
             force_col1, force_col2 = st.columns([1, 3])
             with force_col1:
@@ -1721,10 +1810,7 @@ with tab_screener:
         st.markdown('<div class="psx-section-eyebrow">SECOND OPINION</div>'
                     '<div class="psx-section-title">📈 Whole-Book Scan (psx_brain)</div>', unsafe_allow_html=True)
         with st.container(border=True):
-            st.caption("A third, independent methodology: full-indicator trade-plan verdicts (BUY/WAIT/SELL with "
-                       "entry/stop/target) over the most liquid names. Expensive — fetches OHLCV + runs the full "
-                       "indicator engine per symbol. Requires PSX_ADMIN_TOKEN on the backend unless called from "
-                       "localhost.")
+            st.caption("Independent trade-plan verdicts (BUY/WAIT/SELL) across liquid names")
             admin_token = _admin_token_input("scan_token")
             is_default_scan = op_min_vol == _SYNC_DEFAULTS.get("home_min_vol", 50_000)
             if st.button("Run scan", type="primary"):
@@ -1780,8 +1866,7 @@ with tab_pulse:
         st.markdown('<div class="psx-panel-title">📰 News Feed</div>', unsafe_allow_html=True)
         feed = _get("/news-feed")
         if feed.get("status") == "ok":
-            st.caption(f"As of {feed.get('as_of')} · age {feed.get('age_minutes')} min · "
-                       f"{feed.get('symbols_with_news')} symbols with news")
+            st.caption(f"{feed.get('as_of')} · {feed.get('symbols_with_news')} symbols")
             if feed.get("stocks"):
                 _news_df = pd.DataFrame(feed["stocks"])[
                     ["symbol", "sector", "price", "observed_move_pct", "direction",
@@ -1809,12 +1894,8 @@ with tab_pulse:
     themed = [m for m in (feed.get("macro_headlines", []) if isinstance(feed, dict) else []) if m.get("themes")]
     if themed:
         with st.container(border=True):
-            st.markdown('<div class="psx-panel-title">📊 Sector Impact</div>'
-                        '<div style="font-size:0.82rem;color:var(--sub);margin-bottom:10px;">'
-                        'Macro headlines mapped to sectors conventionally sensitive to them — '
-                        'conventional analyst relationships (e.g. oil up → cement/transport cost '
-                        'pressure), NOT measured against PSX history. Directional guidance for '
-                        'where to look, never a score.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="psx-panel-title">📊 Sector Impact</div>', unsafe_allow_html=True)
+            st.caption("Macro headlines mapped to conventionally sensitive sectors — directional guidance, not a score.")
             for m in themed:
                 for t in m["themes"]:
                     chips = "".join(f'<span class="psx-badge watch" style="margin:2px 4px 2px 0">→ {s}</span>'
@@ -1825,9 +1906,7 @@ with tab_pulse:
     with st.container(border=True):
         st.markdown('<div class="psx-panel-title">🔔 Volume & Accumulation/Distribution Alerts</div>',
                     unsafe_allow_html=True)
-        st.caption("Scoped to the same 89-symbol watchlist as Home/Screener, refreshed every 30 min "
-                   "during market hours — not the whole market. Rebuilt on data this app already owns "
-                   "(PSX portal + technical engine's CMF/OBV/avg-volume). ~5min delayed, not tick-level.")
+        st.caption("89-symbol watchlist · refreshed every 30 min during market hours")
 
         _ALERT_LABEL = {"ACCUMULATION": "POSITIVE MONEY-FLOW PRESSURE", "DISTRIBUTION": "NEGATIVE MONEY-FLOW PRESSURE",
                         "VOLUME_SURGE": "VOLUME SURGE"}
@@ -1837,9 +1916,7 @@ with tab_pulse:
                 st.caption(f"Scanned {r['scanned']} · flagged {r['flagged']} · "
                            f"{r['skipped_no_data']} skipped (no backfilled OHLC)"
                            + (f" · cached {r['_cache_age_seconds']}s ago" if "_cache_age_seconds" in r else ""))
-                st.caption("Labeled by what they actually measure — CMF/OBV money-flow proxies, not "
-                           "confirmed Wyckoff accumulation/distribution. See a stock's Decision Support "
-                           "tab for whether Wyckoff structure independently agrees.")
+                st.caption("CMF/OBV money-flow proxies · see Stock Research for Wyckoff confirmation")
                 rows_html = []
                 for a in r["alerts"]:
                     cls = "up" if (a["pct"] or 0) >= 0 else "down"
@@ -1902,33 +1979,31 @@ with tab_pulse:
 # --------------------------------------------------------- Stock Research ----
 with tab_dss:
     st.markdown('<div class="psx-section-eyebrow">STOCK RESEARCH</div>'
-                '<div class="psx-section-title">Everything About One Stock, In One Place</div>',
+                '<div class="psx-section-title">Deep-Dive Analysis</div>',
                 unsafe_allow_html=True)
-    st.caption("Every engine's read on a single symbol — psx_brain's Verdict, the blended Decision, and the "
-               "full Decision Support System (confluence matrix, Wyckoff, candlesticks, price action, "
-               "backtested stats) — used to be split across two tabs; it's all here now. Hierarchy of "
-               "evidence for the DSS score: Market Regime → Sector Regime → Stock Structure → Wyckoff → "
-               "Supply/Demand → Candlesticks → Price Action → Relative Strength → Risk/Reward → Final "
-               "Decision. Historical pattern statistics and quant baseline validation are explicitly marked "
-               "PENDING where they don't apply — no win-rate is fabricated. This is analysis, not certainty: "
-               "read every action as a hypothesis, not a promise.")
-
-    st.caption("Whole-market rankings (including this same DSS scan, as the primary ranking) live on the "
-               "**Screener** tab. This tab is for researching one stock at a time — pick it below, or click "
-               "a row on the Screener tab to land here with it preselected.")
+    with st.expander("How this works", expanded=False):
+        st.caption("Every engine's read on a single symbol — psx_brain's Verdict, the blended Decision, and the "
+                   "full Decision Support System (confluence matrix, Wyckoff, candlesticks, price action, "
+                   "backtested stats). Hierarchy of evidence: Market Regime → Sector Regime → Stock Structure → "
+                   "Wyckoff → Supply/Demand → Candlesticks → Price Action → Relative Strength → Risk/Reward → "
+                   "Final Decision. Pick a symbol below, or click a row on the Screener tab.")
 
     if "research_symbol" not in st.session_state:
         st.session_state.research_symbol = "OGDC"
     dss_picks = ["OGDC", "PPL", "HBL", "UBL", "LUCK", "FFC", "ENGRO", "MCB", "SYS", "MARI"]
-    dss_cols = st.columns(len(dss_picks) + 2)
-    for i, p in enumerate(dss_picks):
-        if dss_cols[i].button(p, key=f"dsspick_{p}",
-                               type="primary" if st.session_state.research_symbol == p else "secondary"):
-            st.session_state.research_symbol = p
-    dss_typed = dss_cols[-2].text_input("Or type a symbol", value="", key="dss_typed",
-                                         label_visibility="collapsed", placeholder="Type symbol...")
-    if dss_typed.strip():
-        st.session_state.research_symbol = dss_typed.strip().upper()
+    _dss_pick_col1, _dss_pick_col2 = st.columns([3, 1])
+    with _dss_pick_col1:
+        _dss_chip_cols = st.columns(len(dss_picks))
+        for i, p in enumerate(dss_picks):
+            if _dss_chip_cols[i].button(p, key=f"dsspick_{p}",
+                                   type="primary" if st.session_state.research_symbol == p else "secondary",
+                                   use_container_width=True):
+                st.session_state.research_symbol = p
+    with _dss_pick_col2:
+        dss_typed = st.text_input("Symbol", value="", key="dss_typed",
+                                             label_visibility="collapsed", placeholder="Type symbol...")
+        if dss_typed.strip():
+            st.session_state.research_symbol = dss_typed.strip().upper()
     dss_symbol = st.session_state.research_symbol
 
     if dss_symbol:
@@ -2045,16 +2120,13 @@ with tab_dss:
                     lv3.metric("LDCP", q.get("ldcp") if q.get("ldcp") is not None else "—")
                     chg = q.get("change")
                     lv4.metric("Change", f"{chg:+.2f}" if isinstance(chg, (int, float)) else "—")
-                    st.caption("52-week range isn't tracked by this backend yet — showing today's real "
-                               "day range only rather than a guessed figure.")
+                    st.caption("Today's range shown (52-week range not yet tracked)")
 
             with subtab_verdict:
                 st.markdown('<div class="psx-section-eyebrow">OTHER ENGINES\' OPINIONS</div>'
                             '<div class="psx-section-title">Cross-Check: psx_brain Verdict & Blended Decision</div>',
                             unsafe_allow_html=True)
-                st.caption("Two independent, differently-built engines' read on this same stock — worth "
-                           "noticing when they agree with the Evidence Score below, and worth investigating "
-                           "when they don't. Neither is a subset or a looser version of the DSS score.")
+                st.caption("Two independent engines — agreement strengthens conviction, disagreement warrants investigation.")
                 colA, colB = st.columns(2)
                 with colA, st.container(border=True):
                     st.markdown('<div class="psx-panel-title">🧭 Verdict (psx_brain)</div>', unsafe_allow_html=True)
@@ -2548,14 +2620,13 @@ with tab_patterns:
     _regime = _get("/patterns/regime")
     if _regime.get("status") == "ok":
         if _regime["label"] == "BULL":
-            st.success("📈 Market Regime: BULL — KSE-100 above 200-day MA. Pattern reliability historically higher.")
+            st.success("📈 **BULL** — KSE-100 above 200-day MA")
         elif _regime["label"] == "BEAR":
-            st.warning("⚠️ Market Regime: BEAR — KSE-100 below 200-day MA. Reduce position sizes. Chart patterns "
-                       "showed elevated failure rates in bear conditions on PSX.")
+            st.warning("⚠️ **BEAR** — KSE-100 below 200-day MA · elevated pattern failure rates")
         else:
-            st.info("Market regime: KSE-100 is essentially flat against its 200-day MA.")
+            st.info("➡️ **FLAT** — KSE-100 near its 200-day MA")
     else:
-        st.info("Market regime: KSE-100 data unavailable.")
+        st.info("Regime data unavailable")
 
     with st.sidebar:
         # CHANGE 7: regime snapshot card. No 52-week high/low in
@@ -2586,14 +2657,14 @@ with tab_patterns:
         else:
             st.info("Regime data unavailable")
 
-        st.markdown("### 🕯️ Patterns Control Panel")
-        patterns_admin_token = st.text_input(
-            "Admin token (if set on backend)", type="password", key="patterns_sidebar_admin_token")
+        st.markdown("### 🕯️ Patterns")
         patterns_force_refresh = st.button(
-            "🔄 Force Market-Wide Refresh", type="primary", use_container_width=True,
+            "🔄 Force Refresh", type="primary", use_container_width=True,
             key="patterns_force_refresh_all")
-        st.caption("Forces every pattern scan on this page to re-run immediately, instead of "
-                   "waiting for its normal once-daily background refresh.")
+        with st.expander("Admin"):
+            patterns_admin_token = st.text_input(
+                "Token", type="password", key="patterns_sidebar_admin_token",
+                label_visibility="collapsed", placeholder="Admin token…")
         st.divider()
 
     _pat_refresh_params = {}
@@ -2632,8 +2703,7 @@ with tab_patterns:
             on_select="rerun", selection_mode="single-row", key=key,
             column_config=column_config)
         if total > MOBILE_ROW_CAP:
-            st.caption(f"Showing top {MOBILE_ROW_CAP} of {total} signals "
-                       f"({'most recent' if date_col else 'unsorted'}) to optimize mobile performance.")
+            st.caption(f"Showing {MOBILE_ROW_CAP} of {total} signals")
         srows = sel.selection.rows if sel and sel.selection else []
         if srows:
             sym_col = "symbol" if "symbol" in df.columns else "Symbol"
@@ -3060,15 +3130,8 @@ with tab_patterns:
 with tab_more:
     st.markdown('<div class="psx-section-eyebrow">TOOLS & STATUS</div>'
                 '<div class="psx-section-title">More</div>', unsafe_allow_html=True)
-    st.caption("Data backfill, the quantitative validation lab (does any pattern actually beat a coin "
-               "flip, and does it hold on data it never saw), and system status \u2014 grouped so you "
-               "don't have to scroll past everything to find one thing.")
-
-    more_token = _admin_token_input("more_admin_token")
-    st.caption("Admin token \u2014 required for full scan access. One admin token, reused by every "
-               "force-run/backfill action below and by the Home tab's watchlist refresh (they all "
-               "share this same value) \u2014 enter it once here (only needed if PSX_ADMIN_TOKEN is "
-               "set on the backend; on localhost it's optional).")
+    with st.expander("Admin"):
+        more_token = _admin_token_input("more_admin_token")
 
     subtab_data, subtab_quant, subtab_status = st.tabs(
         ["\U0001F5C4\uFE0F DATA & BACKFILL", "\U0001F9EA QUANT VALIDATION LAB", "\u2699\uFE0F SYSTEM STATUS"]
@@ -3077,11 +3140,7 @@ with tab_more:
     with subtab_data:
         with st.container(border=True):
             st.markdown('<div class="psx-panel-title">🗄️ Backfill True OHLC</div>', unsafe_allow_html=True)
-            st.caption("Candlestick patterns, real ATR/ADX, CMF and Wyckoff all need true "
-                       "open/high/low/close — PSX's EOD feed is close-only, so this pulls "
-                       "genuine OHLCV from Yahoo Finance and stores it. Use this to backfill a **new** "
-                       "symbol's full history. Everything **already** backfilled gets its latest daily bar "
-                       "appended automatically once a day in the background — no manual re-run needed.")
+            st.caption("Pull true OHLCV from Yahoo Finance · already-backfilled symbols auto-update daily")
             bf1, bf2 = st.columns(2)
             with bf1:
                 bf_symbol = st.text_input("Symbol to backfill", value="OGDC", key="bf_sym").strip().upper()
