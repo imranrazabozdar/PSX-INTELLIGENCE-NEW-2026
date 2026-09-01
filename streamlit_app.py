@@ -1790,7 +1790,7 @@ with tab_pulse:
                 _direction_label = {"positive": "🟢 Positive", "negative": "🔴 Negative"}
                 _news_df["direction"] = _news_df["direction"].map(lambda d: _direction_label.get(d, d))
                 _news_df["agreement"] = _news_df["agreement"].map(
-                    lambda a: "✅ Confirmed" if a is True else ("❌ Diverging" if a is False else "—"))
+                    lambda a: "✅ Confirmed" if a and "agrees" in str(a) else ("❌ Diverging" if a and "diverges" in str(a) else "—"))
                 st.dataframe(
                     _news_df.rename(columns={
                         "direction": "News Sentiment", "materiality": "Market Impact",
