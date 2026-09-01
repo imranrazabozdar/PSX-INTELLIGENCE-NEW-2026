@@ -4219,11 +4219,17 @@ async def _run_watchlist_scan():
 async def _watchlist_refresh_loop():
     """Runs _run_watchlist_scan every WATCHLIST_REFRESH_INTERVAL (30 min),
     but only during actual trading hours -- there's nothing new to analyse
-    once the market's shut. Results are cached under 'watchlist_scan' so the
-    frontend can show near-live analysis without recomputing per page view.
+    once the market's shut. Also runs ONE final scan at ~4:30 PM PSX (after
+    market closes) to ensure end-of-day data is cached for next morning.
+    Results are cached under 'watchlist_scan' so the frontend can show
+    near-live analysis without recomputing per page view.
     """
+    _last_eod_scan = None
     while True:
-        if _is_trading_hours():
+        now_pkt = datetime.now(PSX_TZ)
+        is_trading = _is_trading_hours(now_pkt)
+
+        if is_trading:
             if _cache_fresh("watchlist_scan", WATCHLIST_REFRESH_INTERVAL):
                 print("[scan_cache] watchlist_scan tick skipped — cached result still fresh")
             else:
@@ -4248,6 +4254,20 @@ async def _watchlist_refresh_loop():
                     print(f"[scan_cache] watchlist_alerts refreshed: {alerts_result.get('flagged')} flagged")
                 except Exception as e:
                     print(f"[scan_cache] watchlist_alerts refresh failed: {type(e).__name__}: {e}")
+        else:
+            # After market closes (3:30+ PM PSX), run ONE final scan to cache end-of-day data
+            # This ensures fresh data for next morning without constant quota drain
+            today = now_pkt.date()
+            if _last_eod_scan != today and now_pkt.hour >= 16:  # 4 PM PSX = end-of-day
+                try:
+                    print("[scan_cache] Running end-of-day watchlist scan...")
+                    result = await _run_watchlist_scan()
+                    _scan_cache.put("watchlist_scan", result)
+                    _last_eod_scan = today
+                    print("[scan_cache] End-of-day watchlist scan complete")
+                except Exception as e:
+                    logger.error(f"[scan_cache] End-of-day watchlist scan failed: {e}")
+
         await asyncio.sleep(WATCHLIST_REFRESH_INTERVAL)
 
 
@@ -4538,8 +4558,10 @@ def watchlist_scan(request:Request, force:bool=False):
     DSS analysis for the curated WATCHLIST_SYMBOLS set."""
     try:
         cached = _scan_cache.latest("watchlist_scan")
+        if force:
+            _start_bg_job("watchlist_scan", _run_watchlist_scan)
         if not cached:
-            return {"status": "never_run", "age_seconds": None, "symbols": WATCHLIST_SYMBOLS, "results": {}, "_background_refresh_running": False}
+            return {"status": "never_run", "age_seconds": None, "symbols": WATCHLIST_SYMBOLS, "results": {}, "_background_refresh_running": _bg_job_running("watchlist_scan")}
         return {"status": "ok", "age_seconds": cached.get("_cache_age_seconds"),
                 "run_at": cached.get("_cache_run_at"), "symbols": cached.get("symbols", WATCHLIST_SYMBOLS),
                 "results": cached.get("results", {}),
