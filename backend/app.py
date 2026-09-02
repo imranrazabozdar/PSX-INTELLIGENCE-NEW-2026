@@ -1389,7 +1389,10 @@ async def ws_market(ws:WebSocket):
 def fundamentals(symbol:str):
     """Fetch the official PSX company page and return only fields actually present."""
     from bs4 import BeautifulSoup
-    r=requests.get(f"{PSX}/company/{symbol.upper()}",headers=HEAD,timeout=15);r.raise_for_status()
+    try:
+        r=requests.get(f"{PSX}/company/{symbol.upper()}",headers=HEAD,timeout=15);r.raise_for_status()
+    except Exception as e:
+        return {"symbol":symbol.upper(),"status":"unavailable","error":f"PSX portal unreachable: {type(e).__name__}"}
     soup=BeautifulSoup(r.text,"html.parser")
     text=soup.get_text("\n",strip=True)
     def nearby(label):
@@ -2735,7 +2738,10 @@ def classify_headline(title):
 def announcement_intelligence(symbol:str):
     # Company pages expose Financial Results / Board Meetings / Others.
     url=f"{PSX}/company/{symbol.upper()}"
-    r=requests.get(url,headers=HEAD,timeout=15);r.raise_for_status()
+    try:
+        r=requests.get(url,headers=HEAD,timeout=15);r.raise_for_status()
+    except Exception as e:
+        return {"symbol":symbol.upper(),"source":url,"items":[],"error":f"PSX portal unreachable: {type(e).__name__}"}
     from bs4 import BeautifulSoup
     soup=BeautifulSoup(r.text,"html.parser")
     items=[]
