@@ -3152,6 +3152,15 @@ with tab_patterns:
                        "assumption, on 5-minute gold futures. Entry at the signal candle's own "
                        "close, stop 1% above the signal high, target at 3x that risk (the "
                        "strategy's own stated default, unoptimized).")
+            st.caption("⚠️ Backtested walk-forward on PSX (193 symbols, 11,741 resolved trades — by "
+                       "far the highest signal density of any pattern on this page, as expected "
+                       "from this looser, continuous formulation): **23.3% win rate, -0.58% average "
+                       "return per trade, 0.78 profit factor** — with a 3:1 target-to-risk ratio the "
+                       "breakeven win rate is ~25%, so this sits just below breakeven and loses "
+                       "money at these defaults, same honest verdict as every other pattern here. "
+                       "Coverage is 193/~750 symbols so far and will be re-run periodically as the "
+                       "full-market backfill grows — treat this as a documented, tracked signal, "
+                       "not a validated PSX edge.")
 
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
