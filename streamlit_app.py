@@ -3223,9 +3223,17 @@ with tab_patterns:
                        "20 (short) — reflected in the walk-forward backtest below, not in this "
                        "table's static target (a live scan has no open position to manage).")
             st.caption("⚠️ On EURUSD daily (2003-2023, 16 years) this fired only 7 times — an "
-                       "extremely rare setup even on its native instrument. See "
-                       "backend/run_level_breakout_backtest.py for the walk-forward PSX result "
-                       "before treating any signal here as validated.")
+                       "extremely rare setup even on its native instrument. PSX's larger, more "
+                       "volatile universe fires far more often: backtested walk-forward on PSX "
+                       "(193 symbols, 190 resolved trades) at the strategy's own default, "
+                       "unoptimized rule (3% stop, 2:1 reward:risk, RSI 80/20 early exit) — "
+                       "**43.2% win rate, +0.37% average return per trade, 1.22 profit factor "
+                       "overall**. The two directions diverge sharply: resistance breakouts "
+                       "(109 trades) are profitable at **50.5% win rate, +1.05% avg return, 1.65 "
+                       "profit factor**, while support breakdowns (81 trades) are not — **33.3% "
+                       "win rate, -0.54% avg return, 0.71 profit factor**. Treat the bullish "
+                       "(resistance-breakout) side as the one with real edge here; the bearish "
+                       "(support-breakdown) side is currently a net loser at these defaults.")
 
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
