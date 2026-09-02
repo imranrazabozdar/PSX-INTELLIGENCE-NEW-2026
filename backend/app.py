@@ -787,10 +787,17 @@ def _market_watch_uncached():
 
 def save_snapshot(rows):
     ts=datetime.now(timezone.utc).isoformat()
-    with db() as c:
-        c.executemany("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [(ts,x["symbol"],x["sector"],x["listed"],x["ldcp"],x["open"],x["high"],x["low"],x["price"],x["change"],x["pct"],x["volume"],x["score"],x["setup"],int(x["shariah"])) for x in rows])
-        c.commit()
+    params_list=[(ts,x["symbol"],x["sector"],x["listed"],x["ldcp"],x["open"],x["high"],x["low"],x["price"],x["change"],x["pct"],x["volume"],x["score"],x["setup"],int(x["shariah"])) for x in rows]
+    conn=db()
+    if turso_db.USING_TURSO and hasattr(conn,'batch_query'):
+        sql="INSERT INTO snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        CHUNK=100
+        for i in range(0,len(params_list),CHUNK):
+            conn.batch_query([(sql,p) for p in params_list[i:i+CHUNK]])
+    else:
+        with conn as c:
+            c.executemany("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",params_list)
+            c.commit()
 
 def eod(symbol):
     # Network call — guarded here (not just at call sites) so any future
@@ -1553,8 +1560,15 @@ def ingest_ohlc(symbol:str, rows:list[dict], request:Request):
             good.append((symbol.upper(),str(x["date"]),float(x["open"]),float(x["high"]),float(x["low"]),
                          float(x["close"]),float(x.get("volume",0)),str(x.get("source","PSX Historical Data"))))
         except: pass
-    with db() as c:
-        c.executemany("INSERT OR REPLACE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)",good);c.commit()
+    conn=db()
+    if turso_db.USING_TURSO and hasattr(conn,'batch_query'):
+        sql="INSERT OR REPLACE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)"
+        CHUNK=100
+        for i in range(0,len(good),CHUNK):
+            conn.batch_query([(sql,p) for p in good[i:i+CHUNK]])
+    else:
+        with conn as c:
+            c.executemany("INSERT OR REPLACE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)",good);c.commit()
     return {"symbol":symbol.upper(),"stored":len(good)}
 
 @app.get("/ohlc/{symbol}")
@@ -2239,9 +2253,16 @@ def backfill_ohlc_from_dps(symbol, range_="5y"):
             continue
     if good:
         ensure_ohlc()
-        with db() as c:
-            c.executemany("INSERT OR IGNORE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)", good)
-            c.commit()
+        conn = db()
+        if turso_db.USING_TURSO and hasattr(conn, 'batch_query'):
+            sql = "INSERT OR IGNORE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)"
+            CHUNK = 100
+            for i in range(0, len(good), CHUNK):
+                conn.batch_query([(sql, p) for p in good[i:i + CHUNK]])
+        else:
+            with conn as c:
+                c.executemany("INSERT OR IGNORE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)", good)
+                c.commit()
     return {"symbol": symbol.upper(), "fetched": len(df), "stored": len(good),
             "range": range_,
             "note": "Sourced from PSX's own Data Portal (dps.psx.com.pk) — the "
@@ -4399,22 +4420,32 @@ def _compute_intraday_signals(rows):
             logger.warning(f"session anomaly computation failed for {row.get('symbol')}: {e}")
             continue
 
-    # STEP C ADDITION 1: one executemany instead of inserting per alert.
     if all_alerts:
         try:
-            with db() as c:
-                c.executemany(
-                    "INSERT INTO intraday_alert "
-                    "(symbol, alert_type, triggered_at, price_at_trigger, "
-                    "volume_ratio, range_position, session_date) "
-                    "VALUES (?,?,?,?,?,?,?)",
-                    [(a["symbol"], a["alert_type"], a["triggered_at"], a["price_at_trigger"],
-                      a["volume_ratio"], a["range_position"], a["session_date"]) for a in all_alerts]
-                )
-                c.commit()
+            alert_params = [
+                (a["symbol"], a["alert_type"], a["triggered_at"], a["price_at_trigger"],
+                 a["volume_ratio"], a["range_position"], a["session_date"]) for a in all_alerts
+            ]
+            conn = db()
+            if turso_db.USING_TURSO and hasattr(conn, 'batch_query'):
+                sql = ("INSERT INTO intraday_alert "
+                       "(symbol, alert_type, triggered_at, price_at_trigger, "
+                       "volume_ratio, range_position, session_date) "
+                       "VALUES (?,?,?,?,?,?,?)")
+                conn.batch_query([(sql, p) for p in alert_params])
+            else:
+                with conn as c:
+                    c.executemany(
+                        "INSERT INTO intraday_alert "
+                        "(symbol, alert_type, triggered_at, price_at_trigger, "
+                        "volume_ratio, range_position, session_date) "
+                        "VALUES (?,?,?,?,?,?,?)", alert_params)
+                    c.commit()
             print(f"[scan_cache] intraday: {len(all_alerts)} new alert(s)")
         except Exception as e:
+            import traceback
             logger.warning(f"session anomaly alert insert failed: {e}")
+            traceback.print_exc()
 
     return all_alerts
 
@@ -4482,6 +4513,7 @@ def _collect_intraday_bar(rows):
         CHUNK = 100
         for i in range(0, len(good), CHUNK):
             conn.batch_query([(sql, params) for params in good[i:i + CHUNK]])
+        print(f"[intraday_bars] OK: {len(good)} symbols via batch_query at {bar_time}")
     else:
         with conn as c:
             c.executemany(
@@ -4489,6 +4521,7 @@ def _collect_intraday_bar(rows):
                 "(symbol,bar_time,price,volume_cumulative,day_high,day_low) "
                 "VALUES(?,?,?,?,?,?)", good)
             c.commit()
+        print(f"[intraday_bars] OK: {len(good)} symbols via executemany at {bar_time}")
 
 
 def _cleanup_intraday_bars_if_due():
@@ -4537,26 +4570,23 @@ def _cleanup_intraday_bars_if_due():
 
 async def _intraday_bars_collector_loop():
     """Accumulates pseudo-intraday bars from 1-minute market_watch()
-    polling during market hours -- the "Option 1" path noted in
-    CALIBRATION_LOG.md's FUTURE PATH TO REAL INTRADAY CAPABILITY: after
-    ~90 days of accumulation, enough bars exist to backtest Opening
-    Range Breakout / VWAP-style signals that need finer-than-daily
-    granularity, which PSX's public APIs don't otherwise expose per-
-    symbol (see psx_live.py's module docstring). Reuses market_watch()'s
-    own MARKET_TTL(60s)-cached result rather than forcing a fresh
-    scrape every tick, since this loop's own interval matches that TTL."""
+    polling during market hours."""
+    _bars_tick = 0
     while True:
         if _is_trading_hours():
+            _bars_tick += 1
             try:
                 rows = await asyncio.to_thread(market_watch)
                 if rows:
                     await asyncio.to_thread(_collect_intraday_bar, rows)
                     await asyncio.to_thread(_cleanup_intraday_bars_if_due)
+                    if _bars_tick <= 3 or _bars_tick % 10 == 0:
+                        print(f"[intraday_bars] tick #{_bars_tick}: {len(rows)} rows from market_watch")
                 else:
-                    print("[scan_cache] intraday_bars: market_watch() returned empty")
+                    print(f"[intraday_bars] tick #{_bars_tick}: market_watch() returned EMPTY — PSX portal may be unreachable")
             except Exception as e:
                 import traceback
-                print(f"[scan_cache] intraday_bars collector failed: {type(e).__name__}: {e}")
+                print(f"[intraday_bars] tick #{_bars_tick} FAILED: {type(e).__name__}: {e}")
                 traceback.print_exc()
         await asyncio.sleep(INTRADAY_BARS_COLLECT_INTERVAL)
 
@@ -4647,6 +4677,10 @@ async def _heavy_refresh_loop():
 
 @app.on_event("startup")
 async def _start_background_refresh_loops():
+    conn = db()
+    has_batch = hasattr(conn, 'batch_query')
+    print(f"[startup] DB backend: {'Turso HTTP' if turso_db.USING_TURSO and has_batch else 'local SQLite'} "
+          f"| USING_TURSO={turso_db.USING_TURSO} | batch_query={has_batch}")
     if os.getenv("PSX_DISABLE_SCAN_AUTOREFRESH"):
         print("[scan_cache] PSX_DISABLE_SCAN_AUTOREFRESH is set — background refresh loops "
               "(watchlist_scan, watchlist_alerts, backtest family, OHLC refresh, market_watch, "
