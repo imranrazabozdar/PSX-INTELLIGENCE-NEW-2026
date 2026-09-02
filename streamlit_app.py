@@ -2964,6 +2964,67 @@ with tab_patterns:
         kept = [h for h in hits if _is_recent(h)]
         return kept, len(hits) - len(kept)
 
+    # Fetched once here (not inside either tab) since one scan endpoint
+    # returns BOTH BULL and BEAR hits together -- split by "direction"
+    # into the Long-Side and Short-Side tabs below.
+    _mharris_scan = _get("/patterns/mharris-scan", **_pat_refresh_params)
+
+    def _render_mharris_block(direction, header, action_label, row_color):
+        st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS</div>'
+                    f'<div class="psx-section-title">{header}</div>', unsafe_allow_html=True)
+        if not _scan_status_banner(_mharris_scan, "MHarris 5-Bar Reversal"):
+            return
+        age = _mharris_scan.get("_cache_age_seconds")
+        age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+        running_note = " · a background refresh is running right now" if _mharris_scan.get("_background_refresh_running") else ""
+        all_hits = [h for h in (_mharris_scan.get("hits") or []) if h.get("direction") == direction]
+        hits, hidden_n = _filter_recent(all_hits, "pattern_date", f"mharris_{direction.lower()}_hist_checkbox")
+        st.caption(f"📦 Scanned {_mharris_scan.get('scanned', 0)} symbols with stored daily history · last run "
+                   f"{age_str}{running_note} · {len(hits)} symbol(s) currently showing this reversal"
+                   f"{f' ({hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if hidden_n else ''}.")
+        if not hits:
+            st.info(f"No symbol currently shows an MHarris {direction.title()}ish 5-bar reversal "
+                    "on its latest completed daily candles.")
+            return
+        names_mh = _company_names()
+        rows = [{
+            "symbol": h["symbol"], "company": names_mh.get(h["symbol"], ""),
+            "action": action_label,
+            "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+            "target 1": h.get("target_1"), "date": h.get("pattern_date"),
+        } for h in hits]
+        mhdf = pd.DataFrame(rows)
+
+        def _mh_row_color(row):
+            return [f"background-color: {row_color}"] * len(row)
+
+        _render_pattern_table(mhdf, _mh_row_color, f"mharris_{direction.lower()}_scan_table", {
+            "symbol": "Symbol", "company": "Company", "action": "Action",
+            "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+            "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+            "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+            "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+        }, date_col="date")
+
+        with st.expander("📖 View Rules & Metrics for MHarris 5-Bar Reversal"):
+            st.caption("Market-wide scan, on the latest completed daily candles — a contained "
+                       "micro-trend snap-back translated 1:1 from a reference systematic-trading "
+                       "notebook (5-candle window, indices -4..0 relative to the signal candle). "
+                       "3 straight bars of declining/rising lows or highs (a contained downtrend/"
+                       "uptrend, not a runaway breakout — the whole move still sits inside the "
+                       "range set 4 bars back), then a reversal candle closing beyond the PRIOR "
+                       "candle's high/low.")
+            st.caption("⚠️ Backtested walk-forward on PSX at the strategy's own stated default "
+                       "parameters (SL 4% / TP 2% off the signal candle's close, unoptimized): "
+                       "55.8% win rate but **-0.83% average return per trade and a 0.35 profit "
+                       "factor** — losses (avg -2.9%) are ~3.5x bigger than wins (avg +0.8%), so "
+                       "this loses money at these defaults despite the win rate looking "
+                       "reasonable on its own. The bullish side is markedly worse (profit factor "
+                       "0.08) than the bearish side (0.55). The source notebook's positive result "
+                       "came from a per-instrument grid-search of SL/TP on 7 FX pairs, not these "
+                       "defaults — treat this as a documented, tracked signal, not a validated "
+                       "PSX edge.")
+
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
 
@@ -3154,6 +3215,10 @@ with tab_patterns:
                            "uptrend both confirmed, but Day 4 volume did not reach 1.3x average — tracked "
                            "for visibility, not an actionable signal.")
 
+        st.divider()
+        _render_mharris_block("BULL", "🔁 MHarris 5-Bar Reversal (Bullish) — 1D",
+                              "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
+
     # --------------------------------------------------- Short-Side tab ----
     with tab_short:
         st.error("Everything in this tab expects price to FALL, not rise. PSX short-selling carries "
@@ -3266,6 +3331,10 @@ with tab_patterns:
                            "Morning Star. Day 1 large bullish, Day 2 small body in the UPPER third of Day "
                            "1's range, Day 3 large bearish closing below Day 1's 50% midpoint, Day 3 volume "
                            "≥1.3x its 20-day average.")
+
+        st.divider()
+        _render_mharris_block("BEAR", "🔁 MHarris 5-Bar Reversal (Bearish) — 1D",
+                              "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
 
     # ----------------------------------------------- Structural Patterns ----
     with tab_structural:

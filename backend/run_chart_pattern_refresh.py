@@ -12,6 +12,7 @@ Pattern families:
   1. Bullish Engulfing  → analysis_cache key "bullish_engulfing_scan"
   2. Morning Star       → analysis_cache key "morning_star_scan"
   3. Advanced (IHS / Double Bottom) → analysis_cache key "advanced_pattern_scan"
+  4. MHarris 5-Bar Reversal (BULL + BEAR) → analysis_cache key "mharris_scan"
 
 Uses turso_db for database access — works against Turso Cloud in CI and
 local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
@@ -139,6 +140,31 @@ def run_bullish_engulfing_scan(all_data: dict) -> dict:
         hits.append(result)
 
     hits.sort(key=lambda r: (r["classification"] != _patterns.VALID_BULLISH_ENGULFING, r["symbol"]))
+    return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
+# 1b. MHarris 5-Bar Reversal scan (BULL + BEAR in one list, split by
+#     the "direction" field -- see patterns_engine.detect_mharris_reversal)
+# ---------------------------------------------------------------------------
+
+def run_mharris_scan(all_data: dict) -> dict:
+    hits = []
+    scanned = 0
+    for symbol, ohlcv in all_data.items():
+        if len(ohlcv) < 10:
+            continue
+        scanned += 1
+        try:
+            result = _patterns.detect_mharris_reversal(ohlcv, date_key="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _patterns.NO_MHARRIS_SIGNAL:
+            continue
+        result["symbol"] = symbol
+        hits.append(result)
+
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
     return {"status": "ok", "scanned": scanned, "hits": hits}
 
 
@@ -274,6 +300,12 @@ def main():
         logger.info(f"  Scanned {be_result['scanned']} symbols, {len(be_result['hits'])} hits")
         _save_to_analysis_cache("bullish_engulfing_scan", be_result)
 
+        # --- 1b. MHarris 5-Bar Reversal ---
+        logger.info("Running MHarris 5-Bar Reversal scan...")
+        mh_result = run_mharris_scan(all_data)
+        logger.info(f"  Scanned {mh_result['scanned']} symbols, {len(mh_result['hits'])} hits")
+        _save_to_analysis_cache("mharris_scan", mh_result)
+
         # --- 2. Morning Star ---
         logger.info("Running Morning Star scan...")
         ms_result = run_morning_star_scan(all_data)
@@ -296,6 +328,7 @@ def main():
         logger.info("Summary:")
         logger.info(f"  Symbols loaded: {len(all_data)}")
         logger.info(f"  Bullish Engulfing: {len(be_result['hits'])} signals")
+        logger.info(f"  MHarris 5-Bar Reversal: {len(mh_result['hits'])} signals")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
         logger.info(f"  Advanced (IHS/DB): {len(adv_result['hits'])} signals")
 

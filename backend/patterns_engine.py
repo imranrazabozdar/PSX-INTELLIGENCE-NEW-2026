@@ -767,6 +767,109 @@ def detect_three_line_strike(rows, date_key="trade_date", as_of=None):
     }
 
 
+# ============================================================================
+# MHarris 5-Bar Reversal -- a contained micro-trend snap-back, translated
+# 1:1 from the "01_MHarris_Systematic.ipynb" reference notebook's
+# total_signal() (candles indexed -4..0 relative to the signal candle, the
+# latest completed daily bar here):
+#
+#   BULLISH: low[-4] > high[0]  (signal candle's whole range still below
+#            where price was 4 bars ago -- a contained move, not a
+#            breakout) AND high[0] > low[-3] (but not below the -3 bar's
+#            low either) AND low[-3] > low[-2] > low[-1] (lows declining
+#            for 3 straight bars -- the downtrend leg being interrupted)
+#            AND close[0] > high[-1] (the signal candle closes above the
+#            PRIOR candle's high -- the reversal thrust).
+#   BEARISH: the exact mirror (highs rising for 3 bars, then a reversal
+#            candle closing below the prior candle's low).
+#
+# Trade levels use the notebook's OWN stated MyStrat defaults (SL 4% / TP
+# 2% off the signal candle's close) -- this is not an invented filter,
+# it's the strategy's literal rule, same as target_1/stop_loss are for
+# every other detector in this module. See backend/run_mharris_backtest.py
+# for the walk-forward PSX backtest of this exact rule.
+# ============================================================================
+
+PATTERN_NAME_MHARRIS = "MHarris 5-Bar Reversal"
+BULLISH_MHARRIS = "BULLISH_MHARRIS_REVERSAL"
+BEARISH_MHARRIS = "BEARISH_MHARRIS_REVERSAL"
+NO_MHARRIS_SIGNAL = "NO_MHARRIS_SIGNAL"
+
+MHARRIS_SL_PCT = 0.04
+MHARRIS_TP_PCT = 0.02
+
+
+def _empty_result_mharris():
+    return {"pattern": PATTERN_NAME_MHARRIS, "timeframe": TIMEFRAME, "detected": False,
+            "classification": NO_MHARRIS_SIGNAL}
+
+
+def detect_mharris_reversal(rows, date_key="trade_date", as_of=None):
+    """Detects the MHarris 5-bar reversal on the latest completed daily
+    candle. `rows`/`date_key`/`as_of` match every other detector in this
+    module (see detect_bullish_engulfing). Never raises -- malformed input
+    or insufficient history (fewer than 5 completed candles) returns the
+    empty/no-detection result.
+
+    `entry_price` here is the signal candle's own close (the same
+    convention detect_bearish_engulfing/detect_three_line_strike use for a
+    live scanner's reference price) -- the notebook's own backtest fills
+    the actual order at the FOLLOWING bar's open under backtesting.py's
+    default execution model, which a live scan can't know yet. stop_loss/
+    target_1 are computed off that close using the strategy's stated 4%/2%
+    defaults, unoptimized (the notebook's headline numbers come from a
+    per-instrument grid-search of these percentages -- see
+    run_mharris_backtest.py for the walk-forward comparison)."""
+    try:
+        as_of_date = _resolve_as_of_date(as_of)
+        candles = normalize_daily_ohlc(rows, date_key=date_key, as_of=as_of_date)
+    except Exception:
+        return _empty_result_mharris()
+
+    if len(candles) < 5:
+        return _empty_result_mharris()
+
+    i = len(candles) - 1
+
+    def lo(k):
+        return candles[i + k]["low"]
+
+    def hi(k):
+        return candles[i + k]["high"]
+
+    signal_close = candles[i]["close"]
+
+    direction = None
+    if lo(-4) > hi(0) and hi(0) > lo(-3) and lo(-3) > lo(-2) and lo(-2) > lo(-1) and signal_close > hi(-1):
+        direction = "BULL"
+    elif hi(-4) < lo(0) and lo(0) < hi(-3) and hi(-3) < hi(-2) and hi(-2) < hi(-1) and signal_close < lo(-1):
+        direction = "BEAR"
+
+    if direction is None:
+        return _empty_result_mharris()
+
+    if direction == "BULL":
+        classification = BULLISH_MHARRIS
+        stop_loss = round(signal_close * (1 - MHARRIS_SL_PCT), PSX_PRICE_DECIMALS)
+        target_1 = round(signal_close * (1 + MHARRIS_TP_PCT), PSX_PRICE_DECIMALS)
+    else:
+        classification = BEARISH_MHARRIS
+        stop_loss = round(signal_close * (1 + MHARRIS_SL_PCT), PSX_PRICE_DECIMALS)
+        target_1 = round(signal_close * (1 - MHARRIS_TP_PCT), PSX_PRICE_DECIMALS)
+
+    return {
+        "pattern": PATTERN_NAME_MHARRIS,
+        "timeframe": TIMEFRAME,
+        "detected": True,
+        "classification": classification,
+        "direction": direction,
+        "pattern_date": candles[i]["date"].isoformat(),
+        "entry_price": signal_close,
+        "stop_loss": stop_loss,
+        "target_1": target_1,
+    }
+
+
 def talib_cross_check(rows, date_key="trade_date", as_of=None):
     """Optional secondary cross-check of candle GEOMETRY only, using
     TA-Lib's CDLENGULFING if the package is installed. TA-Lib has no notion

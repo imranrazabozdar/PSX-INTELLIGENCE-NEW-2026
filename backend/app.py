@@ -3357,6 +3357,53 @@ def patterns_three_line_strike_scan(request:Request, force:bool=False):
     return out
 
 
+def _run_mharris_scan():
+    """Market-wide MHarris 5-Bar Reversal scan (backend/patterns_engine.py
+    detect_mharris_reversal) -- structurally identical loop to
+    _run_bullish_engulfing_scan/_run_three_line_strike_scan. Detects on
+    the latest completed daily candle only (live-scan convention); needs
+    5 completed bars minimum. Both BULL and BEAR hits are returned in one
+    list (mirroring detect_mharris_reversal's own "direction" field) so
+    the frontend can split them into the Long/Short tabs by that field,
+    same as it already reads "classification" for Engulfing scans. See
+    backend/run_mharris_backtest.py for the walk-forward PSX backtest of
+    this exact rule (default 4%/2% SL/TP, unoptimized): 172-symbol partial
+    coverage showed a 55.8% win rate but -0.83% avg return / 0.35 profit
+    factor -- the win rate alone does not make this profitable at these
+    stated default parameters, flagged here so it ships with that context
+    rather than presented as a validated edge."""
+    coverage = ohlc_coverage()
+    hits = []
+    for cov in coverage:
+        sym = cov["symbol"]
+        try:
+            result = _patterns.detect_mharris_reversal(ohlc_rows(sym, 30), date_key="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _patterns.NO_MHARRIS_SIGNAL:
+            continue
+        result["symbol"] = sym
+        hits.append(result)
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
+    return {"status": "ok", "scanned": len(coverage), "hits": hits}
+
+
+@app.get("/patterns/mharris-scan")
+def patterns_mharris_scan(request:Request, force:bool=False):
+    """Market-wide MHarris 5-Bar Reversal scan -- both BULL and BEAR hits,
+    split by the "direction" field. Cached/refreshed the same way as every
+    other pattern scan; force=true (admin token required) triggers an
+    immediate re-run. Backtested at default (unoptimized) parameters --
+    see _run_mharris_scan's docstring for the honest headline numbers."""
+    cached = _scan_cache.latest("mharris_scan")
+    result, err = _serve_cached_and_refresh("mharris_scan", _run_mharris_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("mharris_scan")
+    return out
+
+
 _morning_star_detector = _MorningStarDetector()
 
 
