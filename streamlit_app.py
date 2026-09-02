@@ -1498,6 +1498,14 @@ with tab_intraday:
             st.metric("🕐 Last Alert", _last["triggered_at"][11:16] if _last else "—",
                        delta=_last["symbol"] if _last else "—")
 
+        if _market_open and _bars_count == 0 and _mins_now > (_wd < 4 and 9*60+35 or 9*60+20):
+            with st.expander("🔍 Debug: Why are bars 0?", expanded=False):
+                _diag = _get("/debug/intraday-pipeline")
+                if _diag.get("status") == "error":
+                    st.error(f"Backend unreachable: {_diag.get('reason', 'unknown')}")
+                else:
+                    st.json(_diag)
+
         # ---- SECTION 3: Session Anomaly Alerts Table ---------------------
         st.markdown("### ⚡ Session Anomalies")
 

@@ -1231,6 +1231,79 @@ async def get_intraday_bars_count():
         return {"status": "error", "count": 0}
 
 
+@app.get("/debug/intraday-pipeline")
+async def debug_intraday_pipeline():
+    """Diagnostic endpoint — shows exactly why bars/alerts may be 0."""
+    from datetime import datetime
+    diag = {}
+    try:
+        conn = db()
+        diag["db_type"] = type(conn).__name__
+        diag["using_turso"] = turso_db.USING_TURSO
+        diag["has_batch_query"] = hasattr(conn, 'batch_query')
+        diag["turso_init_error"] = turso_db._init_error
+    except Exception as e:
+        diag["db_error"] = str(e)
+
+    try:
+        diag["is_trading_hours"] = _is_trading_hours()
+        now_pkt = datetime.now(PSX_TZ)
+        diag["pkt_now"] = now_pkt.strftime("%Y-%m-%d %H:%M:%S")
+        diag["weekday"] = now_pkt.weekday()
+    except Exception as e:
+        diag["time_error"] = str(e)
+
+    try:
+        rows = market_watch()
+        diag["market_watch_count"] = len(rows) if rows else 0
+        if rows:
+            diag["sample_symbol"] = rows[0].get("symbol")
+            diag["sample_price"] = rows[0].get("price")
+    except Exception as e:
+        diag["market_watch_error"] = str(e)
+
+    try:
+        today = datetime.now(PSX_TZ).strftime("%Y-%m-%d")
+        row = db().execute(
+            "SELECT COUNT(*) as cnt FROM intraday_bars WHERE bar_time >= ?",
+            (today,)
+        ).fetchone()
+        diag["bars_today"] = row["cnt"] if row else 0
+    except Exception as e:
+        diag["bars_query_error"] = str(e)
+
+    try:
+        today = datetime.now(PSX_TZ).strftime("%Y-%m-%d")
+        row = db().execute(
+            "SELECT COUNT(*) as cnt FROM intraday_alert WHERE session_date = ?",
+            (today,)
+        ).fetchone()
+        diag["alerts_today"] = row["cnt"] if row else 0
+    except Exception as e:
+        diag["alerts_query_error"] = str(e)
+
+    # Test a write + read to verify Turso pipeline works
+    try:
+        test_time = "1970-01-01 00:00:00"
+        conn = db()
+        if turso_db.USING_TURSO and hasattr(conn, 'batch_query'):
+            conn.batch_query([
+                ("INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) VALUES(?,?,?,?,?,?)",
+                 ("_TEST_", test_time, 1.0, 1, 1.0, 1.0))
+            ])
+            verify = conn.execute(
+                "SELECT COUNT(*) as cnt FROM intraday_bars WHERE symbol = '_TEST_'"
+            ).fetchone()
+            diag["turso_write_test"] = "OK" if verify and verify["cnt"] > 0 else "FAIL: row not found after insert"
+            conn.execute("DELETE FROM intraday_bars WHERE symbol = '_TEST_'")
+        else:
+            diag["turso_write_test"] = "SKIPPED: not using Turso batch_query"
+    except Exception as e:
+        diag["turso_write_test"] = f"FAIL: {type(e).__name__}: {e}"
+
+    return diag
+
+
 @app.get("/opportunities")
 def opportunities(min_volume:int=MIN_VOLUME, shariah:bool=False, limit:int=50):
     rows=market_watch()
@@ -4680,7 +4753,30 @@ async def _start_background_refresh_loops():
     conn = db()
     has_batch = hasattr(conn, 'batch_query')
     print(f"[startup] DB backend: {'Turso HTTP' if turso_db.USING_TURSO and has_batch else 'local SQLite'} "
-          f"| USING_TURSO={turso_db.USING_TURSO} | batch_query={has_batch}")
+          f"| USING_TURSO={turso_db.USING_TURSO} | batch_query={has_batch} "
+          f"| conn_type={type(conn).__name__} | init_error={turso_db._init_error}")
+    # Self-test: verify write path works
+    try:
+        test_time = "1970-01-01 00:00:00"
+        if has_batch:
+            conn.batch_query([
+                ("INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) VALUES(?,?,?,?,?,?)",
+                 ("_STARTUP_TEST_", test_time, 1.0, 1, 1.0, 1.0))
+            ])
+        else:
+            conn.execute(
+                "INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) VALUES(?,?,?,?,?,?)",
+                ("_STARTUP_TEST_", test_time, 1.0, 1, 1.0, 1.0))
+        verify = conn.execute("SELECT COUNT(*) as cnt FROM intraday_bars WHERE symbol='_STARTUP_TEST_'").fetchone()
+        if verify and verify["cnt"] > 0:
+            conn.execute("DELETE FROM intraday_bars WHERE symbol='_STARTUP_TEST_'")
+            print("[startup] DB write self-test: PASSED")
+        else:
+            print("[startup] DB write self-test: FAILED — row not found after insert")
+    except Exception as e:
+        import traceback
+        print(f"[startup] DB write self-test: FAILED — {type(e).__name__}: {e}")
+        traceback.print_exc()
     if os.getenv("PSX_DISABLE_SCAN_AUTOREFRESH"):
         print("[scan_cache] PSX_DISABLE_SCAN_AUTOREFRESH is set — background refresh loops "
               "(watchlist_scan, watchlist_alerts, backtest family, OHLC refresh, market_watch, "
