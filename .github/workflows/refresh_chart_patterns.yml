@@ -43,6 +43,13 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_chart_pattern_refresh.py
 
+      - name: 📈 Backtest intraday signal accuracy
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_signal_backtest.py
+
       - name: 📊 Summary
         if: always()
         run: |
@@ -52,3 +59,4 @@ jobs:
           echo "Step 1: OHLC data refresh from dps.psx.com.pk → Turso"
           echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB)"
           echo "        → results saved to analysis_cache in Turso"
+          echo "Step 3: Signal accuracy backtest (intraday alerts vs forward returns)"
