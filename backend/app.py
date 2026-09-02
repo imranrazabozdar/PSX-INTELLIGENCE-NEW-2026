@@ -241,7 +241,15 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 PSX="https://dps.psx.com.pk"
 MIN_VOLUME=50_000
-HEAD={"User-Agent":"PSX-Intelligence-V2/2.0 private-research"}
+HEAD={
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://dps.psx.com.pk/",
+    "Connection": "keep-alive",
+}
 
 # ---- Admin gate for expensive/mutating endpoints.
 # The backfill, refresh and grading routes each fire dozens of outbound requests
@@ -769,8 +777,17 @@ def market_watch(force=False):
         return []
 
 
+_psx_session = None
+def _get_psx_session():
+    global _psx_session
+    if _psx_session is None:
+        _psx_session = requests.Session()
+        _psx_session.headers.update(HEAD)
+    return _psx_session
+
 def _market_watch_uncached():
-    r=requests.get(PSX+"/market-watch",headers=HEAD,timeout=15);r.raise_for_status()
+    s=_get_psx_session()
+    r=s.get(PSX+"/market-watch",timeout=20);r.raise_for_status()
     soup=BeautifulSoup(r.text,"html.parser"); out=[]
     for tr in soup.select("tr"):
         x=[td.get_text(" ",strip=True) for td in tr.select("td")]

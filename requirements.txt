@@ -1,2 +1,2 @@
-# PSX Intelligence — force rebuild v4
+# PSX Intelligence — force rebuild v5
 -r backend/requirements.txt
