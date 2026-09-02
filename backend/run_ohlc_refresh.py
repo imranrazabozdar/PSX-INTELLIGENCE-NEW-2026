@@ -94,6 +94,9 @@ def get_last_stored_date(conn, symbol):
     return None
 
 
+MAX_RUNTIME_SECONDS = int(os.getenv("PSX_OHLC_REFRESH_BUDGET_SECONDS", str(20 * 60)))
+
+
 def main():
     try:
         db_status = turso_db.status()
@@ -112,13 +115,30 @@ def main():
     symbols = fetch_all_equity_symbols()
     logger.info(f"Will process {len(symbols)} symbols")
 
+    # A full-history initial backfill over the whole PSX market (~750
+    # symbols x ~20-25s/symbol) takes hours -- far longer than any single
+    # CI run's timeout. Rather than let the job get hard-cancelled mid-symbol
+    # (which starves every LATER workflow step -- pattern scans, backtests --
+    # of a turn, every single run, forever), this script self-stops within a
+    # time budget and exits cleanly so the rest of the workflow always runs.
+    # Each run persists what it fetched (INSERT OR IGNORE) and the next run
+    # resumes from get_last_stored_date(), so coverage grows run over run.
+    run_start = time.monotonic()
+
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     refreshed = 0
     new_backfilled = 0
     failed = 0
     skipped = 0
+    budget_exhausted = False
 
     for i, symbol in enumerate(symbols):
+        if time.monotonic() - run_start > MAX_RUNTIME_SECONDS:
+            logger.info(f"Time budget ({MAX_RUNTIME_SECONDS}s) reached after {i}/{len(symbols)} "
+                        f"symbols — stopping here so pattern scans/backtests still get a turn "
+                        f"this run. Remaining symbols pick up on the next scheduled run.")
+            budget_exhausted = True
+            break
         try:
             last_date = get_last_stored_date(conn, symbol)
 
@@ -186,13 +206,16 @@ def main():
     total = total_rows["cnt"] if isinstance(total_rows, dict) else total_rows[0]
 
     print("")
-    logger.info("OHLC refresh complete!")
+    logger.info(f"OHLC refresh {'stopped at time budget' if budget_exhausted else 'complete'}!")
     logger.info(f"  New backfills: {new_backfilled}")
     logger.info(f"  Refreshed: {refreshed}")
     logger.info(f"  Skipped (up to date): {skipped}")
     logger.info(f"  Failed/no data: {failed}")
-    logger.info(f"  Total symbols in DB: {total_symbols}")
+    logger.info(f"  Total symbols in DB: {total_symbols} / {len(symbols)} target")
     logger.info(f"  Total rows in DB: {total}")
+    if budget_exhausted:
+        logger.info(f"  {len(symbols) - total_symbols} symbols still need their initial backfill "
+                    f"— will continue on the next scheduled run.")
 
     return 0
 
