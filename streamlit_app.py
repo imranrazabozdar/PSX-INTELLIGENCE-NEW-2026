@@ -1521,8 +1521,18 @@ with tab_intraday:
         _bull_count = sum(1 for a in _alerts if a.get("alert_type") in _bull_types)
         _bear_count = sum(1 for a in _alerts if a.get("alert_type") in _bear_types)
 
+        _ALERT_LABELS = {
+            "AD_BULL_DIVERGENCE": "🟢 Bullish A/D Div",
+            "AD_BEAR_DIVERGENCE": "🔴 Bearish A/D Div",
+            "EXTREME_VOLUME": "🔥 Extreme Volume",
+            "HIGH_VOLUME": "📈 High Volume",
+            "RANGE_HIGH_VOLUME": "🟢 Range High Vol",
+            "RANGE_LOW_VOLUME": "🔻 Range Low Vol",
+        }
+
         _type_counts = Counter(a["alert_type"] for a in _alerts)
         _top_type, _top_count = _type_counts.most_common(1)[0] if _type_counts else ("—", 0)
+        _top_type_label = _ALERT_LABELS.get(_top_type, _top_type)
 
         _last = _alerts[0] if _alerts else None
 
@@ -1532,7 +1542,7 @@ with tab_intraday:
         with _stat_c2:
             st.metric("📊 Bars Collected", _bars_count, delta="Since market open")
         with _stat_c3:
-            st.metric("🔥 Most Active Alert", _top_type, delta=f"{_top_count} times today")
+            st.metric("🔥 Most Active Alert", _top_type_label, delta=f"{_top_count} times today")
         with _stat_c4:
             st.metric("🕐 Last Alert", _last["triggered_at"][11:16] if _last else "—",
                        delta=_last["symbol"] if _last else "—")
@@ -1587,37 +1597,41 @@ with tab_intraday:
             _ia_df = pd.DataFrame(_filtered_alerts)
 
             _ia_df["Time"] = pd.to_datetime(_ia_df["triggered_at"]).dt.strftime("%H:%M")
-            _ia_df["Vol Ratio"] = _ia_df["volume_ratio"].apply(lambda v: f"{v:.1f}×" if v else "—")
-            _ia_df["Range"] = _ia_df["range_position"].apply(lambda v: f"{v:.0%}" if v else "—")
-            _ia_df["Price"] = _ia_df["price_at_trigger"].apply(lambda v: f"Rs {v:.2f}" if v else "—")
+            _ia_df["Alert"] = _ia_df["alert_type"].map(_ALERT_LABELS).fillna(_ia_df["alert_type"])
+            _ia_df["Price"] = pd.to_numeric(_ia_df["price_at_trigger"], errors="coerce")
+            _ia_df["Vol Ratio"] = pd.to_numeric(_ia_df["volume_ratio"], errors="coerce")
+            _ia_df["Range %"] = (_ia_df["range_position"].apply(
+                lambda v: round(v * 100) if v and v <= 1 else (round(v) if v else None)
+            ))
 
-            _ia_display = _ia_df[["symbol", "alert_type", "Price", "Vol Ratio", "Range", "Time"]].rename(
-                columns={"symbol": "Symbol", "alert_type": "Alert"})
-
-            _ALERT_TINTS = {
-                "EXTREME_VOLUME": "background-color: rgba(240,71,91,0.20)",
-                "HIGH_VOLUME": "background-color: rgba(234,179,8,0.20)",
-                "RANGE_HIGH_VOLUME": "background-color: rgba(34,197,94,0.20)",
-                "RANGE_LOW_VOLUME": "background-color: rgba(240,71,91,0.12)",
-                "AD_BULL_DIVERGENCE": "background-color: rgba(34,197,94,0.15)",
-                "AD_BEAR_DIVERGENCE": "background-color: rgba(240,71,91,0.15)",
-            }
-
-            def _tint_alert_row(row):
-                tint = _ALERT_TINTS.get(_ia_df.loc[row.name, "alert_type"], "")
-                return [tint] * len(row)
+            _ia_display = _ia_df[["symbol", "Alert", "Price", "Vol Ratio", "Range %", "Time"]].rename(
+                columns={"symbol": "Symbol"})
 
             st.caption(
                 "⚠️ These flags highlight unusual session activity for manual review. "
                 "High volume alone does not predict direction — PSX data shows volume "
                 "surges are followed by down moves as often as up moves. Always confirm "
-                "with daily pattern analysis before acting."
+                "with daily pattern analysis before acting. **Click a row to inspect the symbol below.**"
             )
 
-            st.dataframe(
-                _ia_display.style.apply(_tint_alert_row, axis=1),
+            _sel_event = st.dataframe(
+                _ia_display,
                 use_container_width=True, hide_index=True,
+                selection_mode="single-row",
+                on_select="rerun",
+                key="anomaly_table_selection",
+                column_config={
+                    "Price": st.column_config.NumberColumn("Price", format="Rs %.2f"),
+                    "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.1fx"),
+                    "Range %": st.column_config.ProgressColumn("Range", min_value=0, max_value=100, format="%d%%"),
+                },
             )
+
+            _clicked_symbol = None
+            if _sel_event and _sel_event.selection and _sel_event.selection.rows:
+                _clicked_row = _sel_event.selection.rows[0]
+                if _clicked_row < len(_ia_display):
+                    _clicked_symbol = _ia_display.iloc[_clicked_row]["Symbol"]
 
             st.caption(f"{len(_filtered_alerts)} anomaly flag(s) shown · Updated {(_ia or {}).get('as_of', '—')}")
 
@@ -1625,7 +1639,7 @@ with tab_intraday:
         if _alerts:
             st.markdown("### 📊 Alert Distribution Today")
             _dist_df = pd.DataFrame({
-                "Alert Type": list(_type_counts.keys()),
+                "Alert Type": [_ALERT_LABELS.get(k, k) for k in _type_counts.keys()],
                 "Count": list(_type_counts.values()),
             }).set_index("Alert Type")
             st.bar_chart(_dist_df)
@@ -1637,17 +1651,34 @@ with tab_intraday:
         if not _symbols_today:
             st.caption("No symbols with alerts today.")
         else:
+            _default_idx = 0
+            if _clicked_symbol and _clicked_symbol in _symbols_today:
+                _default_idx = _symbols_today.index(_clicked_symbol)
+
             _selected = st.selectbox(
-                "🔍 Inspect symbol intraday", options=_symbols_today, key="intraday_symbol_select",
+                "🔍 Inspect symbol intraday", options=_symbols_today,
+                index=_default_idx, key="intraday_symbol_select",
             )
 
             _sym_alerts = [a for a in _alerts if a["symbol"] == _selected]
             st.markdown(f"**{_selected}** — {len(_sym_alerts)} alert(s) today")
 
-            _sym_df = pd.DataFrame(_sym_alerts)[
-                ["alert_type", "triggered_at", "price_at_trigger", "volume_ratio", "range_position"]
-            ]
-            st.dataframe(_sym_df, use_container_width=True, hide_index=True)
+            _sym_detail_df = pd.DataFrame(_sym_alerts)
+            _sym_detail_df["Alert"] = _sym_detail_df["alert_type"].map(_ALERT_LABELS).fillna(_sym_detail_df["alert_type"])
+            _sym_detail_df["Time"] = pd.to_datetime(_sym_detail_df["triggered_at"]).dt.strftime("%H:%M")
+            _sym_detail_df["Price"] = pd.to_numeric(_sym_detail_df["price_at_trigger"], errors="coerce")
+            _sym_detail_df["Vol Ratio"] = pd.to_numeric(_sym_detail_df["volume_ratio"], errors="coerce")
+            _sym_detail_df["Range %"] = _sym_detail_df["range_position"].apply(
+                lambda v: round(v * 100) if v and v <= 1 else (round(v) if v else None))
+            st.dataframe(
+                _sym_detail_df[["Alert", "Time", "Price", "Vol Ratio", "Range %"]],
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "Price": st.column_config.NumberColumn("Price", format="Rs %.2f"),
+                    "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.1fx"),
+                    "Range %": st.column_config.ProgressColumn("Range", min_value=0, max_value=100, format="%d%%"),
+                },
+            )
 
             _bars_key = f"bars_{_selected}"
             _bars_resp = _session_cache(_bars_key, lambda: _get(f"/intraday/bars/{_selected}"), ttl=120)
@@ -1656,15 +1687,47 @@ with tab_intraday:
             if _bars:
                 _bars_df = pd.DataFrame(_bars)
                 _bars_df["time"] = pd.to_datetime(_bars_df["time"])
-                _bars_df = _bars_df.set_index("time")
-                st.markdown("**Intraday Price**")
-                st.line_chart(_bars_df[["price"]], use_container_width=True, height=200)
-                st.markdown("**Cumulative Volume**")
+                _bars_df = _bars_df.sort_values("time")
+
+                _fig = make_subplots(
+                    rows=2, cols=1, shared_xaxes=True,
+                    row_heights=[0.7, 0.3], vertical_spacing=0.03,
+                )
+
+                _fig.add_trace(go.Scatter(
+                    x=_bars_df["time"], y=_bars_df["price"],
+                    mode="lines", fill="tozeroy",
+                    line=dict(color="#14D9B0", width=1.5),
+                    fillcolor="rgba(20,217,176,0.12)",
+                    hovertemplate="Rs %{y:.2f}<extra></extra>",
+                ), row=1, col=1)
+
                 if "volume" in _bars_df.columns:
-                    _bars_df["volume_cumulative"] = _bars_df["volume"].cumsum()
-                    st.line_chart(_bars_df[["volume_cumulative"]], use_container_width=True, height=150)
-                else:
-                    st.caption("Volume data not available")
+                    _price_diff = _bars_df["price"].diff().fillna(0)
+                    _bar_colors = ["#22c55e" if d >= 0 else "#f0475b" for d in _price_diff]
+                    _fig.add_trace(go.Bar(
+                        x=_bars_df["time"], y=_bars_df["volume"],
+                        marker_color=_bar_colors,
+                        hovertemplate="%{y:,.0f}<extra></extra>",
+                    ), row=2, col=1)
+
+                _fig.update_layout(
+                    height=420, margin=dict(l=0, r=0, t=10, b=0),
+                    showlegend=False,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#E8ECEF"),
+                    hovermode="x unified",
+                )
+                _fig.update_xaxes(
+                    showgrid=False, zeroline=False,
+                    tickformat="%H:%M", row=2, col=1,
+                )
+                _fig.update_xaxes(showgrid=False, zeroline=False, showticklabels=False, row=1, col=1)
+                _fig.update_yaxes(showgrid=False, zeroline=False, tickprefix="Rs ", row=1, col=1)
+                _fig.update_yaxes(showgrid=False, zeroline=False, row=2, col=1)
+
+                st.plotly_chart(_fig, use_container_width=True, config={"displayModeBar": False})
             else:
                 st.caption(f"No intraday bar data for {_selected} today yet.")
 
