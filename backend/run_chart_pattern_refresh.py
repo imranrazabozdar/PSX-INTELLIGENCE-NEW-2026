@@ -16,6 +16,9 @@ Pattern families:
   5. MACD+EMA200 Trend Resumption (BULL + BEAR) → analysis_cache key "macdema_scan"
   6. Regression-Channel Triangle Squeeze (SHORT-only) → analysis_cache key "triangle_regression_scan"
   7. Level Break Out (BULL + BEAR) → analysis_cache key "level_breakout_scan"
+  8. GP-Evolved Formula (BUY/SELL from already-trained per-symbol models;
+     training itself is a separate, long-running offline workflow — see
+     backend/run_gp_evolution_training.py) → analysis_cache key "gp_evolved_scan"
 
 Uses turso_db for database access — works against Turso Cloud in CI and
 local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
@@ -44,6 +47,8 @@ from advanced_pattern_adapter import scan_symbol
 import macd_ema_detector as _macdema
 import triangle_regression_detector as _triangle_reg
 import level_breakout_detector as _level_breakout
+import psx_live as _psx_live
+import gp_evolved_detector as _gp_evolved
 
 logging.basicConfig(
     level=logging.INFO,
@@ -123,6 +128,22 @@ def _save_to_analysis_cache(cache_key: str, result: dict):
     """, (cache_key, datetime.now(timezone.utc).isoformat(), now, json.dumps(result)))
     conn.commit()
     logger.info(f"  Saved to analysis_cache[{cache_key}]")
+
+
+def _read_analysis_cache(cache_key: str):
+    """Read one analysis_cache row written elsewhere (here: by the separate
+    offline run_gp_evolution_training.py script) -- None if absent/invalid."""
+    conn = turso_db.get_connection()
+    rows = conn.execute("SELECT result_json FROM analysis_cache WHERE cache_key=?",
+                         (cache_key,)).fetchall()
+    if not rows:
+        return None
+    r = rows[0]
+    raw = r["result_json"] if isinstance(r, dict) else r[0]
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +271,50 @@ def run_level_breakout_scan(all_data: dict) -> dict:
 
     hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
     return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
+# 1f. GP-Evolved Formula — TODAY's live signal from every already-trained
+#     model (training itself runs offline via the separate, long-running
+#     "GP evolution training (manual)" workflow -- see
+#     backend/run_gp_evolution_training.py and gp_evolved_detector.py).
+#     This step is cheap (read cached models, compute one signal each) and
+#     is skipped gracefully if no model has been trained yet.
+# ---------------------------------------------------------------------------
+
+def run_gp_evolved_scan(all_data: dict) -> dict:
+    ranking_row = _read_analysis_cache("gp_evolved_ranking")
+    if not ranking_row or not ranking_row.get("ranked"):
+        return {"status": "not_trained_yet", "scanned": 0, "hits": []}
+
+    index_rows = _psx_live.index_history("KSE100", limit=3000)
+    if not index_rows:
+        return {"status": "kse100_unavailable", "scanned": 0, "hits": []}
+
+    hits = []
+    for r in ranking_row["ranked"]:
+        sym = r["symbol"]
+        ohlcv = all_data.get(sym)
+        if not ohlcv:
+            continue
+        model_row = _read_analysis_cache(f"gp_evolved_model_{sym}")
+        if not model_row or model_row.get("status") != "ok":
+            continue
+        try:
+            ind = _gp_evolved.deserialize_individual(model_row["model_blob"])
+            live_frame = _gp_evolved.build_live_frame(ohlcv[-_gp_evolved.ZSCORE_WINDOW * 3:], index_rows)
+            if live_frame is None:
+                continue
+            signal = _gp_evolved.get_live_signal(ind, live_frame)
+        except Exception:
+            continue
+        if signal.get("classification") == "HOLD":
+            continue
+        hits.append({"symbol": sym, "desired_pct": signal["desired_pct"],
+                      "classification": signal["classification"], "test_stats": r})
+
+    hits.sort(key=lambda h: abs(h["desired_pct"]), reverse=True)
+    return {"status": "ok", "scanned": len(ranking_row["ranked"]), "hits": hits}
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +473,13 @@ def main():
         logger.info(f"  Scanned {lb_result['scanned']} symbols, {len(lb_result['hits'])} hits")
         _save_to_analysis_cache("level_breakout_scan", lb_result)
 
+        # --- 1f. GP-Evolved Formula (live signal from already-trained models) ---
+        logger.info("Running GP-Evolved Formula live scan...")
+        gp_result = run_gp_evolved_scan(all_data)
+        logger.info(f"  Scanned {gp_result['scanned']} symbols, {len(gp_result['hits'])} hits "
+                     f"(status={gp_result['status']})")
+        _save_to_analysis_cache("gp_evolved_scan", gp_result)
+
         # --- 2. Morning Star ---
         logger.info("Running Morning Star scan...")
         ms_result = run_morning_star_scan(all_data)
@@ -434,6 +506,7 @@ def main():
         logger.info(f"  MACD+EMA200 Trend Resumption: {len(me_result['hits'])} signals")
         logger.info(f"  Regression-Channel Triangle Squeeze: {len(tr_result['hits'])} signals")
         logger.info(f"  Level Break Out: {len(lb_result['hits'])} signals")
+        logger.info(f"  GP-Evolved Formula: {len(gp_result['hits'])} signals (status={gp_result['status']})")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
         logger.info(f"  Advanced (IHS/DB): {len(adv_result['hits'])} signals")
 

@@ -193,6 +193,7 @@ from macd_ema_detector import MACDEMADetector as _MACDEMADetector
 import macd_ema_detector as _macd_ema_detector_module
 import triangle_regression_detector as _triangle_reg
 import level_breakout_detector as _level_breakout
+import gp_evolved_detector as _gp_evolved
 from patterns.advanced_pattern_adapter import scan_symbol as _scan_advanced_patterns
 from patterns.cup_handle_adapter import scan_symbol as _scan_cup_handle
 from patterns.ascending_triangle_adapter import scan_symbol as _scan_ascending_triangle
@@ -3549,6 +3550,95 @@ def patterns_level_breakout_scan(request:Request, force:bool=False):
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("level_breakout_scan")
+    return out
+
+
+def _read_analysis_cache(key):
+    """Direct read-through of one analysis_cache row (bypasses _scan_cache --
+    used for tables written by an offline, workflow_dispatch-only training
+    script rather than one of this file's own scan functions)."""
+    try:
+        rows = db_execute_tracked("SELECT result_json FROM analysis_cache WHERE cache_key=?",
+                                   (key,), query_type="analysis_cache_read")
+    except Exception:
+        return None
+    if not rows:
+        return None
+    r = rows[0]
+    raw = r["result_json"] if isinstance(r, dict) else r[0]
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+@app.get("/patterns/gp-evolved-ranking")
+def patterns_gp_evolved_ranking():
+    """GP-Evolved Formula (backend/gp_evolved_detector.py) -- ranking of
+    every WATCHLIST_SYMBOLS symbol with a trained model, by out-of-sample
+    (test-slice) Sharpe. Written by backend/run_gp_evolution_training.py,
+    a long-running workflow_dispatch-only offline job -- not refreshed on
+    every request the way other pattern scans are. See that script and
+    gp_evolved_detector.py's module docstrings for the full PSX
+    adaptation (KSE-100 as the 2nd input series, z-scored terminals,
+    no-lookahead backtest, rescaled commission/MIN_TRADES)."""
+    summary = _read_analysis_cache("gp_evolved_ranking")
+    if not summary:
+        return {"status": "not_trained_yet", "ranked": [],
+                "note": "Run the 'GP evolution training (manual)' workflow first."}
+    return summary
+
+
+def _run_gp_evolved_scan():
+    ranking = _read_analysis_cache("gp_evolved_ranking")
+    if not ranking or not ranking.get("ranked"):
+        return {"status": "not_trained_yet", "scanned": 0, "hits": []}
+
+    index_rows = _psx_live.index_history("KSE100", limit=3000) if _psx_live else None
+    if not index_rows:
+        return {"status": "kse100_unavailable", "scanned": 0, "hits": []}
+
+    hits = []
+    for r in ranking["ranked"]:
+        sym = r["symbol"]
+        model_row = _read_analysis_cache(f"gp_evolved_model_{sym}")
+        if not model_row or model_row.get("status") != "ok":
+            continue
+        try:
+            ind = _gp_evolved.deserialize_individual(model_row["model_blob"])
+            stock_rows = ohlc_rows(sym, _gp_evolved.ZSCORE_WINDOW * 3)
+            live_frame = _gp_evolved.build_live_frame(stock_rows, index_rows)
+            if live_frame is None:
+                continue
+            signal = _gp_evolved.get_live_signal(ind, live_frame)
+        except Exception:
+            continue
+        if signal.get("classification") == "HOLD":
+            continue
+        hits.append({
+            "symbol": sym, "desired_pct": signal["desired_pct"],
+            "classification": signal["classification"],
+            "test_stats": r,
+        })
+    hits.sort(key=lambda h: abs(h["desired_pct"]), reverse=True)
+    return {"status": "ok", "scanned": len(ranking["ranked"]), "hits": hits}
+
+
+@app.get("/patterns/gp-evolved-scan")
+def patterns_gp_evolved_scan(request: Request, force: bool = False):
+    """Today's live signal from every trained GP-Evolved Formula model --
+    BUY/SELL only (HOLD symbols, i.e. |desired_pct| < NO_TRADE_BAND, are
+    omitted), each hit carrying the model's own out-of-sample backtest
+    stats (test_stats) for context, sorted by signal strength. Unlike
+    this project's other detectors, desired_pct is a continuous TARGET
+    exposure to hold into the next session, not a discrete entry/stop/
+    target trade -- see gp_evolved_detector.py's module docstring."""
+    cached = _scan_cache.latest("gp_evolved_scan")
+    result, err = _serve_cached_and_refresh("gp_evolved_scan", _run_gp_evolved_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("gp_evolved_scan")
     return out
 
 

@@ -1,0 +1,37 @@
+name: GP evolution training (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: 'Retrain every symbol even if already cached (GP_FORCE_RETRAIN=1)'
+        required: false
+        default: 'false'
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas numpy deap dill
+
+      - name: 🧬 Run GP evolution training (resumable, per-watchlist-symbol)
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          GP_FORCE_RETRAIN: ${{ github.event.inputs.force_retrain == 'true' && '1' || '0' }}
+          GP_MAX_RUNTIME_SECONDS: '19800'
+        run: python run_gp_evolution_training.py

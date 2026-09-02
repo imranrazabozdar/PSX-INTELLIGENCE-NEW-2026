@@ -3235,6 +3235,83 @@ with tab_patterns:
                        "(resistance-breakout) side as the one with real edge here; the bearish "
                        "(support-breakdown) side is currently a net loser at these defaults.")
 
+    _gp_evolved_scan = _get("/patterns/gp-evolved-scan", **_pat_refresh_params)
+    _gp_evolved_ranking = _get("/patterns/gp-evolved-ranking")
+
+    def _render_gp_evolved_block(direction, header, action_label, row_color):
+        st.markdown('<div class="psx-section-eyebrow">CHART PATTERNS</div>'
+                    f'<div class="psx-section-title">{header}</div>', unsafe_allow_html=True)
+        classification = "BUY" if direction == "BULL" else "SELL"
+        if not _gp_evolved_scan or _gp_evolved_scan.get("status") == "not_trained_yet":
+            st.info("No GP-evolved models trained yet — run the 'GP evolution training (manual)' "
+                    "GitHub Actions workflow first (long-running, offline, one model per watchlist "
+                    "symbol; see backend/run_gp_evolution_training.py).")
+            return
+        if not _scan_status_banner(_gp_evolved_scan, "GP-Evolved Formula"):
+            return
+        age = _gp_evolved_scan.get("_cache_age_seconds")
+        age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+        running_note = " · a background refresh is running right now" if _gp_evolved_scan.get("_background_refresh_running") else ""
+        all_hits = [h for h in (_gp_evolved_scan.get("hits") or []) if h.get("classification") == classification]
+        st.caption(f"📦 Scanned {_gp_evolved_scan.get('scanned', 0)} trained model(s) · last run {age_str}"
+                   f"{running_note} · {len(all_hits)} currently signaling {classification}.")
+        if not all_hits:
+            st.info(f"No trained model is currently signaling {classification}.")
+            return
+        names_gp = _company_names()
+        rows = [{
+            "symbol": h["symbol"], "company": names_gp.get(h["symbol"], ""),
+            "action": action_label, "target exposure": h.get("desired_pct"),
+            "oos return": (h.get("test_stats") or {}).get("total_return_pct"),
+            "oos sharpe": (h.get("test_stats") or {}).get("sharpe"),
+            "oos win rate": (h.get("test_stats") or {}).get("win_rate_pct"),
+            "oos pf": (h.get("test_stats") or {}).get("profit_factor"),
+        } for h in all_hits]
+        gpdf = pd.DataFrame(rows).sort_values("target exposure", key=lambda s: s.abs(), ascending=False)
+
+        def _gp_row_color(row):
+            return [f"background-color: {row_color}"] * len(row)
+
+        _render_pattern_table(gpdf, _gp_row_color, f"gp_evolved_{direction.lower()}_scan_table", {
+            "symbol": "Symbol", "company": "Company", "action": "Action",
+            "target exposure": st.column_config.NumberColumn("Target Exposure", format="%.1f%%"),
+            "oos return": st.column_config.NumberColumn("Out-of-Sample Return", format="%.2f%%"),
+            "oos sharpe": st.column_config.NumberColumn("Out-of-Sample Sharpe", format="%.2f"),
+            "oos win rate": st.column_config.NumberColumn("Out-of-Sample Win Rate", format="%.1f%%"),
+            "oos pf": st.column_config.NumberColumn("Out-of-Sample Profit Factor", format="%.2f"),
+        })
+
+        with st.expander("📖 View Rules & Metrics for GP-Evolved Formula"):
+            st.caption("NOT a fixed rule like this project's other detectors — translated from a "
+                       "reference genetic-programming (GP) repo (ZiadFrancis/Genetics_Trading_Part_1) "
+                       "that EVOLVES a symbolic formula per instrument (via DEAP) mapping OHLC inputs "
+                       "to a continuous TARGET position exposure from -100% (max short-bias) to "
+                       "+100% (max long-bias), instead of following a fixed textbook pattern.")
+            st.caption("PSX adaptation: each watchlist symbol's own daily OHLC is paired with the "
+                       "KSE-100 index's own daily OHLC as the formula's 8 inputs (the source used 4 "
+                       "correlated FX pairs; PSX has no such basket, so each stock is paired with its "
+                       "own benchmark index instead, per explicit direction). All 8 inputs are "
+                       "z-scored on a trailing 20-day window before the formula ever sees them — "
+                       "raw stock price (Rs) and the KSE-100 index level (tens of thousands) differ "
+                       "by orders of magnitude, which made an early, un-normalized version collapse "
+                       "onto a constant signal (caught in testing, not shipped).")
+            st.caption("Each symbol's formula is evolved on its own trailing 60% of history, the best "
+                       "Hall-of-Fame formula is picked on the next 20% (validation), and the exposure "
+                       "shown above is that SAME formula's TODAY reading — the 'Out-of-Sample' columns "
+                       "are that formula's own performance on the FINAL, never-trained-on 20% of "
+                       "history, not a promise about tomorrow. Training runs offline (a long, "
+                       "resumable GitHub Actions job, not the daily refresh) — see "
+                       "backend/run_gp_evolution_training.py and gp_evolved_detector.py's module "
+                       "docstring for the full translation, including the no-lookahead adaptation "
+                       "(the source fills orders same-bar; here, a bar's signal only ever applies to "
+                       "the NEXT bar's return) and the rescaled commission/trade-count guard.")
+            if _gp_evolved_ranking and _gp_evolved_ranking.get("ranked"):
+                st.caption(f"{_gp_evolved_ranking.get('symbols_trained', 0)} of the watchlist's ~89 "
+                           f"symbols currently have a viable trained model "
+                           f"({_gp_evolved_ranking.get('symbols_skipped', 0)} skipped — insufficient "
+                           "history/overlap, or no evolved formula cleared the minimum-trade-count "
+                           "guard on validation).")
+
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
 
@@ -3437,6 +3514,10 @@ with tab_patterns:
         _render_level_breakout_block("BULL", "🚀 Level Break Out (Resistance Breakout) — 1D",
                                      "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
 
+        st.divider()
+        _render_gp_evolved_block("BULL", "🧬 GP-Evolved Formula (Long Bias) — 1D",
+                                 "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
+
     # --------------------------------------------------- Short-Side tab ----
     with tab_short:
         st.error("Everything in this tab expects price to FALL, not rise. PSX short-selling carries "
@@ -3564,6 +3645,10 @@ with tab_patterns:
         st.divider()
         _render_level_breakout_block("BEAR", "🚀 Level Break Out (Support Breakdown) — 1D",
                                      "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
+
+        st.divider()
+        _render_gp_evolved_block("BEAR", "🧬 GP-Evolved Formula (Short Bias) — 1D",
+                                 "🔴 SELL SIGNAL", "rgba(220, 53, 69, 0.28)")
 
     # ----------------------------------------------- Structural Patterns ----
     with tab_structural:
