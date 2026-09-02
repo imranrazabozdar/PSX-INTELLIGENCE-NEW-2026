@@ -12,6 +12,7 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -26,6 +27,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
+          pip install lxml
+
+      - name: 📥 Refresh daily OHLC data from PSX portal
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_ohlc_refresh.py
 
       - name: 🔍 Detect all pattern families (latest bar only)
         working-directory: backend
@@ -34,17 +43,12 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_chart_pattern_refresh.py
 
-      - name: 📊 Show pattern detection results
-        working-directory: backend
+      - name: 📊 Summary
         if: always()
         run: |
           echo ""
-          echo "✅ Pattern scan refresh workflow complete"
+          echo "✅ Daily refresh workflow complete"
           echo ""
-          echo "Scans run:"
-          echo "  • Bullish Engulfing (candlestick)"
-          echo "  • Morning Star (candlestick)"
-          echo "  • Inverse H&S / Double Bottom (chart patterns)"
-          echo ""
-          echo "Results saved to analysis_cache table in Turso"
-          echo "so the Streamlit app can display them immediately."
+          echo "Step 1: OHLC data refresh from dps.psx.com.pk → Turso"
+          echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB)"
+          echo "        → results saved to analysis_cache in Turso"
