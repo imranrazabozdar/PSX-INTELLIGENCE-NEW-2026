@@ -191,6 +191,7 @@ import patterns_engine as _patterns
 from morning_star_detector import MorningStarDetector as _MorningStarDetector
 from macd_ema_detector import MACDEMADetector as _MACDEMADetector
 import macd_ema_detector as _macd_ema_detector_module
+import triangle_regression_detector as _triangle_reg
 from patterns.advanced_pattern_adapter import scan_symbol as _scan_advanced_patterns
 from patterns.cup_handle_adapter import scan_symbol as _scan_cup_handle
 from patterns.ascending_triangle_adapter import scan_symbol as _scan_ascending_triangle
@@ -3454,6 +3455,53 @@ def patterns_macdema_scan(request:Request, force:bool=False):
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("macdema_scan")
+    return out
+
+
+def _run_triangle_regression_scan():
+    """Market-wide Regression-Channel Triangle Squeeze scan
+    (backend/triangle_regression_detector.py) -- a rolling OLS-regression
+    converging-channel detector (near-flat/declining resistance rail +
+    meaningfully rising support rail, both fit tightly, R² >= 0.7),
+    translated from a reference notebook. SHORT-ONLY by design -- see
+    that module's docstring for why the direction is kept as the
+    notebook backtested it (contrarian to the classical bullish-breakout
+    assumption) rather than assumed. Needs ~55+ daily bars per symbol.
+    See backend/run_triangle_regression_backtest.py for the walk-forward
+    PSX backtest of this exact rule."""
+    coverage = ohlc_coverage()
+    hits = []
+    for cov in coverage:
+        sym = cov["symbol"]
+        try:
+            rows = ohlc_rows(sym, 100)
+            if len(rows) < _triangle_reg.MIN_BARS_REQUIRED:
+                continue
+            df = pd.DataFrame(rows)
+            result = _triangle_reg.detect_triangle_squeeze(df, date_col="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _triangle_reg.NO_TRIANGLE_REG_SIGNAL:
+            continue
+        result["symbol"] = sym
+        hits.append(result)
+    hits.sort(key=lambda r: r["symbol"])
+    return {"status": "ok", "scanned": len(coverage), "hits": hits}
+
+
+@app.get("/patterns/triangle-regression-scan")
+def patterns_triangle_regression_scan(request:Request, force:bool=False):
+    """Market-wide Regression-Channel Triangle Squeeze scan -- SHORT-only.
+    Cached/refreshed the same way as every other pattern scan; force=true
+    (admin token required) triggers an immediate re-run. See
+    _run_triangle_regression_scan's docstring for parameters and backtest
+    reference."""
+    cached = _scan_cache.latest("triangle_regression_scan")
+    result, err = _serve_cached_and_refresh("triangle_regression_scan", _run_triangle_regression_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("triangle_regression_scan")
     return out
 
 

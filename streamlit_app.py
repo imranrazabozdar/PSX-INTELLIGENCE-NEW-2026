@@ -3092,6 +3092,67 @@ with tab_patterns:
                        "periodically as coverage grows — treat this as a documented, tracked "
                        "signal, not a validated PSX edge.")
 
+    # SHORT-only (see triangle_regression_detector.py's docstring for why
+    # the direction is short, not the classical bullish-breakout
+    # assumption) -- rendered only in the Short-Side tab below, no bull
+    # counterpart to fetch/split here.
+    _triangle_reg_scan = _get("/patterns/triangle-regression-scan", **_pat_refresh_params)
+
+    def _render_triangle_regression_block():
+        st.markdown('<div class="psx-section-eyebrow">CHART PATTERNS</div>'
+                    '<div class="psx-section-title">📉 Regression-Channel Triangle Squeeze — 1D</div>',
+                    unsafe_allow_html=True)
+        if not _scan_status_banner(_triangle_reg_scan, "Regression-Channel Triangle Squeeze"):
+            return
+        age = _triangle_reg_scan.get("_cache_age_seconds")
+        age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+        running_note = " · a background refresh is running right now" if _triangle_reg_scan.get("_background_refresh_running") else ""
+        all_hits = _triangle_reg_scan.get("hits") or []
+        hits, hidden_n = _filter_recent(all_hits, "pattern_date", "triangle_reg_hist_checkbox")
+        st.caption(f"📦 Scanned {_triangle_reg_scan.get('scanned', 0)} symbols with stored daily history · "
+                   f"last run {age_str}{running_note} · {len(hits)} symbol(s) currently showing this squeeze"
+                   f"{f' ({hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if hidden_n else ''}.")
+        if not hits:
+            st.info("No symbol currently shows a Regression-Channel Triangle Squeeze on its latest "
+                    "completed daily candle.")
+            return
+        names_tr = _company_names()
+        rows = [{
+            "symbol": h["symbol"], "company": names_tr.get(h["symbol"], ""),
+            "action": "🔴 SHORT SIGNAL",
+            "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+            "target 1": h.get("target_1"), "date": h.get("pattern_date"),
+        } for h in hits]
+        trdf = pd.DataFrame(rows)
+
+        def _tr_row_color(row):
+            return ["background-color: rgba(220, 53, 69, 0.28)"] * len(row)
+
+        _render_pattern_table(trdf, _tr_row_color, "triangle_regression_scan_table", {
+            "symbol": "Symbol", "company": "Company", "action": "Action",
+            "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+            "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+            "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+            "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+        }, date_col="date")
+
+        with st.expander("📖 View Rules & Metrics for Regression-Channel Triangle Squeeze"):
+            st.caption("Market-wide scan, on the latest completed daily candle — a rolling "
+                       "OLS-regression converging-channel detector translated from a reference "
+                       "systematic-trading notebook: over a trailing 40-day window, fits a "
+                       "regression line through every confirmed pivot high and every confirmed "
+                       "pivot low separately, and requires both to be genuinely linear (R² ≥ 0.7) "
+                       "with a near-flat/declining resistance rail (≤0.8% total drift) and a "
+                       "meaningfully rising support rail (≥2.0% total rise) — a squeeze. Different "
+                       "from this app's separate discrete-pivot Ascending Triangle engine "
+                       "(currently disabled for insufficient PSX signal density): this is a "
+                       "continuous, looser formulation expected to fire far more often.")
+            st.caption("⚠️ **SHORT-only, deliberately** — the source notebook backtested SHORTING "
+                       "this squeeze (betting on a breakdown), not the classical bullish-breakout "
+                       "assumption, on 5-minute gold futures. Entry at the signal candle's own "
+                       "close, stop 1% above the signal high, target at 3x that risk (the "
+                       "strategy's own stated default, unoptimized).")
+
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
 
@@ -3410,6 +3471,9 @@ with tab_patterns:
         st.divider()
         _render_macdema_block("BEAR", "📈 MACD+EMA200 Trend Resumption (Bearish) — 1D",
                               "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
+
+        st.divider()
+        _render_triangle_regression_block()
 
     # ----------------------------------------------- Structural Patterns ----
     with tab_structural:
