@@ -1521,14 +1521,6 @@ with tab_intraday:
         _bull_count = sum(1 for a in _alerts if a.get("alert_type") in _bull_types)
         _bear_count = sum(1 for a in _alerts if a.get("alert_type") in _bear_types)
 
-        _ALERT_LABELS = {
-            "AD_BULL_DIVERGENCE": "🟢 Bullish A/D Div",
-            "AD_BEAR_DIVERGENCE": "🔴 Bearish A/D Div",
-            "EXTREME_VOLUME": "🔥 Extreme Volume",
-            "HIGH_VOLUME": "📈 High Volume",
-            "RANGE_HIGH_VOLUME": "🟢 Range High Vol",
-            "RANGE_LOW_VOLUME": "🔻 Range Low Vol",
-        }
         _ALERT_SHORT = {
             "AD_BULL_DIVERGENCE": "Bull Div",
             "AD_BEAR_DIVERGENCE": "Bear Div",
@@ -1537,15 +1529,6 @@ with tab_intraday:
             "RANGE_HIGH_VOLUME": "Rng Hi",
             "RANGE_LOW_VOLUME": "Rng Lo",
         }
-        _ALERT_COLORS = {
-            "AD_BULL_DIVERGENCE": "#22c55e",
-            "AD_BEAR_DIVERGENCE": "#ef4444",
-            "EXTREME_VOLUME": "#f59e0b",
-            "HIGH_VOLUME": "#3b82f6",
-            "RANGE_HIGH_VOLUME": "#22c55e",
-            "RANGE_LOW_VOLUME": "#ef4444",
-        }
-
         _type_counts = Counter(a["alert_type"] for a in _alerts)
         _top_type, _top_count = _type_counts.most_common(1)[0] if _type_counts else ("—", 0)
         _top_short = _ALERT_SHORT.get(_top_type, _top_type)
@@ -1617,6 +1600,8 @@ with tab_intraday:
             "RANGE_LOW_VOLUME": "Range Breakdown",
         }
 
+        _clicked_symbol = None
+
         if not _filtered_alerts:
             st.info("No anomalies detected this session — volume and price monitoring active during market hours")
         else:
@@ -1665,7 +1650,6 @@ with tab_intraday:
                 column_config=_col_cfg,
             )
 
-            _clicked_symbol = None
             if _sel_event and _sel_event.selection and _sel_event.selection.rows:
                 _clicked_row = _sel_event.selection.rows[0]
                 if _clicked_row < len(_ia_display):
@@ -1673,28 +1657,32 @@ with tab_intraday:
 
             st.caption(f"{len(_filtered_alerts)} anomaly flag(s) shown · Updated {(_ia or {}).get('as_of', '—')}")
 
-        # ---- SECTION 4: Alert Type Breakdown ------------------------------
+        # ---- SECTION 4: Most Active Stocks Ranking -------------------------
         if _alerts:
-            st.markdown("### 📊 Alert Distribution Today")
-            _dist_labels = [_ALERT_LABELS.get(k, k) for k in _type_counts.keys()]
-            _dist_colors = [_ALERT_COLORS.get(k, "#6b7280") for k in _type_counts.keys()]
-            _dist_vals = list(_type_counts.values())
-            _dist_fig = go.Figure(go.Bar(
-                x=_dist_labels, y=_dist_vals,
-                marker_color=_dist_colors,
-                text=_dist_vals, textposition="outside",
-                textfont=dict(color="#E8ECEF"),
-            ))
-            _dist_fig.update_layout(
-                height=300, margin=dict(l=0, r=0, t=10, b=0),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#E8ECEF"),
-                xaxis=dict(showgrid=False, zeroline=False, tickangle=0),
-                yaxis=dict(showgrid=False, zeroline=False, visible=False),
-                bargap=0.3,
+            st.markdown("### 🏆 Most Active Stocks")
+            _sym_alert_df = pd.DataFrame(_alerts)
+            _sym_bull = _sym_alert_df[_sym_alert_df["alert_type"].isin(_BULL_ALERTS)].groupby("symbol").size().rename("▲ Bull")
+            _sym_bear = _sym_alert_df[~_sym_alert_df["alert_type"].isin(_BULL_ALERTS)].groupby("symbol").size().rename("▼ Bear")
+            _rank_df = pd.concat([_sym_bull, _sym_bear], axis=1).fillna(0).astype(int)
+            _rank_df["Total"] = _rank_df["▲ Bull"] + _rank_df["▼ Bear"]
+            _rank_df = _rank_df.sort_values("Total", ascending=False).reset_index().rename(columns={"symbol": "Symbol"})
+            _rank_df.insert(0, "#", range(1, len(_rank_df) + 1))
+
+            _rank_sel = st.dataframe(
+                _rank_df,
+                use_container_width=True, hide_index=True,
+                selection_mode="single-row",
+                on_select="rerun",
+                key="rank_table_selection",
+                column_config={
+                    "#": st.column_config.NumberColumn("#", width="small"),
+                    "Total": st.column_config.NumberColumn("Total", width="small"),
+                },
             )
-            st.plotly_chart(_dist_fig, use_container_width=True, config={"displayModeBar": False})
+            if _rank_sel and _rank_sel.selection and _rank_sel.selection.rows:
+                _rank_row = _rank_sel.selection.rows[0]
+                if _rank_row < len(_rank_df):
+                    _clicked_symbol = _rank_df.iloc[_rank_row]["Symbol"]
 
         # ---- SECTION 5: Symbol Deep-Dive ----------------------------------
         st.markdown("### 🔍 Symbol Deep-Dive")
