@@ -1984,17 +1984,21 @@ with tab_dss:
     if "research_symbol" not in st.session_state:
         st.session_state.research_symbol = "OGDC"
     dss_picks = ["OGDC", "PPL", "HBL", "UBL", "LUCK", "FFC", "ENGRO", "MCB", "SYS", "MARI"]
-    _dss_pick_col1, _dss_pick_col2 = st.columns([3, 1])
-    with _dss_pick_col1:
-        _dss_chip_cols = st.columns(len(dss_picks))
-        for i, p in enumerate(dss_picks):
-            if _dss_chip_cols[i].button(p, key=f"dsspick_{p}",
-                                   type="primary" if st.session_state.research_symbol == p else "secondary",
-                                   use_container_width=True):
-                st.session_state.research_symbol = p
-    with _dss_pick_col2:
+    _row1 = st.columns(6)
+    for i, p in enumerate(dss_picks[:5]):
+        if _row1[i].button(p, key=f"dsspick_{p}",
+                           type="primary" if st.session_state.research_symbol == p else "secondary",
+                           use_container_width=True):
+            st.session_state.research_symbol = p
+    with _row1[5]:
         dss_typed = st.text_input("Symbol", value="", key="dss_typed",
-                                             label_visibility="collapsed", placeholder="Type symbol...")
+                                  label_visibility="collapsed", placeholder="Type symbol...")
+    _row2 = st.columns(5)
+    for i, p in enumerate(dss_picks[5:]):
+        if _row2[i].button(p, key=f"dsspick_{p}",
+                           type="primary" if st.session_state.research_symbol == p else "secondary",
+                           use_container_width=True):
+            st.session_state.research_symbol = p
         if dss_typed.strip():
             st.session_state.research_symbol = dss_typed.strip().upper()
     dss_symbol = st.session_state.research_symbol
