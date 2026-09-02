@@ -39,25 +39,33 @@ _EMBED_BACKEND = os.getenv("PSX_EMBED_BACKEND", "").lower() in ("1", "true", "ye
 _BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
 
 
+def _backend_code_hash():
+    """Hash of backend/app.py so st.cache_resource invalidates when code changes."""
+    import hashlib
+    _app_path = os.path.join(_BACKEND_DIR, "app.py")
+    try:
+        with open(_app_path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()[:12]
+    except Exception:
+        return "unknown"
+
+
 @st.cache_resource
-def _ensure_embedded_backend():
+def _ensure_embedded_backend(_code_hash=None):
     """Starts backend/app.py in a daemon thread exactly once per container
-    process. @st.cache_resource (not a module-level flag) guarantees the
-    once-per-process part — Streamlit reruns this script on every interaction
-    and a plain global can't be trusted to survive that the same way."""
+    process. The _code_hash parameter ensures the cache invalidates when
+    backend code changes, forcing a fresh import and restart."""
     if not _EMBED_BACKEND:
         return False
-    # backend/app.py and its siblings resolve PSX_DB relative to the process
-    # CWD at import time, which is the project root under `streamlit run`, not
-    # backend/ — set it to an absolute path first so they agree with BACKEND's
-    # "http://127.0.0.1:8000" pointing at this same embedded instance.
     os.environ.setdefault("PSX_DB", os.path.join(_BACKEND_DIR, "psx_v2.db"))
     if _BACKEND_DIR not in sys.path:
         sys.path.insert(0, _BACKEND_DIR)
     import uvicorn
-    import app as _backend_app  # backend/app.py; its own bare imports (psx_report,
-                                 # scan_cache_engine, ...) resolve now that
-                                 # _BACKEND_DIR is on sys.path
+    # Force-reload the backend module if it was already imported with old code
+    import importlib
+    if "app" in sys.modules:
+        importlib.reload(sys.modules["app"])
+    import app as _backend_app
 
     threading.Thread(
         target=uvicorn.run,
@@ -74,7 +82,7 @@ def _ensure_embedded_backend():
     return True
 
 
-_ensure_embedded_backend()
+_ensure_embedded_backend(_code_hash=_backend_code_hash())
 
 st.set_page_config(page_title="PSX Intelligence", layout="wide",
                     initial_sidebar_state="collapsed",
@@ -1499,12 +1507,52 @@ with tab_intraday:
                        delta=_last["symbol"] if _last else "—")
 
         if _market_open and _bars_count == 0 and _mins_now > (_wd < 4 and 9*60+35 or 9*60+20):
-            with st.expander("🔍 Debug: Why are bars 0?", expanded=False):
-                _diag = _get("/debug/intraday-pipeline")
-                if _diag.get("status") == "error":
-                    st.error(f"Backend unreachable: {_diag.get('reason', 'unknown')}")
-                else:
-                    st.json(_diag)
+            with st.expander("🔍 Debug: Why are bars 0?", expanded=True):
+                _diag = {}
+                try:
+                    import sys as _sys
+                    _bd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
+                    if _bd not in _sys.path:
+                        _sys.path.insert(0, _bd)
+                    import turso_db as _tdb
+                    _diag["using_turso"] = _tdb.USING_TURSO
+                    _diag["turso_init_error"] = _tdb._init_error
+                    _diag["LIBSQL_URL_set"] = bool(os.getenv("LIBSQL_URL"))
+                    _diag["LIBSQL_AUTH_TOKEN_set"] = bool(os.getenv("LIBSQL_AUTH_TOKEN"))
+                    _diag["PSX_EMBED_BACKEND"] = os.getenv("PSX_EMBED_BACKEND", "(not set)")
+                    _conn = _tdb.get_connection()
+                    _diag["conn_type"] = type(_conn).__name__
+                    _diag["has_batch_query"] = hasattr(_conn, 'batch_query')
+                    # Test backend health
+                    _hresp = _get("/health")
+                    _diag["backend_health"] = _hresp.get("status", "unknown") if isinstance(_hresp, dict) else str(_hresp)
+                    # Test bars-count from backend
+                    _bc = _get("/intraday/bars-count")
+                    _diag["bars_count_response"] = _bc
+                    # Test write path
+                    try:
+                        if hasattr(_conn, 'batch_query'):
+                            _conn.batch_query([
+                                ("INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) VALUES(?,?,?,?,?,?)",
+                                 ("_DIAG_", "1970-01-01 00:00:00", 1.0, 1, 1.0, 1.0))
+                            ])
+                            _vr = _conn.execute("SELECT COUNT(*) as cnt FROM intraday_bars WHERE symbol='_DIAG_'").fetchone()
+                            _diag["write_test"] = "PASSED" if _vr and _vr["cnt"] > 0 else "FAILED: row not found"
+                            _conn.execute("DELETE FROM intraday_bars WHERE symbol='_DIAG_'")
+                        else:
+                            _conn.execute("INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) VALUES(?,?,?,?,?,?)",
+                                          ("_DIAG_", "1970-01-01 00:00:00", 1.0, 1, 1.0, 1.0))
+                            _vr = _conn.execute("SELECT COUNT(*) as cnt FROM intraday_bars WHERE symbol='_DIAG_'").fetchone()
+                            _diag["write_test"] = "PASSED" if _vr and _vr["cnt"] > 0 else "FAILED: row not found"
+                            _conn.execute("DELETE FROM intraday_bars WHERE symbol='_DIAG_'")
+                    except Exception as _we:
+                        _diag["write_test"] = f"FAILED: {type(_we).__name__}: {_we}"
+                except Exception as _de:
+                    _diag["diag_error"] = f"{type(_de).__name__}: {_de}"
+                st.json(_diag)
+                if _diag.get("PSX_EMBED_BACKEND") in (None, "(not set)", "", "0", "false"):
+                    st.error("PSX_EMBED_BACKEND is not set! The background data collector is NOT running. "
+                             "Set PSX_EMBED_BACKEND=1 in Streamlit Cloud secrets.")
 
         # ---- SECTION 3: Session Anomaly Alerts Table ---------------------
         st.markdown("### ⚡ Session Anomalies")
