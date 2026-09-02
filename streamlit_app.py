@@ -1073,8 +1073,7 @@ def _render_top10_grid():
     with col1:
         with st.container(border=True):
             st.markdown("**📈 Top 10 by Technical Indicators**")
-            st.caption("Ranked by evidence score from the cached watchlist scan (the same "
-                       "DSS analysis used app-wide) — updates every 30 min during market hours.")
+            st.caption("Ranked by DSS evidence score · updates every 30 min")
             if wl_age is not None:
                 st.caption(f"Updated {int(wl_age // 60)} min ago")
             if not wl_rows:
@@ -1097,8 +1096,7 @@ def _render_top10_grid():
     with col2:
         with st.container(border=True):
             st.markdown("**📈 Top 10 by Price Momentum**")
-            st.caption("Ranked by today's % change, from the same cached watchlist scan as the "
-                       "Technical list — a different lens on the same data, not a new source.")
+            st.caption("Ranked by today's % change")
             if wl_age is not None:
                 st.caption(f"Updated {int(wl_age // 60)} min ago")
             if not wl_rows:
@@ -1125,9 +1123,7 @@ def _render_top10_grid():
     with col3:
         with st.container(border=True):
             st.markdown("**🕯️ Top 10 Candlestick Signals**")
-            st.caption("Merges the latest Bullish Engulfing and Morning Star hits from the cached "
-                       "market-wide scans, newest signal first. Bullish Engulfing is geometry-only "
-                       "(no entry/stop/target in this backend), so those fields show \"—\" for it.")
+            st.caption("Bullish Engulfing + Morning Star · newest first")
             pr_ok = isinstance(pr, dict) and pr.get("status") == "ok"
             msr_ok = isinstance(msr, dict) and msr.get("status") == "ok"
             c_rows = []
@@ -1168,10 +1164,7 @@ def _render_top10_grid():
     with col4:
         with st.container(border=True):
             st.markdown("**📐 Top 10 Chart Pattern Signals**")
-            st.caption("From the cached Inverse H&S / Double Bottom scan (advanced_pattern_scan). "
-                       "No market-wide Wyckoff/accumulation-phase scan exists in this backend "
-                       "(only per-symbol /wyckoff-pro), so this shows the actual chart-pattern "
-                       "signal data available, ranked by confidence score.")
+            st.caption("IHS + Double Bottom · ranked by confidence")
             adv_ok = isinstance(adv, dict) and adv.get("status") == "ok"
             if adv_ok and adv.get("_cache_age_seconds") is not None:
                 st.caption(f"Updated {int(adv['_cache_age_seconds'] // 60)} min ago")
