@@ -924,12 +924,19 @@ def health():
     refresh_loops_disabled = bool(os.getenv("PSX_DISABLE_SCAN_AUTOREFRESH"))
     any_job_running = any(v["job_running"] for v in caches.values())
 
-    ok = db_ok  # module degradation and stale caches are reported, not fatal —
-                # every call site already falls back to neutral/unavailable
+    db_status = turso_db.status()
+    # A live-but-empty local SQLite fallback (Turso configured but currently
+    # unreachable -- see turso_db.get_connection()) answers SELECT 1 fine, so
+    # db_ok alone can't catch it. Treat it as unhealthy: every scan/pattern
+    # endpoint will silently return "no data" against that empty file, which
+    # is indistinguishable from a genuine outage to anyone looking at `ok`.
+    ok = db_ok and not db_status.get("on_local_fallback")  # module degradation
+                # and stale caches are reported, not fatal — every call site
+                # already falls back to neutral/unavailable
     return {"ok": ok, "time": datetime.now(timezone.utc).isoformat(), "min_volume": MIN_VOLUME,
             "market_data": "PSX Data Portal", "freshness": "5-minute delayed unless PSX indicates otherwise",
             "policy": "private research; do not redistribute PSX market data without appropriate rights",
-            "database": {"ok": db_ok, "error": db_err, **turso_db.status()},
+            "database": {"ok": db_ok, "error": db_err, **db_status},
             "background_refresh_loops_disabled": refresh_loops_disabled,
             "background_job_running": any_job_running,
             "caches": caches,

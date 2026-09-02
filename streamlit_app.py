@@ -982,6 +982,16 @@ elif _gs_query.strip():
     with _gs_btn_col:
         st.caption("No matches")
 
+_health_banner = _session_cache("_global_health_check", lambda: _get("/health"), ttl=60)
+_health_db = _health_banner.get("database", {}) if isinstance(_health_banner, dict) else {}
+if _health_db.get("on_local_fallback"):
+    st.error("⚠️ **Database fallback active** — Turso is configured but currently unreachable, "
+             "so this app is serving an empty, non-persistent local database. Pattern scans, "
+             "screener, and history will show \"no data\" until this clears on its own "
+             "(auto-retries every 30s) — see More → Status → Backend Health for details.")
+elif _health_banner.get("status") == "error":
+    st.warning(f"⚠️ Backend unreachable: {_health_banner.get('reason')} — data below may be stale or missing.")
+
 tab_home, tab_intraday, tab_screener, tab_pulse, tab_dss, tab_patterns, tab_more = st.tabs(
     ["🏠 Home", "⚡ Intraday", "🔍 Screener", "📰 Pulse", "🎯 Stock Research", "🕯️ Patterns", "⚙️ More"]
 )
@@ -3679,9 +3689,25 @@ with tab_more:
         with st.container(border=True):
             st.markdown('<div class="psx-panel-title">💓 Backend Health</div>', unsafe_allow_html=True)
             h = _get("/health")
-            if h.get("ok"):
-                st.success(f"Backend OK · {h.get('market_data')} · {h.get('freshness')}")
+            if h.get("status") == "error":
+                st.error(f"Backend unreachable: {h.get('reason')}")
+            else:
+                db_info = h.get("database", {})
+                if db_info.get("on_local_fallback"):
+                    st.error("⚠️ Turso is configured but UNREACHABLE right now — serving an "
+                              "empty, non-persistent local SQLite file instead. Every pattern/"
+                              "scan tab will show 'no data' until this clears (auto-retries "
+                              "Turso every 30s). "
+                              f"Last error: {db_info.get('init_error')}")
+                elif not db_info.get("using_turso_configured"):
+                    st.warning("⚠️ Turso is NOT configured for this deployment (LIBSQL_URL/"
+                                "LIBSQL_AUTH_TOKEN missing) — running on local SQLite, which "
+                                "does not persist across restarts on Streamlit Cloud.")
+                elif h.get("ok"):
+                    st.success(f"Backend OK · connected to Turso · {h.get('market_data')} · {h.get('freshness')}")
+                else:
+                    st.warning("Backend up but database check failed — see details below.")
+                st.caption(f"Database backend: `{db_info.get('backend')}` · connected: "
+                            f"{db_info.get('connected')}")
                 st.caption(f"Checked {h.get('time')}")
                 st.caption(h.get("policy", ""))
-            else:
-                st.error(h.get("reason", "Backend unreachable."))

@@ -53,6 +53,11 @@ USING_TURSO = bool(LIBSQL_URL and LIBSQL_AUTH_TOKEN)
 _lock = threading.Lock()
 _shared_conn = None  # Turso (HTTP) path only — see get_connection()
 _init_error = None
+_on_local_fallback = False  # True only when USING_TURSO but currently serving
+                             # the local-sqlite fallback after a connect failure
+_last_fallback_retry = 0.0
+_FALLBACK_RETRY_INTERVAL = 30  # seconds between attempts to reconnect to Turso
+                                # while stuck on the fallback
 _local = threading.local()  # plain-sqlite3 path: one connection per thread
 
 
@@ -294,8 +299,22 @@ def _make_connection():
     if USING_TURSO:
         http_url = LIBSQL_URL.replace("libsql://", "https://").rstrip("/") + "/v2/pipeline"
         conn = _TursoConnection(http_url, LIBSQL_AUTH_TOKEN)
-        conn.execute("SELECT 1")  # fail fast here if the URL/token are wrong
-        return conn
+        # Retry the initial handshake a few times before giving up -- a
+        # transient Turso hiccup (e.g. heavy concurrent write load from a
+        # backfill job) must not permanently strand this process on an
+        # empty local SQLite fallback for the rest of its life (see
+        # get_connection()'s retry-on-cooldown logic, which depends on this
+        # actually succeeding once conditions clear).
+        last_exc = None
+        for attempt in range(1, 4):
+            try:
+                conn.execute("SELECT 1")  # fail fast here if the URL/token are wrong
+                return conn
+            except Exception as e:
+                last_exc = e
+                if attempt < 3:
+                    time.sleep(2 * attempt)
+        raise last_exc
     conn = _make_local_sqlite_connection()
     return conn
 
@@ -353,13 +372,14 @@ def get_connection():
     concurrent access; a single shared handle is not.
     Callers still manage their own transactions/commits exactly as before
     (this only replaces how the connection itself is obtained)."""
-    global _shared_conn, _init_error
+    global _shared_conn, _init_error, _on_local_fallback, _last_fallback_retry
     if USING_TURSO:
         if _shared_conn is None:
             with _lock:
                 if _shared_conn is None:
                     try:
                         _shared_conn = _make_connection()
+                        _on_local_fallback = False
                     except Exception as e:
                         _init_error = f"{type(e).__name__}: {e}"
                         print(f"[turso_db] Turso connection failed ({_init_error}) — "
@@ -367,6 +387,22 @@ def get_connection():
                               f"NOT persist across restarts on a host with no disk "
                               f"(e.g. Streamlit Community Cloud) until this is fixed.")
                         _shared_conn = _make_local_sqlite_connection()
+                        _on_local_fallback = True
+                        _last_fallback_retry = time.time()
+        elif _on_local_fallback and (time.time() - _last_fallback_retry) > _FALLBACK_RETRY_INTERVAL:
+            # Stuck on the local fallback -- periodically try to reconnect
+            # to Turso instead of staying pinned to an empty local DB for
+            # the rest of this process's life once conditions clear.
+            with _lock:
+                if _on_local_fallback and (time.time() - _last_fallback_retry) > _FALLBACK_RETRY_INTERVAL:
+                    _last_fallback_retry = time.time()
+                    try:
+                        _shared_conn = _make_connection()
+                        _on_local_fallback = False
+                        _init_error = None
+                        print("[turso_db] Turso connection recovered — switched off the local fallback.")
+                    except Exception as e:
+                        _init_error = f"{type(e).__name__}: {e}"
         return _shared_conn
 
     conn = getattr(_local, "conn", None)
@@ -377,9 +413,22 @@ def get_connection():
 
 
 def status():
-    """For /health — never crashes, always reports what's actually true."""
-    return {"backend": "turso (HTTP pipeline)" if USING_TURSO else "local sqlite3",
+    """For /health — never crashes, always reports what's actually true.
+    `backend` reflects what's ACTUALLY being served right now, not just
+    whether Turso env vars are configured -- `on_local_fallback` is the
+    critical flag: True means Turso creds are set and USING_TURSO is True,
+    but this process is currently serving an empty, non-persistent local
+    SQLite file because the last Turso connection attempt failed."""
+    if USING_TURSO and _on_local_fallback:
+        backend_label = "local sqlite3 (TURSO FALLBACK — configured but unreachable)"
+    elif USING_TURSO:
+        backend_label = "turso (HTTP pipeline)"
+    else:
+        backend_label = "local sqlite3"
+    return {"backend": backend_label,
             "connected": _shared_conn is not None,
+            "using_turso_configured": USING_TURSO,
+            "on_local_fallback": bool(USING_TURSO and _on_local_fallback),
             "init_error": _init_error}
 
 
