@@ -38,31 +38,47 @@ TIMEOUT = 45  # generous margin for cross-region latency to Turso (Streamlit
 _EMBED_BACKEND = os.getenv("PSX_EMBED_BACKEND", "").lower() in ("1", "true", "yes")
 _BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
 
-
-def _backend_code_hash():
-    """Hash of backend/app.py so st.cache_resource invalidates when code changes."""
-    import hashlib
-    _app_path = os.path.join(_BACKEND_DIR, "app.py")
-    try:
-        with open(_app_path, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()[:12]
-    except Exception:
-        return "unknown"
+_BACKEND_VERSION = "v4"  # bump this to force a full backend restart on deploy
 
 
 @st.cache_resource
-def _ensure_embedded_backend(_code_hash=None):
+def _ensure_embedded_backend(_version=None):
     """Starts backend/app.py in a daemon thread exactly once per container
-    process. The _code_hash parameter ensures the cache invalidates when
-    backend code changes, forcing a fresh import and restart."""
+    process. Bump _BACKEND_VERSION to force cache invalidation on deploy."""
     if not _EMBED_BACKEND:
         return False
     os.environ.setdefault("PSX_DB", os.path.join(_BACKEND_DIR, "psx_v2.db"))
     if _BACKEND_DIR not in sys.path:
         sys.path.insert(0, _BACKEND_DIR)
+
+    # Kill any old uvicorn still holding port 8000
+    import socket
+    try:
+        _test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _test_sock.settimeout(1)
+        _result = _test_sock.connect_ex(("127.0.0.1", 8000))
+        _test_sock.close()
+        if _result == 0:
+            # Port is in use — old backend still running. Force-kill it.
+            import signal
+            for _t in threading.enumerate():
+                if _t.daemon and _t.name != threading.current_thread().name:
+                    if hasattr(_t, '_target') and _t._target and 'uvicorn' in str(_t._target):
+                        _t._stop()
+            # Give it a moment to release the port
+            time.sleep(1)
+    except Exception:
+        pass
+
     import uvicorn
-    # Force-reload the backend module if it was already imported with old code
     import importlib
+    # Force-reload ALL backend modules so new code takes effect
+    _backend_modules = [m for m in sys.modules if m == "app" or m.startswith("app.")]
+    for _m in _backend_modules:
+        try:
+            importlib.reload(sys.modules[_m])
+        except Exception:
+            pass
     if "app" in sys.modules:
         importlib.reload(sys.modules["app"])
     import app as _backend_app
@@ -82,7 +98,7 @@ def _ensure_embedded_backend(_code_hash=None):
     return True
 
 
-_ensure_embedded_backend(_code_hash=_backend_code_hash())
+_ensure_embedded_backend(_version=_BACKEND_VERSION)
 
 st.set_page_config(page_title="PSX Intelligence", layout="wide",
                     initial_sidebar_state="collapsed",
