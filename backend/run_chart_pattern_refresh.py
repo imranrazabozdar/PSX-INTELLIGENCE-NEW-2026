@@ -15,6 +15,7 @@ Pattern families:
   4. MHarris 5-Bar Reversal (BULL + BEAR) → analysis_cache key "mharris_scan"
   5. MACD+EMA200 Trend Resumption (BULL + BEAR) → analysis_cache key "macdema_scan"
   6. Regression-Channel Triangle Squeeze (SHORT-only) → analysis_cache key "triangle_regression_scan"
+  7. Level Break Out (BULL + BEAR) → analysis_cache key "level_breakout_scan"
 
 Uses turso_db for database access — works against Turso Cloud in CI and
 local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
@@ -42,6 +43,7 @@ from morning_star_detector import MorningStarDetector
 from advanced_pattern_adapter import scan_symbol
 import macd_ema_detector as _macdema
 import triangle_regression_detector as _triangle_reg
+import level_breakout_detector as _level_breakout
 
 logging.basicConfig(
     level=logging.INFO,
@@ -226,6 +228,31 @@ def run_triangle_regression_scan(all_data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 1e. Level Break Out scan (BULL + BEAR, split by "direction")
+# ---------------------------------------------------------------------------
+
+def run_level_breakout_scan(all_data: dict) -> dict:
+    hits = []
+    scanned = 0
+    for symbol, ohlcv in all_data.items():
+        if len(ohlcv) < _level_breakout.MIN_BARS_REQUIRED:
+            continue
+        scanned += 1
+        try:
+            df = pd.DataFrame(ohlcv)
+            result = _level_breakout.detect_level_breakout(df, date_col="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _level_breakout.NO_LEVEL_BREAKOUT_SIGNAL:
+            continue
+        result["symbol"] = symbol
+        hits.append(result)
+
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
+    return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
 # 2. Morning Star scan
 # ---------------------------------------------------------------------------
 
@@ -375,6 +402,12 @@ def main():
         logger.info(f"  Scanned {tr_result['scanned']} symbols, {len(tr_result['hits'])} hits")
         _save_to_analysis_cache("triangle_regression_scan", tr_result)
 
+        # --- 1e. Level Break Out ---
+        logger.info("Running Level Break Out scan...")
+        lb_result = run_level_breakout_scan(all_data)
+        logger.info(f"  Scanned {lb_result['scanned']} symbols, {len(lb_result['hits'])} hits")
+        _save_to_analysis_cache("level_breakout_scan", lb_result)
+
         # --- 2. Morning Star ---
         logger.info("Running Morning Star scan...")
         ms_result = run_morning_star_scan(all_data)
@@ -400,6 +433,7 @@ def main():
         logger.info(f"  MHarris 5-Bar Reversal: {len(mh_result['hits'])} signals")
         logger.info(f"  MACD+EMA200 Trend Resumption: {len(me_result['hits'])} signals")
         logger.info(f"  Regression-Channel Triangle Squeeze: {len(tr_result['hits'])} signals")
+        logger.info(f"  Level Break Out: {len(lb_result['hits'])} signals")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
         logger.info(f"  Advanced (IHS/DB): {len(adv_result['hits'])} signals")
 

@@ -3162,6 +3162,71 @@ with tab_patterns:
                        "full-market backfill grows — treat this as a documented, tracked signal, "
                        "not a validated PSX edge.")
 
+    # Fetched once here -- one endpoint returns both BULL and BEAR hits
+    # together, split by direction into the Long-Side and Short-Side tabs
+    # below (unlike the SHORT-only Triangle Squeeze above, this strategy
+    # trades both directions).
+    _level_breakout_scan = _get("/patterns/level-breakout-scan", **_pat_refresh_params)
+
+    def _render_level_breakout_block(direction, header, action_label, row_color):
+        st.markdown('<div class="psx-section-eyebrow">CHART PATTERNS</div>'
+                    f'<div class="psx-section-title">{header}</div>', unsafe_allow_html=True)
+        if not _scan_status_banner(_level_breakout_scan, "Level Break Out"):
+            return
+        age = _level_breakout_scan.get("_cache_age_seconds")
+        age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+        running_note = " · a background refresh is running right now" if _level_breakout_scan.get("_background_refresh_running") else ""
+        all_hits = [h for h in (_level_breakout_scan.get("hits") or []) if h.get("direction") == direction]
+        hits, hidden_n = _filter_recent(all_hits, "pattern_date", f"level_breakout_{direction.lower()}_hist_checkbox")
+        st.caption(f"📦 Scanned {_level_breakout_scan.get('scanned', 0)} symbols with stored daily history · "
+                   f"last run {age_str}{running_note} · {len(hits)} symbol(s) currently showing this breakout"
+                   f"{f' ({hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if hidden_n else ''}.")
+        if not hits:
+            st.info(f"No symbol currently shows a {'resistance breakout' if direction == 'BULL' else 'support breakdown'} "
+                    "on its latest completed daily candle.")
+            return
+        names_lb = _company_names()
+        rows = [{
+            "symbol": h["symbol"], "company": names_lb.get(h["symbol"], ""),
+            "action": action_label,
+            "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+            "target 1": h.get("target_1"), "level": h.get("level_price"),
+            "date": h.get("pattern_date"),
+        } for h in hits]
+        lbdf = pd.DataFrame(rows)
+
+        def _lb_row_color(row):
+            return [f"background-color: {row_color}"] * len(row)
+
+        _render_pattern_table(lbdf, _lb_row_color, f"level_breakout_{direction.lower()}_scan_table", {
+            "symbol": "Symbol", "company": "Company", "action": "Action",
+            "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+            "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+            "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+            "level": st.column_config.NumberColumn("Level Broken", format="Rs %.2f"),
+            "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+        }, date_col="date")
+
+        with st.expander("📖 View Rules & Metrics for Level Break Out"):
+            st.caption("Market-wide scan, on the latest completed daily candle — a horizontal "
+                       "support/resistance breakout translated from a reference systematic-trading "
+                       "notebook. Finds the last 3 confirmed pivot lows (or highs) within a trailing "
+                       "40-day window that all sit within 1% of each other (a flat horizontal "
+                       "level), then signals when the close moves decisively (>2% ) beyond that "
+                       "level — classical breakout logic: buy strength on a resistance breakout, "
+                       "sell weakness on a support breakdown. This is the OPPOSITE convention from "
+                       "the Regression-Channel Triangle Squeeze above, which deliberately shorts its "
+                       "geometry instead.")
+            st.caption("Fixed 3% stop, 2:1 reward:risk (the strategy's own stated defaults, "
+                       "unoptimized), entered at the next bar's open. The notebook's backtest ALSO "
+                       "closes an open position early if RSI(14) crosses above 80 (long) or below "
+                       "20 (short) — reflected in the walk-forward backtest below, not in this "
+                       "table's static target (a live scan has no open position to manage).")
+            st.caption("⚠️ On EURUSD daily (2003-2023, 16 years) this fired only 7 times — an "
+                       "extremely rare setup even on its native instrument. See "
+                       "backend/run_level_breakout_backtest.py for the walk-forward PSX result "
+                       "before treating any signal here as validated.")
+
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
 
@@ -3360,6 +3425,10 @@ with tab_patterns:
         _render_macdema_block("BULL", "📈 MACD+EMA200 Trend Resumption (Bullish) — 1D",
                               "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
 
+        st.divider()
+        _render_level_breakout_block("BULL", "🚀 Level Break Out (Resistance Breakout) — 1D",
+                                     "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
+
     # --------------------------------------------------- Short-Side tab ----
     with tab_short:
         st.error("Everything in this tab expects price to FALL, not rise. PSX short-selling carries "
@@ -3483,6 +3552,10 @@ with tab_patterns:
 
         st.divider()
         _render_triangle_regression_block()
+
+        st.divider()
+        _render_level_breakout_block("BEAR", "🚀 Level Break Out (Support Breakdown) — 1D",
+                                     "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
 
     # ----------------------------------------------- Structural Patterns ----
     with tab_structural:

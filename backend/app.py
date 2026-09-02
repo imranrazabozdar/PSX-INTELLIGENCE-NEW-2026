@@ -192,6 +192,7 @@ from morning_star_detector import MorningStarDetector as _MorningStarDetector
 from macd_ema_detector import MACDEMADetector as _MACDEMADetector
 import macd_ema_detector as _macd_ema_detector_module
 import triangle_regression_detector as _triangle_reg
+import level_breakout_detector as _level_breakout
 from patterns.advanced_pattern_adapter import scan_symbol as _scan_advanced_patterns
 from patterns.cup_handle_adapter import scan_symbol as _scan_cup_handle
 from patterns.ascending_triangle_adapter import scan_symbol as _scan_ascending_triangle
@@ -3502,6 +3503,52 @@ def patterns_triangle_regression_scan(request:Request, force:bool=False):
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("triangle_regression_scan")
+    return out
+
+
+def _run_level_breakout_scan():
+    """Market-wide Level Break Out scan (backend/level_breakout_detector.py)
+    -- horizontal support/resistance breakout, both BULL and BEAR hits,
+    split by the "direction" field, classical breakout logic (buy
+    strength on a resistance breakout, sell weakness on a support
+    breakdown) -- opposite of triangle_regression_detector.py's
+    contrarian short-the-squeeze rule from a different reference
+    notebook. Needs ~57+ daily bars per symbol. See
+    backend/run_level_breakout_backtest.py for the walk-forward PSX
+    backtest of this exact rule."""
+    coverage = ohlc_coverage()
+    hits = []
+    for cov in coverage:
+        sym = cov["symbol"]
+        try:
+            rows = ohlc_rows(sym, 100)
+            if len(rows) < _level_breakout.MIN_BARS_REQUIRED:
+                continue
+            df = pd.DataFrame(rows)
+            result = _level_breakout.detect_level_breakout(df, date_col="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _level_breakout.NO_LEVEL_BREAKOUT_SIGNAL:
+            continue
+        result["symbol"] = sym
+        hits.append(result)
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
+    return {"status": "ok", "scanned": len(coverage), "hits": hits}
+
+
+@app.get("/patterns/level-breakout-scan")
+def patterns_level_breakout_scan(request:Request, force:bool=False):
+    """Market-wide Level Break Out scan -- both BULL and BEAR hits, split
+    by the "direction" field. Cached/refreshed the same way as every
+    other pattern scan; force=true (admin token required) triggers an
+    immediate re-run. See _run_level_breakout_scan's docstring for
+    parameters and backtest reference."""
+    cached = _scan_cache.latest("level_breakout_scan")
+    result, err = _serve_cached_and_refresh("level_breakout_scan", _run_level_breakout_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("level_breakout_scan")
     return out
 
 
