@@ -14,6 +14,7 @@ that have no data yet. For subsequent runs: fetches only the last 5 days
 to pick up new bars efficiently.
 """
 
+import os
 import time
 import logging
 from datetime import datetime, timedelta, timezone
