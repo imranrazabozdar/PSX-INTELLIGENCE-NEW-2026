@@ -3187,11 +3187,11 @@ def ai_edge_analysis_summary(payload: dict = Body(...)):
 
 
 @app.get("/dss/{symbol}/report")
-def dss_formal_report(symbol:str):
+async def dss_formal_report(symbol:str):
     """STEP 61: the 16-part formal stock report, built entirely from the same
     /dss/{symbol} result — a formatting layer, not a second analysis pass."""
     sym = symbol.upper()
-    d = dss(sym)
+    d = await dss(sym)
     if d.get("status") != "ok":
         return d
     return {"symbol": sym, "status": "ok", "report_markdown": _dss.format_formal_report(d)}
