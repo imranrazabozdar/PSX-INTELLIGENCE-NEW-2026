@@ -38,7 +38,7 @@ TIMEOUT = 45  # generous margin for cross-region latency to Turso (Streamlit
 _EMBED_BACKEND = os.getenv("PSX_EMBED_BACKEND", "").lower() in ("1", "true", "yes")
 _BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
 
-_BACKEND_VERSION = "v5"  # bump this to force a full backend restart on deploy
+_BACKEND_VERSION = "v6"  # bump this to force a full backend restart on deploy
 
 
 @st.cache_resource
@@ -1079,194 +1079,6 @@ def _safe_rr(entry, stop, target):
         return None
 
 
-def _render_top10_grid():
-    """Render the 2x2 Top-10 grid on the Home tab.
-    Reads from cached scan endpoints only — never
-    triggers a fresh scan. Replaces the old single
-    'Top 10 Right Now' table (removed in Change 3).
-    """
-    wl = _get("/watchlist/scan")
-    pr = _get("/patterns/bullish-engulfing-scan")
-    msr = _get("/patterns/morning-star-scan")
-    adv = _get("/patterns/advanced-scan")
-    names = _company_names()
-
-    def _select_row(sel, df):
-        rows = sel.selection.rows if sel and sel.selection else []
-        if rows:
-            sym = df.iloc[rows[0]]["Symbol"]
-            st.session_state.research_symbol = sym
-            st.toast(f"Opened {sym} in Stock Research →", icon="🎯")
-
-    def _top10_action_tint(row):
-        # CHANGE 10: tints List A/B rows off the emoji _action_badge()
-        # already encoded into the Action column (🟢 = BUY-class DSS
-        # action, 🔴 = AVOID/SHORT-class, ⚪ = WATCH/neutral) -- this is
-        # the same BUY/AVOID/WATCH distinction the task asked for, just
-        # read from the badge instead of re-matching the raw action
-        # string a second time.
-        a = str(row.get("Action", ""))
-        if "🟢" in a:
-            color = "rgba(34,197,94,0.12)"
-        elif "🔴" in a:
-            color = "rgba(240,71,91,0.12)"
-        else:
-            return [""] * len(row)
-        return [f"background-color: {color}"] * len(row)
-
-    # ---- shared source for List A + List B: watchlist_scan cache ------
-    wl_ok = isinstance(wl, dict) and wl.get("status") == "ok"
-    wl_age = wl.get("age_seconds") if wl_ok else None
-    wl_rows = []
-    if wl_ok:
-        results = wl.get("results") or {}
-        for sym in wl.get("symbols") or []:
-            r = results.get(sym) or {}
-            if r.get("status") != "ok":
-                continue
-            q = r.get("quote") or {}
-            wl_rows.append({
-                "symbol": sym, "price": q.get("price"), "chg_pct": q.get("pct"),
-                "evidence_score": r.get("evidence_score"),
-                "grade": r.get("confidence_grade"), "action": r.get("final_action"),
-            })
-
-    col1, col2 = st.columns(2)
-
-    # ---- LIST A: Top 10 by Technical Indicators ------------------------
-    with col1:
-        with st.container(border=True):
-            st.markdown("**📈 Top 10 by Technical Indicators**")
-            st.caption("Ranked by DSS evidence score · updates every 30 min")
-            if wl_age is not None:
-                st.caption(f"Updated {int(wl_age // 60)} min ago")
-            if not wl_rows:
-                st.caption("No data — refresh scan to populate")
-            else:
-                a_sorted = sorted(
-                    wl_rows, key=lambda r: (r["evidence_score"] is None, -(r["evidence_score"] or 0)))[:10]
-                a_df = pd.DataFrame([{
-                    "Rank": _rank_label(i), "Symbol": r["symbol"],
-                    "Company": names.get(r["symbol"], ""), "Score": r["evidence_score"],
-                    "Grade": _grade_badge(r["grade"]), "Action": _action_badge(r["action"]),
-                } for i, r in enumerate(a_sorted)])
-                a_sel = st.dataframe(
-                    a_df.style.apply(_top10_action_tint, axis=1), use_container_width=True, hide_index=True,
-                    on_select="rerun", selection_mode="single-row", key="top10_technical_table",
-                    column_config={"Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f")})
-                _select_row(a_sel, a_df)
-
-    # ---- LIST B: Top 10 by Price Momentum -------------------------------
-    with col2:
-        with st.container(border=True):
-            st.markdown("**📈 Top 10 by Price Momentum**")
-            st.caption("Ranked by today's % change")
-            if wl_age is not None:
-                st.caption(f"Updated {int(wl_age // 60)} min ago")
-            if not wl_rows:
-                st.caption("No data — refresh scan to populate")
-            else:
-                b_sorted = sorted(
-                    wl_rows, key=lambda r: (r["chg_pct"] is None, -(r["chg_pct"] or 0)))[:10]
-                b_df = pd.DataFrame([{
-                    "Rank": _rank_label(i), "Symbol": r["symbol"], "Chg %": r["chg_pct"],
-                    "Price": r["price"], "Action": _action_badge(r["action"]),
-                } for i, r in enumerate(b_sorted)])
-                b_sel = st.dataframe(
-                    b_df.style.apply(_top10_action_tint, axis=1), use_container_width=True, hide_index=True,
-                    on_select="rerun", selection_mode="single-row", key="top10_momentum_table",
-                    column_config={
-                        "Chg %": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Price": st.column_config.NumberColumn(format="%.2f"),
-                    })
-                _select_row(b_sel, b_df)
-
-    col3, col4 = st.columns(2)
-
-    # ---- LIST C: Top 10 Candlestick Signals ------------------------------
-    with col3:
-        with st.container(border=True):
-            st.markdown("**🕯️ Top 10 Candlestick Signals**")
-            st.caption("Bullish Engulfing + Morning Star · newest first")
-            pr_ok = isinstance(pr, dict) and pr.get("status") == "ok"
-            msr_ok = isinstance(msr, dict) and msr.get("status") == "ok"
-            c_rows = []
-            if pr_ok:
-                for h in pr.get("hits") or []:
-                    # normalize pattern_date -> signal_date (frontend-only merge key)
-                    c_rows.append({"symbol": h.get("symbol"), "pattern": "Bull Eng",
-                                   "direction": "▲ BULL", "signal_date": h.get("pattern_date")})
-            if msr_ok:
-                for h in msr.get("hits") or []:
-                    # normalize date -> signal_date (frontend-only merge key)
-                    c_rows.append({"symbol": h.get("symbol"), "pattern": "Morn ★",
-                                   "direction": "▲ BULL", "signal_date": h.get("date")})
-            fresh_ages = [x.get("_cache_age_seconds") for x, ok in ((pr, pr_ok), (msr, msr_ok))
-                         if ok and x.get("_cache_age_seconds") is not None]
-            if fresh_ages:
-                st.caption(f"Updated {int(min(fresh_ages) // 60)} min ago")
-            if not c_rows:
-                _c_scanned = sum(x.get("scanned", 0) for x, ok in ((pr, pr_ok), (msr, msr_ok)) if ok)
-                if _c_scanned > 0:
-                    st.caption(f"No signals detected across {_c_scanned} stocks")
-                else:
-                    st.caption("No data — refresh scan to populate")
-            else:
-                c_sorted = sorted(c_rows, key=lambda r: r["signal_date"] or "", reverse=True)[:10]
-                c_df = pd.DataFrame([{
-                    "Rank": _rank_label(i), "Symbol": r["symbol"],
-                    "Company": names.get(r["symbol"], ""), "Pattern": r["pattern"],
-                    "Direction": r["direction"], "Date": r["signal_date"] or "—",
-                } for i, r in enumerate(c_sorted)])
-
-                def _c_row_color(row):
-                    color = "rgba(34, 197, 94, 0.16)" if "BULL" in row["Direction"] else "rgba(240, 71, 91, 0.16)"
-                    return [f"background-color: {color}"] * len(row)
-
-                c_sel = st.dataframe(
-                    c_df.style.apply(_c_row_color, axis=1), use_container_width=True, hide_index=True,
-                    on_select="rerun", selection_mode="single-row", key="top10_candlestick_table")
-                _select_row(c_sel, c_df)
-
-    # ---- LIST D: Top 10 Chart Pattern Signals ----------------------------
-    with col4:
-        with st.container(border=True):
-            st.markdown("**📐 Top 10 Chart Pattern Signals**")
-            st.caption("IHS + Double Bottom · ranked by confidence")
-            adv_ok = isinstance(adv, dict) and adv.get("status") == "ok"
-            if adv_ok and adv.get("_cache_age_seconds") is not None:
-                st.caption(f"Updated {int(adv['_cache_age_seconds'] // 60)} min ago")
-            d_hits = (adv.get("hits") or []) if adv_ok else []
-            if not d_hits:
-                _d_scanned = adv.get("scanned", 0) if adv_ok else 0
-                if _d_scanned > 0:
-                    st.caption(f"No signals detected across {_d_scanned} stocks")
-                else:
-                    st.caption("No data — refresh scan to populate")
-            else:
-                d_sorted = sorted(
-                    d_hits, key=lambda h: (h.get("confidence_score") is None, -(h.get("confidence_score") or 0)))[:10]
-                d_df = pd.DataFrame([{
-                    "Rank": _rank_label(i), "Symbol": h.get("symbol"),
-                    "Company": names.get(h.get("symbol"), ""), "Phase": h.get("pattern_type"),
-                    "Score": h.get("confidence_score"), "Date": h.get("signal_date") or "—",
-                } for i, h in enumerate(d_sorted)])
-                # Always BUY-equivalent: advanced_pattern_scan has no
-                # geometry-only/failed tier (same fact the Patterns tab's
-                # own Chart Patterns table relies on for its "Action" ==
-                # "BUY SIGNAL" always) -- so this list tints every row
-                # green rather than re-deriving a direction that isn't
-                # present in these columns.
-                def _d_row_tint(row):
-                    return ["background-color: rgba(34,197,94,0.12)"] * len(row)
-
-                d_sel = st.dataframe(
-                    d_df.style.apply(_d_row_tint, axis=1), use_container_width=True, hide_index=True,
-                    on_select="rerun", selection_mode="single-row", key="top10_chartpattern_table",
-                    column_config={"Score": st.column_config.ProgressColumn(min_value=0.0, max_value=1.0, format="%.2f")})
-                _select_row(d_sel, d_df)
-
-
 # ---------------------------------------------------------------- Home ----
 with tab_home:
     lm = _get("/live-market")
@@ -1295,17 +1107,9 @@ with tab_home:
             )
         st.markdown(f'<div class="psx-idx-row">{"".join(pills)}</div>', unsafe_allow_html=True)
 
-    # CHANGE 8: market breadth stats. Both calls below duplicate fetches
-    # made later in _render_top10_grid()/the signal feed -- unavoidable
-    # given these cards must render ABOVE that code, and _get() has no
-    # caching layer of its own. Both endpoints are cache-reads on the
-    # backend (no fresh scan triggered), so this is an extra round-trip,
-    # not an extra scan.
-    # Duplicate call — asr is also fetched
-    # inside _feed_col below. Both read from
-    # cache (no fresh scan). Refactor by
-    # hoisting shared fetches to module scope
-    # if Home tab render time becomes a concern.
+    # CHANGE 8: market breadth stats. _bs_asr is also fetched again inside
+    # _feed_col below -- both are cache-reads on the backend (no fresh scan
+    # triggered), so this is an extra round-trip, not an extra scan.
     _bs_asr = _get("/patterns/all-scan")
     _bs_asr_ok = isinstance(_bs_asr, dict) and _bs_asr.get("status") == "ok"
     _bs_hits = (_bs_asr.get("hits") or []) if _bs_asr_ok else []
@@ -1314,9 +1118,6 @@ with tab_home:
     _bs_rr_vals = [h["risk_reward_measured"] for h in _bs_hits
                    if h.get("risk_reward_measured") is not None]
 
-    # Duplicate call — watchlist data is also
-    # fetched inside _render_top10_grid().
-    # Same cache-read-only caveat as above.
     _bs_wl = _get("/watchlist/scan")
     _bs_wl_ok = isinstance(_bs_wl, dict) and _bs_wl.get("status") == "ok"
     _bs_adv = _bs_dec = 0
@@ -1346,8 +1147,6 @@ with tab_home:
         st.metric("Avg R:R",
                    f"{(sum(_bs_rr_vals) / len(_bs_rr_vals)):.1f}×" if _bs_rr_vals else "—",
                    delta="Today's signals" if _bs_rr_vals else None, delta_color="off")
-
-    _render_top10_grid()
 
     _feed_col, _news_col = st.columns([2, 1])
     with _feed_col:
