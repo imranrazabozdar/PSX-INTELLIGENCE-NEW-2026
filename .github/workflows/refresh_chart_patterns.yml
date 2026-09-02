@@ -1,4 +1,4 @@
-name: Refresh chart patterns (daily after market close)
+name: Refresh pattern scans (daily after market close)
 
 on:
   schedule:
@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: 🔍 Detect chart patterns (latest bar only)
+      - name: 🔍 Detect all pattern families (latest bar only)
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -39,10 +39,12 @@ jobs:
         if: always()
         run: |
           echo ""
-          echo "✅ Chart pattern refresh workflow complete"
+          echo "✅ Pattern scan refresh workflow complete"
           echo ""
-          echo "Key reminders:"
-          echo "  • Only patterns with TODAY's breakout are shown"
-          echo "  • Patterns use 200+ days of historical context to detect"
-          echo "  • But ONLY TODAY's confirmation/breakout is signaled"
-          echo "  • This keeps intraday traders focused on fresh signals"
+          echo "Scans run:"
+          echo "  • Bullish Engulfing (candlestick)"
+          echo "  • Morning Star (candlestick)"
+          echo "  • Inverse H&S / Double Bottom (chart patterns)"
+          echo ""
+          echo "Results saved to analysis_cache table in Turso"
+          echo "so the Streamlit app can display them immediately."

@@ -1181,7 +1181,11 @@ def _render_top10_grid():
             if fresh_ages:
                 st.caption(f"Updated {int(min(fresh_ages) // 60)} min ago")
             if not c_rows:
-                st.caption("No data — refresh scan to populate")
+                _c_scanned = sum(x.get("scanned", 0) for x, ok in ((pr, pr_ok), (msr, msr_ok)) if ok)
+                if _c_scanned > 0:
+                    st.caption(f"No signals detected across {_c_scanned} stocks")
+                else:
+                    st.caption("No data — refresh scan to populate")
             else:
                 c_sorted = sorted(c_rows, key=lambda r: r["signal_date"] or "", reverse=True)[:10]
                 c_df = pd.DataFrame([{
@@ -1209,7 +1213,11 @@ def _render_top10_grid():
                 st.caption(f"Updated {int(adv['_cache_age_seconds'] // 60)} min ago")
             d_hits = (adv.get("hits") or []) if adv_ok else []
             if not d_hits:
-                st.caption("No data — refresh scan to populate")
+                _d_scanned = adv.get("scanned", 0) if adv_ok else 0
+                if _d_scanned > 0:
+                    st.caption(f"No signals detected across {_d_scanned} stocks")
+                else:
+                    st.caption("No data — refresh scan to populate")
             else:
                 d_sorted = sorted(
                     d_hits, key=lambda h: (h.get("confidence_score") is None, -(h.get("confidence_score") or 0)))[:10]
