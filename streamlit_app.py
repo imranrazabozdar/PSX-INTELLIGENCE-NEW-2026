@@ -1607,29 +1607,54 @@ with tab_intraday:
         else:
             _filtered_alerts = _alerts
 
+        _BULL_ALERTS = {"AD_BULL_DIVERGENCE", "EXTREME_VOLUME", "HIGH_VOLUME", "RANGE_HIGH_VOLUME"}
+        _ALERT_TYPE_NAMES = {
+            "AD_BULL_DIVERGENCE": "A/D Divergence",
+            "AD_BEAR_DIVERGENCE": "A/D Divergence",
+            "EXTREME_VOLUME": "Extreme Volume",
+            "HIGH_VOLUME": "High Volume",
+            "RANGE_HIGH_VOLUME": "Range Breakout",
+            "RANGE_LOW_VOLUME": "Range Breakdown",
+        }
+
         if not _filtered_alerts:
             st.info("No anomalies detected this session — volume and price monitoring active during market hours")
         else:
             _ia_df = pd.DataFrame(_filtered_alerts)
+            _ia_df["Side"] = _ia_df["alert_type"].apply(
+                lambda t: "▲ BULL" if t in _BULL_ALERTS else "▼ BEAR")
+            _ia_df["_sort"] = _ia_df["alert_type"].apply(
+                lambda t: 0 if t not in _BULL_ALERTS else 1)
+            _ia_df = _ia_df.sort_values(["_sort", "triggered_at"], ascending=[True, False])
 
             _ia_df["Time"] = pd.to_datetime(_ia_df["triggered_at"]).dt.strftime("%H:%M")
-            _ia_df["Alert"] = _ia_df["alert_type"].map(_ALERT_LABELS).fillna(_ia_df["alert_type"])
+            _ia_df["Alert"] = _ia_df["alert_type"].map(_ALERT_TYPE_NAMES).fillna(_ia_df["alert_type"])
             _ia_df["Price"] = pd.to_numeric(_ia_df["price_at_trigger"], errors="coerce")
             _vr_raw = pd.to_numeric(_ia_df["volume_ratio"], errors="coerce")
-            _ia_df["Vol Ratio"] = _vr_raw.apply(lambda v: f"{v:.1f}x" if pd.notna(v) else "—")
-            _ia_df["Range %"] = (_ia_df["range_position"].apply(
+            _has_vol_data = _vr_raw.notna().any()
+            _ia_df["Vol ×Avg"] = _vr_raw.apply(lambda v: f"{v:.1f}x" if pd.notna(v) else "")
+            _ia_df["Day Pos"] = (_ia_df["range_position"].apply(
                 lambda v: round(v * 100) if v and v <= 1 else (round(v) if v else None)
             ))
 
-            _ia_display = _ia_df[["symbol", "Alert", "Price", "Vol Ratio", "Range %", "Time"]].rename(
-                columns={"symbol": "Symbol"})
+            _display_cols = ["symbol", "Side", "Alert", "Price", "Time"]
+            if _has_vol_data:
+                _display_cols.insert(4, "Vol ×Avg")
+            _display_cols.append("Day Pos")
+            _ia_display = _ia_df[_display_cols].rename(columns={"symbol": "Symbol"})
 
             st.caption(
-                "⚠️ These flags highlight unusual session activity for manual review. "
-                "High volume alone does not predict direction — PSX data shows volume "
-                "surges are followed by down moves as often as up moves. Always confirm "
-                "with daily pattern analysis before acting. **Click a row to inspect the symbol below.**"
+                "⚠️ Flags highlight unusual session activity. **▲ BULL** = bullish divergence/breakout, "
+                "**▼ BEAR** = bearish divergence/breakdown. Day Pos = where price sits in today's "
+                "high-low range (0% = at low, 100% = at high). **Click a row to inspect below.**"
             )
+
+            _col_cfg = {
+                "Price": st.column_config.NumberColumn("Price", format="Rs %.2f"),
+                "Day Pos": st.column_config.ProgressColumn(
+                    "Day Pos", help="Price position in today's high-low range",
+                    min_value=0, max_value=100, format="%d%%"),
+            }
 
             _sel_event = st.dataframe(
                 _ia_display,
@@ -1637,10 +1662,7 @@ with tab_intraday:
                 selection_mode="single-row",
                 on_select="rerun",
                 key="anomaly_table_selection",
-                column_config={
-                    "Price": st.column_config.NumberColumn("Price", format="Rs %.2f"),
-                    "Range %": st.column_config.ProgressColumn("Range", min_value=0, max_value=100, format="%d%%"),
-                },
+                column_config=_col_cfg,
             )
 
             _clicked_symbol = None
@@ -1713,19 +1735,29 @@ with tab_intraday:
             st.markdown(f"**{_selected}** — {len(_sym_alerts)} alert(s) today{_cur_price_str}")
 
             _sym_detail_df = pd.DataFrame(_sym_alerts)
-            _sym_detail_df["Alert"] = _sym_detail_df["alert_type"].map(_ALERT_LABELS).fillna(_sym_detail_df["alert_type"])
+            _sym_detail_df["Side"] = _sym_detail_df["alert_type"].apply(
+                lambda t: "▲ BULL" if t in _BULL_ALERTS else "▼ BEAR")
+            _sym_detail_df["Alert"] = _sym_detail_df["alert_type"].map(
+                _ALERT_TYPE_NAMES).fillna(_sym_detail_df["alert_type"])
             _sym_detail_df["Time"] = pd.to_datetime(_sym_detail_df["triggered_at"]).dt.strftime("%H:%M")
             _sym_detail_df["Price"] = pd.to_numeric(_sym_detail_df["price_at_trigger"], errors="coerce")
             _svr_raw = pd.to_numeric(_sym_detail_df["volume_ratio"], errors="coerce")
-            _sym_detail_df["Vol Ratio"] = _svr_raw.apply(lambda v: f"{v:.1f}x" if pd.notna(v) else "—")
-            _sym_detail_df["Range %"] = _sym_detail_df["range_position"].apply(
+            _sym_has_vol = _svr_raw.notna().any()
+            _sym_detail_df["Vol ×Avg"] = _svr_raw.apply(lambda v: f"{v:.1f}x" if pd.notna(v) else "")
+            _sym_detail_df["Day Pos"] = _sym_detail_df["range_position"].apply(
                 lambda v: round(v * 100) if v and v <= 1 else (round(v) if v else None))
+            _sd_cols = ["Side", "Alert", "Time", "Price"]
+            if _sym_has_vol:
+                _sd_cols.append("Vol ×Avg")
+            _sd_cols.append("Day Pos")
             st.dataframe(
-                _sym_detail_df[["Alert", "Time", "Price", "Vol Ratio", "Range %"]],
+                _sym_detail_df[_sd_cols],
                 use_container_width=True, hide_index=True,
                 column_config={
                     "Price": st.column_config.NumberColumn("Price", format="Rs %.2f"),
-                    "Range %": st.column_config.ProgressColumn("Range", min_value=0, max_value=100, format="%d%%"),
+                    "Day Pos": st.column_config.ProgressColumn(
+                        "Day Pos", help="Price position in today's high-low range",
+                        min_value=0, max_value=100, format="%d%%"),
                 },
             )
 
