@@ -4446,8 +4446,12 @@ async def _market_watch_refresh_loop():
 
                 if rows and _is_trading_hours():
                     await asyncio.to_thread(_compute_intraday_signals, rows)
+                elif not rows:
+                    print("[scan_cache] market_watch proactive refresh returned empty rows")
             except Exception as e:
+                import traceback
                 print(f"[scan_cache] market_watch proactive refresh failed: {type(e).__name__}: {e}")
+                traceback.print_exc()
         await asyncio.sleep(MW_REFRESH_INTERVAL)
 
 
@@ -4460,10 +4464,9 @@ _intraday_bars_last_cleanup = 0.0
 
 def _collect_intraday_bar(rows):
     """One INSERT OR IGNORE per symbol in this market_watch() snapshot,
-    keyed (symbol, bar_time) with bar_time truncated to the minute --
-    running this every INTRADAY_BARS_COLLECT_INTERVAL naturally produces
-    at most one row per symbol per minute; OR IGNORE is a no-op guard,
-    not the primary dedup mechanism."""
+    keyed (symbol, bar_time) with bar_time truncated to the minute.
+    Uses batch_query on Turso to send all inserts in ONE HTTP request
+    instead of 400+ individual round-trips."""
     if not rows:
         return
     bar_time = datetime.now(PSX_TZ).strftime("%Y-%m-%d %H:%M:00")
@@ -4471,11 +4474,21 @@ def _collect_intraday_bar(rows):
              r.get("high"), r.get("low")) for r in rows if r.get("symbol")]
     if not good:
         return
-    with db() as c:
-        c.executemany(
-            "INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) "
-            "VALUES(?,?,?,?,?,?)", good)
-        c.commit()
+    conn = db()
+    if turso_db.USING_TURSO and hasattr(conn, 'batch_query'):
+        sql = ("INSERT OR IGNORE INTO intraday_bars"
+               "(symbol,bar_time,price,volume_cumulative,day_high,day_low) "
+               "VALUES(?,?,?,?,?,?)")
+        CHUNK = 100
+        for i in range(0, len(good), CHUNK):
+            conn.batch_query([(sql, params) for params in good[i:i + CHUNK]])
+    else:
+        with conn as c:
+            c.executemany(
+                "INSERT OR IGNORE INTO intraday_bars"
+                "(symbol,bar_time,price,volume_cumulative,day_high,day_low) "
+                "VALUES(?,?,?,?,?,?)", good)
+            c.commit()
 
 
 def _cleanup_intraday_bars_if_due():
@@ -4536,10 +4549,15 @@ async def _intraday_bars_collector_loop():
         if _is_trading_hours():
             try:
                 rows = await asyncio.to_thread(market_watch)
-                await asyncio.to_thread(_collect_intraday_bar, rows)
-                await asyncio.to_thread(_cleanup_intraday_bars_if_due)
+                if rows:
+                    await asyncio.to_thread(_collect_intraday_bar, rows)
+                    await asyncio.to_thread(_cleanup_intraday_bars_if_due)
+                else:
+                    print("[scan_cache] intraday_bars: market_watch() returned empty")
             except Exception as e:
+                import traceback
                 print(f"[scan_cache] intraday_bars collector failed: {type(e).__name__}: {e}")
+                traceback.print_exc()
         await asyncio.sleep(INTRADAY_BARS_COLLECT_INTERVAL)
 
 
