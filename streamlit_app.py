@@ -1442,6 +1442,92 @@ with tab_home:
 
     _render_watchlist_section("home", show_token_input=False)
 
+    st.markdown('<div class="psx-section-eyebrow">MULTI-INDICATOR CONFLUENCE</div>'
+                '<div class="psx-section-title">🎯 Confluence Signals — 1D</div>', unsafe_allow_html=True)
+    st.caption("Every pattern-family scan's latest-bar hits, merged into ONE bullish list and ONE "
+               "bearish list — ranked by how many indicators agree, most first. A stock is never "
+               "left off for having only 1 agreeing indicator; a stock with an equal bull/bear vote "
+               "count (a genuine split) is left off both lists rather than forced onto one.")
+    _conf_scope_label = st.radio("Scope", ["Watchlist (89 symbols)", "Overall Market"],
+                                  horizontal=True, key="confluence_scope", label_visibility="collapsed")
+    _conf_scope = "watchlist" if _conf_scope_label.startswith("Watchlist") else "market"
+    _confluence = _get("/patterns/confluence", scope=_conf_scope)
+    if not _confluence or _confluence.get("status") != "ok":
+        st.info("Confluence signals aren't available yet — this needs at least one completed "
+                "daily pattern-scan refresh.")
+    else:
+        _fam_avail = _confluence.get("families_available", 0)
+        _fam_total = _confluence.get("families_total", 8)
+        _age = _confluence.get("oldest_family_age_seconds")
+        _age_str = f"{int(_age // 60)} min ago" if isinstance(_age, (int, float)) else "—"
+        st.caption(f"📦 {_fam_avail} of {_fam_total} indicators contributing · oldest contributing "
+                   f"scan last refreshed {_age_str}"
+                   f"{' — not every indicator has run yet' if _fam_avail < _fam_total else ''}.")
+
+        _names_conf = _company_names()
+        _CONF_ROW_CAP = 50  # mobile-render safety cap, same rationale as the Patterns tab's
+                             # MOBILE_ROW_CAP (not reused directly -- that helper is defined later
+                             # in the script, inside the Patterns tab's own block, so isn't in
+                             # scope yet when the Home tab's code runs earlier in the same script)
+
+        def _confluence_rows(entries):
+            return [{
+                "symbol": e["symbol"], "company": _names_conf.get(e["symbol"], ""),
+                "agreement": f"{e['agree']} of {_fam_total}",
+                "agreeing indicators": ", ".join(e["indicators"]),
+                "disagreeing": ", ".join(e["opposing_indicators"]) if e["opposing_indicators"] else "—",
+            } for e in entries]
+
+        def _render_confluence_table(entries, bg_color, key):
+            df = pd.DataFrame(_confluence_rows(entries))
+            total = len(df)
+            if total > _CONF_ROW_CAP:
+                df = df.head(_CONF_ROW_CAP).reset_index(drop=True)
+            styled = df.style.apply(lambda row: [f"background-color: {bg_color}"] * len(row), axis=1)
+            sel = st.dataframe(
+                styled, use_container_width=True, hide_index=True,
+                on_select="rerun", selection_mode="single-row", key=key,
+                column_config={
+                    "symbol": "Symbol", "company": "Company", "agreement": "Agreement",
+                    "agreeing indicators": "Agreeing Indicators", "disagreeing": "Disagreeing",
+                })
+            if total > _CONF_ROW_CAP:
+                st.caption(f"Showing top {_CONF_ROW_CAP} of {total} by agreement")
+            srows = sel.selection.rows if sel and sel.selection else []
+            if srows:
+                st.session_state.research_symbol = df.iloc[srows[0]]["symbol"]
+                st.toast(f"Opened {df.iloc[srows[0]]['symbol']} in Stock Research →", icon="🎯")
+
+        _conf_col_bull, _conf_col_bear = st.columns(2)
+        with _conf_col_bull:
+            st.markdown("#### 🟢 Bullish")
+            _bull_entries = _confluence.get("bullish") or []
+            if not _bull_entries:
+                st.info("No symbol currently has a net-bullish vote.")
+            else:
+                _render_confluence_table(_bull_entries, "rgba(40, 167, 69, 0.16)",
+                                          f"confluence_bull_{_conf_scope}")
+        with _conf_col_bear:
+            st.markdown("#### 🔴 Bearish")
+            _bear_entries = _confluence.get("bearish") or []
+            if not _bear_entries:
+                st.info("No symbol currently has a net-bearish vote.")
+            else:
+                _render_confluence_table(_bear_entries, "rgba(220, 53, 69, 0.20)",
+                                          f"confluence_bear_{_conf_scope}")
+
+        with st.expander("📖 About Confluence Signals"):
+            st.caption("Merges 8 pattern-family scans: Bullish Engulfing, MHarris 5-Bar Reversal, "
+                       "MACD+EMA200 Trend Resumption, Triangle Squeeze, Level Break Out, Morning "
+                       "Star, Advanced (IHS/Double Bottom), and GP-Evolved Formula. Agreement is a "
+                       "raw vote COUNT, not weighted by how each indicator actually backtested on "
+                       "PSX — several of these are net losers at their own default settings (see "
+                       "each pattern's own expander in the Patterns tab for its real walk-forward "
+                       "numbers). A high agreement count means several indicators independently "
+                       "point the same way TODAY, not that the combination has itself been "
+                       "backtested — treat it as a starting point for your own research, not a "
+                       "verified edge.")
+
     st.markdown('<div class="psx-section-eyebrow">MARKET COMMAND CENTER</div>'
                 '<div class="psx-section-title">Regime & Sector Leadership</div>',
                 unsafe_allow_html=True)

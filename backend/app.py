@@ -194,6 +194,7 @@ import macd_ema_detector as _macd_ema_detector_module
 import triangle_regression_detector as _triangle_reg
 import level_breakout_detector as _level_breakout
 import gp_evolved_detector as _gp_evolved
+import confluence_engine as _confluence
 from patterns.advanced_pattern_adapter import scan_symbol as _scan_advanced_patterns
 from patterns.cup_handle_adapter import scan_symbol as _scan_cup_handle
 from patterns.ascending_triangle_adapter import scan_symbol as _scan_ascending_triangle
@@ -3640,6 +3641,31 @@ def patterns_gp_evolved_scan(request: Request, force: bool = False):
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("gp_evolved_scan")
     return out
+
+
+@app.get("/patterns/confluence")
+def patterns_confluence(scope: str = "market"):
+    """One BULLISH list and one BEARISH list, ranked by how many of the 8
+    pattern-family scans (see confluence_engine.py's module docstring for
+    the exact list) currently agree on each symbol -- built so a reader
+    doesn't have to cross-check 8 separate detector tabs. No stock is
+    excluded for having only 1 agreeing indicator; a symbol with an equal
+    bull/bear vote count (a genuine split) is excluded from BOTH lists.
+
+    scope="watchlist" restricts to WATCHLIST_SYMBOLS (89 symbols);
+    scope="market" (default) covers every symbol any family scanned.
+    Reads only already-cached scan results (one Turso round trip via
+    scan_cache_engine.latest_many) -- makes no live detector calls, so
+    this is only ever as fresh as the last daily refresh."""
+    cache_keys = [k for k, _ in _confluence.FAMILIES]
+    scans = _scan_cache.latest_many(cache_keys)
+    symbol_filter = WATCHLIST_SYMBOLS if scope == "watchlist" else None
+    result = _confluence.build_confluence(scans, symbol_filter=symbol_filter)
+    result["status"] = "ok"
+    result["scope"] = scope
+    ages = [s["_cache_age_seconds"] for s in scans.values() if s and "_cache_age_seconds" in s]
+    result["oldest_family_age_seconds"] = max(ages) if ages else None
+    return result
 
 
 _morning_star_detector = _MorningStarDetector()
