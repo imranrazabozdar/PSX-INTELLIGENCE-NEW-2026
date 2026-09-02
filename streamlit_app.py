@@ -47,32 +47,22 @@ def _ensure_embedded_backend(_version=None):
     process. Bump _BACKEND_VERSION to force cache invalidation on deploy."""
     if not _EMBED_BACKEND:
         return False
+
+    # If backend is already healthy (previous hot-reload left it running), skip.
+    try:
+        if requests.get("http://127.0.0.1:8000/health", timeout=2).ok:
+            print("[embed] Backend already running on :8000, reusing")
+            return True
+    except Exception:
+        pass
+
     os.environ.setdefault("PSX_DB", os.path.join(_BACKEND_DIR, "psx_v2.db"))
     if _BACKEND_DIR not in sys.path:
         sys.path.insert(0, _BACKEND_DIR)
 
-    # Kill any old uvicorn still holding port 8000
-    import socket
-    try:
-        _test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        _test_sock.settimeout(1)
-        _result = _test_sock.connect_ex(("127.0.0.1", 8000))
-        _test_sock.close()
-        if _result == 0:
-            # Port is in use — old backend still running. Force-kill it.
-            import signal
-            for _t in threading.enumerate():
-                if _t.daemon and _t.name != threading.current_thread().name:
-                    if hasattr(_t, '_target') and _t._target and 'uvicorn' in str(_t._target):
-                        _t._stop()
-            # Give it a moment to release the port
-            time.sleep(1)
-    except Exception:
-        pass
-
     import uvicorn
     import importlib
-    # Force-reload ALL backend modules so new code takes effect
+
     _backend_modules = [m for m in sys.modules if m == "app" or m.startswith("app.")]
     for _m in _backend_modules:
         try:
@@ -83,11 +73,20 @@ def _ensure_embedded_backend(_version=None):
         importlib.reload(sys.modules["app"])
     import app as _backend_app
 
-    threading.Thread(
-        target=uvicorn.run,
-        kwargs={"app": _backend_app.app, "host": "127.0.0.1", "port": 8000, "log_level": "warning"},
-        daemon=True,
-    ).start()
+    cfg = uvicorn.Config(
+        app=_backend_app.app, host="127.0.0.1", port=8000, log_level="warning",
+    )
+    server = uvicorn.Server(cfg)
+    # Allow rebinding port even if old thread hasn't fully released it
+    import socket
+    _orig_bind = socket.socket.bind
+    def _reuse_bind(self, addr):
+        self.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return _orig_bind(self, addr)
+    socket.socket.bind = _reuse_bind
+    threading.Thread(target=server.run, daemon=True).start()
+    socket.socket.bind = _orig_bind
+
     for _ in range(30):
         try:
             if requests.get("http://127.0.0.1:8000/health", timeout=1).ok:
@@ -745,11 +744,27 @@ def _session_cache(key, fetcher, ttl=300):
 
 
 def _backend_up():
-    try:
-        r = requests.get(f"{BACKEND}/health", timeout=5)
-        return r.ok
-    except Exception:
-        return False
+    for _attempt in range(3):
+        try:
+            r = requests.get(f"{BACKEND}/health", timeout=5)
+            if r.ok:
+                return True
+        except Exception:
+            pass
+        if _EMBED_BACKEND and _attempt < 2:
+            time.sleep(2)
+    # Last resort: if embedded backend was supposed to start but didn't,
+    # try starting it now (cache_resource may have returned True from a
+    # previous hot-reload where the thread was still alive but has since died)
+    if _EMBED_BACKEND:
+        try:
+            _ensure_embedded_backend.clear()
+            _ensure_embedded_backend(_version=_BACKEND_VERSION)
+            r = requests.get(f"{BACKEND}/health", timeout=5)
+            return r.ok
+        except Exception:
+            return False
+    return False
 
 
 @st.cache_data(ttl=6 * 3600)
