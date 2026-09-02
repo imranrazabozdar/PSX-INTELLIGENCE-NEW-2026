@@ -50,6 +50,13 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_signal_backtest.py
 
+      - name: 📈 Backtest daily pattern accuracy
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_daily_pattern_backtest.py
+
       - name: 📊 Summary
         if: always()
         run: |
@@ -60,3 +67,4 @@ jobs:
           echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB)"
           echo "        → results saved to analysis_cache in Turso"
           echo "Step 3: Signal accuracy backtest (intraday alerts vs forward returns)"
+          echo "Step 4: Daily pattern backtest (walk-forward candlestick/structural pattern accuracy)"
