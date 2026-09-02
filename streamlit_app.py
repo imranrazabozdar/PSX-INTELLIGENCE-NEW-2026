@@ -3081,13 +3081,16 @@ with tab_patterns:
             st.caption("Exit is a pure ATR(14) trailing stop (atr_mult=2.0, the strategy's own "
                        "stated default, unoptimized) — there is no fixed take-profit target by "
                        "design, so \"Target\" always reads Trailing.")
-            st.caption("⚠️ Backtest pending sufficient PSX history — most symbols don't yet have "
-                       "the ~217+ days of daily bars EMA200 requires while the full-market OHLC "
-                       "backfill is still loading. See backend/run_macdema_backtest.py; this "
-                       "caption will be updated with real win-rate/return numbers once a "
-                       "meaningful sample exists, the same way every other pattern on this page "
-                       "states its backtest result plainly rather than implying one that hasn't "
-                       "been measured yet.")
+            st.caption("⚠️ Backtested walk-forward on PSX (180 symbols, 1,299 resolved trades) at "
+                       "the strategy's own stated default (ATR trailing stop, atr_mult=2.0, "
+                       "unoptimized): **39.3% win rate, -0.71% average return per trade, 0.78 "
+                       "profit factor overall** — this loses money at these defaults. Split by "
+                       "side: bullish signals are the weaker half (35.3% win rate, -1.31% avg "
+                       "return, PF 0.62); bearish signals are close to breakeven (43.6% win rate, "
+                       "-0.08% avg return, PF 0.97) but still net negative. Coverage is 180/~750 "
+                       "symbols so far (full-market backfill still loading) and will be re-run "
+                       "periodically as coverage grows — treat this as a documented, tracked "
+                       "signal, not a validated PSX edge.")
 
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
