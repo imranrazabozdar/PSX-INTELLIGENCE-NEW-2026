@@ -189,6 +189,8 @@ import price_action_engine as _pae
 import audit_engine as _audit
 import patterns_engine as _patterns
 from morning_star_detector import MorningStarDetector as _MorningStarDetector
+from macd_ema_detector import MACDEMADetector as _MACDEMADetector
+import macd_ema_detector as _macd_ema_detector_module
 from patterns.advanced_pattern_adapter import scan_symbol as _scan_advanced_patterns
 from patterns.cup_handle_adapter import scan_symbol as _scan_cup_handle
 from patterns.ascending_triangle_adapter import scan_symbol as _scan_ascending_triangle
@@ -3401,6 +3403,57 @@ def patterns_mharris_scan(request:Request, force:bool=False):
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("mharris_scan")
+    return out
+
+
+_macd_ema_detector = _MACDEMADetector()
+
+
+def _run_macdema_scan():
+    """Market-wide MACD+EMA200 Trend Resumption scan
+    (backend/macd_ema_detector.py) -- an EMA200 trend filter plus a MACD
+    zero-line-cross-resumption signal (buy/sell the dip within an already
+    established trend), translated from a reference systematic-trading
+    notebook. Needs ~217+ daily bars per symbol (EMA200 dominates that
+    requirement), so most symbols won't qualify until the ongoing
+    full-market OHLC backfill has grown their history far enough -- that's
+    expected, not a bug. Exit is a pure ATR trailing stop (no fixed
+    target, by design) at the strategy's own stated default (atr_mult=2.0,
+    unoptimized). See backend/run_macdema_backtest.py for the walk-forward
+    PSX backtest of this exact rule."""
+    coverage = ohlc_coverage()
+    hits = []
+    for cov in coverage:
+        sym = cov["symbol"]
+        try:
+            rows = ohlc_rows(sym, 300)
+            if len(rows) < _macd_ema_detector_module.MIN_BARS_REQUIRED:
+                continue
+            df = pd.DataFrame(rows)
+            result = _macd_ema_detector.detect_patterns(df, date_col="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _macd_ema_detector_module.NO_MACDEMA_SIGNAL:
+            continue
+        result["symbol"] = sym
+        hits.append(result)
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
+    return {"status": "ok", "scanned": len(coverage), "hits": hits}
+
+
+@app.get("/patterns/macdema-scan")
+def patterns_macdema_scan(request:Request, force:bool=False):
+    """Market-wide MACD+EMA200 Trend Resumption scan -- both BULL and BEAR
+    hits, split by the "direction" field. Cached/refreshed the same way as
+    every other pattern scan; force=true (admin token required) triggers
+    an immediate re-run. See _run_macdema_scan's docstring for parameters
+    and backtest reference."""
+    cached = _scan_cache.latest("macdema_scan")
+    result, err = _serve_cached_and_refresh("macdema_scan", _run_macdema_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("macdema_scan")
     return out
 
 

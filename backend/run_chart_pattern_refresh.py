@@ -13,6 +13,7 @@ Pattern families:
   2. Morning Star       → analysis_cache key "morning_star_scan"
   3. Advanced (IHS / Double Bottom) → analysis_cache key "advanced_pattern_scan"
   4. MHarris 5-Bar Reversal (BULL + BEAR) → analysis_cache key "mharris_scan"
+  5. MACD+EMA200 Trend Resumption (BULL + BEAR) → analysis_cache key "macdema_scan"
 
 Uses turso_db for database access — works against Turso Cloud in CI and
 local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
@@ -38,6 +39,7 @@ import turso_db
 import patterns_engine as _patterns
 from morning_star_detector import MorningStarDetector
 from advanced_pattern_adapter import scan_symbol
+import macd_ema_detector as _macdema
 
 logging.basicConfig(
     level=logging.INFO,
@@ -169,6 +171,33 @@ def run_mharris_scan(all_data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 1c. MACD+EMA200 Trend Resumption scan (BULL + BEAR, split by
+#     "direction" -- see macd_ema_detector.MACDEMADetector)
+# ---------------------------------------------------------------------------
+
+def run_macdema_scan(all_data: dict) -> dict:
+    detector = _macdema.MACDEMADetector()
+    hits = []
+    scanned = 0
+    for symbol, ohlcv in all_data.items():
+        if len(ohlcv) < _macdema.MIN_BARS_REQUIRED:
+            continue
+        scanned += 1
+        try:
+            df = pd.DataFrame(ohlcv)
+            result = detector.detect_patterns(df, date_col="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _macdema.NO_MACDEMA_SIGNAL:
+            continue
+        result["symbol"] = symbol
+        hits.append(result)
+
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
+    return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
 # 2. Morning Star scan
 # ---------------------------------------------------------------------------
 
@@ -290,7 +319,7 @@ def main():
         print("")
 
         logger.info("Loading OHLCV data for all symbols...")
-        all_data = load_all_ohlcv(lookback_days=200)
+        all_data = load_all_ohlcv(lookback_days=260)  # MACD+EMA200 needs ~217+ bars
         logger.info(f"  Loaded {len(all_data)} symbols with historical data")
         print("")
 
@@ -305,6 +334,12 @@ def main():
         mh_result = run_mharris_scan(all_data)
         logger.info(f"  Scanned {mh_result['scanned']} symbols, {len(mh_result['hits'])} hits")
         _save_to_analysis_cache("mharris_scan", mh_result)
+
+        # --- 1c. MACD+EMA200 Trend Resumption ---
+        logger.info("Running MACD+EMA200 Trend Resumption scan...")
+        me_result = run_macdema_scan(all_data)
+        logger.info(f"  Scanned {me_result['scanned']} symbols, {len(me_result['hits'])} hits")
+        _save_to_analysis_cache("macdema_scan", me_result)
 
         # --- 2. Morning Star ---
         logger.info("Running Morning Star scan...")
@@ -329,6 +364,7 @@ def main():
         logger.info(f"  Symbols loaded: {len(all_data)}")
         logger.info(f"  Bullish Engulfing: {len(be_result['hits'])} signals")
         logger.info(f"  MHarris 5-Bar Reversal: {len(mh_result['hits'])} signals")
+        logger.info(f"  MACD+EMA200 Trend Resumption: {len(me_result['hits'])} signals")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
         logger.info(f"  Advanced (IHS/DB): {len(adv_result['hits'])} signals")
 

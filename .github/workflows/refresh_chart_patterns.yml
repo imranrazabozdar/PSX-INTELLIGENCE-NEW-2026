@@ -57,6 +57,20 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_daily_pattern_backtest.py
 
+      - name: 🔁 Backtest MHarris 5-bar reversal
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_mharris_backtest.py
+
+      - name: 📈 Backtest MACD+EMA200 trend resumption
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_macdema_backtest.py
+
       - name: 📊 Summary
         if: always()
         run: |
@@ -64,7 +78,9 @@ jobs:
           echo "✅ Daily refresh workflow complete"
           echo ""
           echo "Step 1: OHLC data refresh from dps.psx.com.pk → Turso"
-          echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB)"
+          echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB, MHarris, MACD+EMA200)"
           echo "        → results saved to analysis_cache in Turso"
           echo "Step 3: Signal accuracy backtest (intraday alerts vs forward returns)"
           echo "Step 4: Daily pattern backtest (walk-forward candlestick/structural pattern accuracy)"
+          echo "Step 5: MHarris 5-bar reversal backtest"
+          echo "Step 6: MACD+EMA200 trend resumption backtest"

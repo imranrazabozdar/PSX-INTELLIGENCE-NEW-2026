@@ -3025,6 +3025,70 @@ with tab_patterns:
                        "defaults — treat this as a documented, tracked signal, not a validated "
                        "PSX edge.")
 
+    # Fetched once here for the same reason as the MHarris scan above --
+    # one endpoint returns both BULL and BEAR hits together.
+    _macdema_scan = _get("/patterns/macdema-scan", **_pat_refresh_params)
+
+    def _render_macdema_block(direction, header, action_label, row_color):
+        st.markdown('<div class="psx-section-eyebrow">TREND + MOMENTUM</div>'
+                    f'<div class="psx-section-title">{header}</div>', unsafe_allow_html=True)
+        if not _scan_status_banner(_macdema_scan, "MACD+EMA200 Trend Resumption"):
+            return
+        age = _macdema_scan.get("_cache_age_seconds")
+        age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+        running_note = " · a background refresh is running right now" if _macdema_scan.get("_background_refresh_running") else ""
+        all_hits = [h for h in (_macdema_scan.get("hits") or []) if h.get("direction") == direction]
+        hits, hidden_n = _filter_recent(all_hits, "pattern_date", f"macdema_{direction.lower()}_hist_checkbox")
+        st.caption(f"📦 Scanned {_macdema_scan.get('scanned', 0)} symbols with >= ~217 days of stored "
+                   f"daily history (EMA200 needs it) · last run {age_str}{running_note} · "
+                   f"{len(hits)} symbol(s) currently showing this signal"
+                   f"{f' ({hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if hidden_n else ''}.")
+        if not hits:
+            st.info(f"No symbol currently shows a {direction.title()}ish MACD+EMA200 trend-resumption "
+                    "signal on its latest completed daily candle. Coverage grows as the full-market "
+                    "OHLC backfill loads more history per symbol.")
+            return
+        names_me = _company_names()
+        rows = [{
+            "symbol": h["symbol"], "company": names_me.get(h["symbol"], ""),
+            "action": action_label,
+            "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+            "target 1": "Trailing" if h.get("target_1") is None else h.get("target_1"),
+            "date": h.get("pattern_date"),
+        } for h in hits]
+        medf = pd.DataFrame(rows)
+
+        def _me_row_color(row):
+            return [f"background-color: {row_color}"] * len(row)
+
+        _render_pattern_table(medf, _me_row_color, f"macdema_{direction.lower()}_scan_table", {
+            "symbol": "Symbol", "company": "Company", "action": "Action",
+            "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+            "stop": st.column_config.NumberColumn("Initial Stop (ATR trail)", format="Rs %.2f"),
+            "target 1": st.column_config.TextColumn("Target"),
+            "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+        }, date_col="date")
+
+        with st.expander("📖 View Rules & Metrics for MACD+EMA200 Trend Resumption"):
+            st.caption("Market-wide scan, on the latest completed daily candle — translated from a "
+                       "reference systematic-trading notebook. Requires an ALREADY-established trend "
+                       "(every bar in a trailing 6-bar window trading fully above/below its EMA200), "
+                       "then a MACD line/signal-line cross back through zero while still on the "
+                       "trend's side — i.e. buying/selling a pullback WITHIN a confirmed trend, not "
+                       "catching a fresh reversal. Needs ~217+ days of daily history per symbol "
+                       "before it can evaluate at all (EMA200 dominates that requirement), so "
+                       "coverage is partial while the full-market backfill is still loading.")
+            st.caption("Exit is a pure ATR(14) trailing stop (atr_mult=2.0, the strategy's own "
+                       "stated default, unoptimized) — there is no fixed take-profit target by "
+                       "design, so \"Target\" always reads Trailing.")
+            st.caption("⚠️ Backtest pending sufficient PSX history — most symbols don't yet have "
+                       "the ~217+ days of daily bars EMA200 requires while the full-market OHLC "
+                       "backfill is still loading. See backend/run_macdema_backtest.py; this "
+                       "caption will be updated with real win-rate/return numbers once a "
+                       "meaningful sample exists, the same way every other pattern on this page "
+                       "states its backtest result plainly rather than implying one that hasn't "
+                       "been measured yet.")
+
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
 
@@ -3219,6 +3283,10 @@ with tab_patterns:
         _render_mharris_block("BULL", "🔁 MHarris 5-Bar Reversal (Bullish) — 1D",
                               "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
 
+        st.divider()
+        _render_macdema_block("BULL", "📈 MACD+EMA200 Trend Resumption (Bullish) — 1D",
+                              "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
+
     # --------------------------------------------------- Short-Side tab ----
     with tab_short:
         st.error("Everything in this tab expects price to FALL, not rise. PSX short-selling carries "
@@ -3334,6 +3402,10 @@ with tab_patterns:
 
         st.divider()
         _render_mharris_block("BEAR", "🔁 MHarris 5-Bar Reversal (Bearish) — 1D",
+                              "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
+
+        st.divider()
+        _render_macdema_block("BEAR", "📈 MACD+EMA200 Trend Resumption (Bearish) — 1D",
                               "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
 
     # ----------------------------------------------- Structural Patterns ----
