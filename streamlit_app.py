@@ -711,10 +711,25 @@ def build_wyckoff_chart(ohlc, wyckoff_events=None, support=None, resistance=None
     return fig
 
 
+@st.cache_resource
+def _http_session():
+    """One pooled connection (keep-alive, no repeat TCP/TLS handshake) per
+    container process, reused across every _get()/_post() call and every
+    rerun -- a bare module-level `requests.get()` opens a fresh connection
+    every time, which adds up over the dozens of backend calls one page
+    render makes, especially against the embedded-backend's own localhost
+    round trip on every rerun."""
+    s = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    return s
+
+
 @st.cache_data(ttl=60)
 def _get(path, **params):
     try:
-        r = requests.get(f"{BACKEND}{path}", params=params, timeout=TIMEOUT)
+        r = _http_session().get(f"{BACKEND}{path}", params=params, timeout=TIMEOUT)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -723,7 +738,7 @@ def _get(path, **params):
 
 def _post(path, **params):
     try:
-        r = requests.post(f"{BACKEND}{path}", params=params, timeout=60)
+        r = _http_session().post(f"{BACKEND}{path}", params=params, timeout=60)
         r.raise_for_status()
         return r.json()
     except Exception as e:

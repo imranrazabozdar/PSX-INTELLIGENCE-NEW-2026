@@ -1,3 +1,21 @@
+---
+title: PSX Intelligence
+emoji: 📈
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+<!-- The block above is Hugging Face Spaces' own config format -- required
+at the very top of this file for a Docker-SDK Space to build/run this
+repo's Dockerfile automatically. Harmless on GitHub, which renders it as
+plain text (not real frontmatter here, unlike Jekyll/Space repos). See
+DEPLOY_HUGGINGFACE.md for the one-time manual setup (creating the Space
+itself and its secrets needs a Hugging Face account this session has no
+access to). -->
+
 # PSX Intelligence 2.9 — Consolidated Install Candidate
 
 # PSX Intelligence V2 — WorldClass Release Candidate

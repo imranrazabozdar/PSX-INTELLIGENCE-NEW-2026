@@ -4,6 +4,17 @@
 # if untrusted users can reach the Streamlit UI — the backend's admin-token
 # gate is the real security boundary, not the listen address.
 address = "0.0.0.0"
+# No source file changes happen on a deployed container -- "auto" still
+# spends CPU polling the filesystem for edits (watchdog on Linux, or a
+# slower stat-based poll if watchdog isn't installed) on every rerun cycle.
+# Off entirely in production; local dev overrides this via
+# `streamlit run --server.fileWatcherType auto` if hot-reload is wanted.
+fileWatcherType = "none"
+
+[runner]
+# Skip Streamlit's "did this exact rerun already start over" dedup check --
+# safe here since nothing in this app triggers overlapping fragment reruns.
+fastReruns = true
 
 [theme]
 base = "dark"
