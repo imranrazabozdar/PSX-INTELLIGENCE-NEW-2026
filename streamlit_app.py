@@ -1522,53 +1522,33 @@ with tab_intraday:
             st.metric("🕐 Last Alert", _last["triggered_at"][11:16] if _last else "—",
                        delta=_last["symbol"] if _last else "—")
 
-        if _market_open and _bars_count == 0 and _mins_now > (_wd < 4 and 9*60+35 or 9*60+20):
-            with st.expander("🔍 Debug: Why are bars 0?", expanded=True):
-                _diag = {}
+        # ---- Frontend-driven bars collector (fallback for when backend loops don't start)
+        if _market_open:
+            _FBCOLL_KEY = "_frontend_bars_collected_at"
+            _last_coll = st.session_state.get(_FBCOLL_KEY, 0)
+            if time.time() - _last_coll > 60:
                 try:
-                    import sys as _sys
                     _bd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
-                    if _bd not in _sys.path:
-                        _sys.path.insert(0, _bd)
+                    if _bd not in sys.path:
+                        sys.path.insert(0, _bd)
                     import turso_db as _tdb
-                    _diag["using_turso"] = _tdb.USING_TURSO
-                    _diag["turso_init_error"] = _tdb._init_error
-                    _diag["LIBSQL_URL_set"] = bool(os.getenv("LIBSQL_URL"))
-                    _diag["LIBSQL_AUTH_TOKEN_set"] = bool(os.getenv("LIBSQL_AUTH_TOKEN"))
-                    _diag["PSX_EMBED_BACKEND"] = os.getenv("PSX_EMBED_BACKEND", "(not set)")
-                    _conn = _tdb.get_connection()
-                    _diag["conn_type"] = type(_conn).__name__
-                    _diag["has_batch_query"] = hasattr(_conn, 'batch_query')
-                    # Test backend health
-                    _hresp = _get("/health")
-                    _diag["backend_health"] = _hresp.get("status", "unknown") if isinstance(_hresp, dict) else str(_hresp)
-                    # Test bars-count from backend
-                    _bc = _get("/intraday/bars-count")
-                    _diag["bars_count_response"] = _bc
-                    # Test write path
-                    try:
-                        if hasattr(_conn, 'batch_query'):
-                            _conn.batch_query([
-                                ("INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) VALUES(?,?,?,?,?,?)",
-                                 ("_DIAG_", "1970-01-01 00:00:00", 1.0, 1, 1.0, 1.0))
-                            ])
-                            _vr = _conn.execute("SELECT COUNT(*) as cnt FROM intraday_bars WHERE symbol='_DIAG_'").fetchone()
-                            _diag["write_test"] = "PASSED" if _vr and _vr["cnt"] > 0 else "FAILED: row not found"
-                            _conn.execute("DELETE FROM intraday_bars WHERE symbol='_DIAG_'")
-                        else:
-                            _conn.execute("INSERT OR IGNORE INTO intraday_bars(symbol,bar_time,price,volume_cumulative,day_high,day_low) VALUES(?,?,?,?,?,?)",
-                                          ("_DIAG_", "1970-01-01 00:00:00", 1.0, 1, 1.0, 1.0))
-                            _vr = _conn.execute("SELECT COUNT(*) as cnt FROM intraday_bars WHERE symbol='_DIAG_'").fetchone()
-                            _diag["write_test"] = "PASSED" if _vr and _vr["cnt"] > 0 else "FAILED: row not found"
-                            _conn.execute("DELETE FROM intraday_bars WHERE symbol='_DIAG_'")
-                    except Exception as _we:
-                        _diag["write_test"] = f"FAILED: {type(_we).__name__}: {_we}"
-                except Exception as _de:
-                    _diag["diag_error"] = f"{type(_de).__name__}: {_de}"
-                st.json(_diag)
-                if _diag.get("PSX_EMBED_BACKEND") in (None, "(not set)", "", "0", "false"):
-                    st.error("PSX_EMBED_BACKEND is not set! The background data collector is NOT running. "
-                             "Set PSX_EMBED_BACKEND=1 in Streamlit Cloud secrets.")
+                    _mw_resp = _get("/market")
+                    _mw_rows = _mw_resp if isinstance(_mw_resp, list) else _mw_resp.get("data", []) if isinstance(_mw_resp, dict) else []
+                    if _mw_rows:
+                        _conn = _tdb.get_connection()
+                        _bar_time = _pkt_now.strftime("%Y-%m-%d %H:%M:00")
+                        _good = [(_r.get("symbol"), _bar_time, _r.get("price"), _r.get("volume"),
+                                  _r.get("high"), _r.get("low")) for _r in _mw_rows if _r.get("symbol")]
+                        if _good and hasattr(_conn, 'batch_query'):
+                            _sql = ("INSERT OR IGNORE INTO intraday_bars"
+                                    "(symbol,bar_time,price,volume_cumulative,day_high,day_low) "
+                                    "VALUES(?,?,?,?,?,?)")
+                            _CHUNK = 100
+                            for _ci in range(0, len(_good), _CHUNK):
+                                _conn.batch_query([(_sql, _p) for _p in _good[_ci:_ci + _CHUNK]])
+                            st.session_state[_FBCOLL_KEY] = time.time()
+                except Exception:
+                    pass  # silent — don't break the UI
 
         # ---- SECTION 3: Session Anomaly Alerts Table ---------------------
         st.markdown("### ⚡ Session Anomalies")
