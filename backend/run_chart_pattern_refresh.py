@@ -7,9 +7,8 @@ This detects patterns where the BREAKOUT/CONFIRMATION happens TODAY.
 - But ONLY reports patterns where breakout is on the latest bar (today)
 - Refreshes daily after market close (4:35 PM PKT)
 
-Key difference from historical scan:
-- scan_symbol(symbol, all_200_days) → returns patterns from APRIL-JUNE (old)
-- scan_symbol_latest_only(symbol, all_200_days) → returns TODAY's breakouts only
+Uses turso_db for database access — works against Turso Cloud in CI and
+local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
 """
 
 import sqlite3
@@ -18,11 +17,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
 
-# Import pattern scanner
 import sys
 from pathlib import Path
+
+_BACKEND_DIR = str(Path(__file__).parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 sys.path.insert(0, str(Path(__file__).parent / 'patterns'))
+
 from advanced_pattern_adapter import scan_symbol
+import turso_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,7 +50,6 @@ def scan_symbol_latest_only(symbol: str, ohlc_rows: list) -> list:
     if not ohlc_rows or len(ohlc_rows) == 0:
         return []
 
-    # Get latest bar date for filtering
     latest_row = ohlc_rows[-1] if isinstance(ohlc_rows, list) else None
     if not latest_row:
         return []
@@ -57,15 +60,12 @@ def scan_symbol_latest_only(symbol: str, ohlc_rows: list) -> list:
     else:
         latest_date = latest_row[0] if len(latest_row) > 0 else None
 
-    # Scan with all 200+ days (pattern recognition needs context)
     all_signals = scan_symbol(symbol, ohlc_rows)
 
-    # Filter to ONLY patterns with signal_date == latest bar
     latest_signals = []
     for signal in all_signals:
         signal_date = signal.get('signal_date')
 
-        # Convert both to same format for comparison
         if signal_date and latest_date:
             signal_date_str = signal_date.strftime('%Y-%m-%d') if hasattr(signal_date, 'strftime') else str(signal_date)
             latest_date_str = latest_date.strftime('%Y-%m-%d') if hasattr(latest_date, 'strftime') else str(latest_date)
@@ -76,18 +76,14 @@ def scan_symbol_latest_only(symbol: str, ohlc_rows: list) -> list:
     return latest_signals
 
 
-def load_all_ohlcv(db_path='psx_v2.db', lookback_days: int = 200) -> dict:
+def load_all_ohlcv(lookback_days: int = 200) -> dict:
     """Load latest lookback_days bars for ALL symbols in ONE query.
 
     Returns dict: {symbol: [list of ohlcv dicts in ascending order]}
-
-    This is MUCH more efficient than loading per-symbol in a loop.
-    See run_candlestick_refresh.py for the same pattern.
     """
-    con = sqlite3.connect(db_path)
+    conn = turso_db.get_connection()
 
-    # Use window function to get latest N bars per symbol
-    rows = con.execute(f"""
+    rows = conn.execute(f"""
         WITH ranked AS (
             SELECT symbol, trade_date, open, high, low, close, volume,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trade_date DESC) as rn
@@ -99,23 +95,28 @@ def load_all_ohlcv(db_path='psx_v2.db', lookback_days: int = 200) -> dict:
         ORDER BY symbol, trade_date ASC
     """).fetchall()
 
-    con.close()
-
-    # Organize by symbol
     data_by_symbol = {}
     for row in rows:
-        symbol = row[0]
-        if symbol not in data_by_symbol:
-            data_by_symbol[symbol] = []
-
-        data_by_symbol[symbol].append({
-            'trade_date': row[1],
-            'open': float(row[2]),
-            'high': float(row[3]),
-            'low': float(row[4]),
-            'close': float(row[5]),
-            'volume': float(row[6])
-        })
+        if isinstance(row, dict):
+            symbol = row['symbol']
+            data_by_symbol.setdefault(symbol, []).append({
+                'trade_date': row['trade_date'],
+                'open': float(row['open']),
+                'high': float(row['high']),
+                'low': float(row['low']),
+                'close': float(row['close']),
+                'volume': float(row['volume']),
+            })
+        else:
+            symbol = row[0]
+            data_by_symbol.setdefault(symbol, []).append({
+                'trade_date': row[1],
+                'open': float(row[2]),
+                'high': float(row[3]),
+                'low': float(row[4]),
+                'close': float(row[5]),
+                'volume': float(row[6]),
+            })
 
     return data_by_symbol
 
@@ -123,20 +124,19 @@ def load_all_ohlcv(db_path='psx_v2.db', lookback_days: int = 200) -> dict:
 def main():
     """Run chart pattern refresh for TODAY'S BREAKOUTS ONLY."""
     try:
-        logger.info("🔍 Starting chart pattern detection (latest bar only)...")
-        logger.info("   Patterns with breakout/confirmation on TODAY only")
+        db_status = turso_db.status()
+        logger.info(f"Database: {db_status['backend']}")
+        logger.info("Starting chart pattern detection (latest bar only)...")
         print("")
 
-        # Load ALL data at once (single database query, much more efficient)
-        logger.info("📊 Loading OHLCV data for all symbols...")
+        logger.info("Loading OHLCV data for all symbols...")
         all_data = load_all_ohlcv(lookback_days=200)
         symbol_list = list(all_data.keys())
 
         logger.info(f"   Loaded {len(symbol_list)} symbols with historical data")
-        logger.info(f"⏳ Scanning for patterns...")
+        logger.info("Scanning for patterns...")
         print("")
 
-        # Detect patterns
         all_patterns = []
         processed = 0
 
@@ -144,10 +144,9 @@ def main():
             try:
                 ohlcv = all_data[symbol]
 
-                if len(ohlcv) < 100:  # Need minimum history
+                if len(ohlcv) < 100:
                     continue
 
-                # Scan for patterns with breakout on LATEST BAR ONLY
                 patterns = scan_symbol_latest_only(symbol, ohlcv)
 
                 if patterns:
@@ -163,17 +162,14 @@ def main():
                 logger.debug(f"   {symbol}: {str(e)[:50]}")
                 continue
 
-        logger.info(f"✅ Pattern detection complete!")
+        logger.info(f"Pattern detection complete!")
         logger.info(f"   Patterns with TODAY's breakout: {len(all_patterns)}")
 
-        # Store results
-        logger.info("💾 Setting up chart_patterns table...")
+        logger.info("Setting up chart_patterns table...")
 
-        # Connect to database for storage
-        con = sqlite3.connect('psx_v2.db')
+        conn = turso_db.get_connection()
 
-        # Create table schema if not exists
-        con.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS chart_patterns (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT,
@@ -185,19 +181,17 @@ def main():
             )
         """)
 
-        # Clear old patterns (keep only today's)
         today = datetime.now(PSX_TZ).strftime('%Y-%m-%d')
-        con.execute(
+        conn.execute(
             "DELETE FROM chart_patterns WHERE DATE(signal_date) < ?",
             (today,)
         )
 
-        # Insert new patterns
         stored = 0
         if all_patterns:
             for pattern in all_patterns:
                 try:
-                    con.execute("""
+                    conn.execute("""
                         INSERT INTO chart_patterns
                         (symbol, pattern_type, signal_date, confidence_score, detected_at)
                         VALUES (?, ?, ?, ?, ?)
@@ -206,31 +200,29 @@ def main():
                         pattern.get('pattern_type'),
                         pattern.get('signal_date'),
                         pattern.get('confidence_score'),
-                        datetime.now(PSX_TZ)
+                        datetime.now(PSX_TZ).isoformat(),
                     ))
                     stored += 1
-                except sqlite3.IntegrityError:
-                    pass  # Duplicate
+                except (sqlite3.IntegrityError, Exception) as e:
+                    if "UNIQUE" in str(e).upper() or "integrity" in str(e).lower():
+                        pass
+                    else:
+                        logger.debug(f"Insert failed for {pattern.get('symbol')}: {e}")
 
-        con.commit()
+        conn.commit()
         logger.info(f"   Table ready. Stored {stored} patterns")
 
-        con.close()
-
         print("")
-        logger.info("✅ Chart pattern refresh complete!")
+        logger.info("Chart pattern refresh complete!")
         logger.info("")
-        logger.info("📋 Summary:")
+        logger.info("Summary:")
         logger.info(f"   Symbols scanned: {len(symbol_list)}")
         logger.info(f"   Patterns detected (TODAY's breakouts): {len(all_patterns)}")
-        logger.info("")
-        logger.info("Key point: Only patterns with breakout on TODAY'S bar are shown")
-        logger.info("           Historical pattern dates are NOT displayed")
 
         return 0
 
     except Exception as e:
-        logger.error(f"❌ Error during chart pattern refresh: {e}")
+        logger.error(f"Error during chart pattern refresh: {e}")
         import traceback
         traceback.print_exc()
         return 1

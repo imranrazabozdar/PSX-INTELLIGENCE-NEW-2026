@@ -29,6 +29,9 @@ jobs:
 
       - name: 🔍 Detect chart patterns (latest bar only)
         working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_chart_pattern_refresh.py
 
       - name: 📊 Show pattern detection results
