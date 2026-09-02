@@ -107,7 +107,6 @@ NEWS_SIGNALS_MAX_AGE_HOURS = 48
 NEWS_SOURCE_ALLOWLIST = [
     "dawn.com",
     "brecorder.com",
-    "profit.pakistantoday.com.pk"
 ]
 
 NEWS_DISPLAY_PUBLISHERS = [

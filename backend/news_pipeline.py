@@ -53,7 +53,6 @@ GOOGLE_NEWS_RSS = ("https://news.google.com/rss/search?q={query}"
 MACRO_FEEDS = [
     ("Business Recorder", "https://www.brecorder.com/feeds/latest-news"),
     ("Dawn Business", "https://www.dawn.com/feeds/business"),
-    ("Profit Pakistan Today", "https://profit.pakistantoday.com.pk/feed/"),
 ]
 
 # Publishers whose reporting we are willing to attribute a verdict to.

@@ -36,7 +36,6 @@ UA = {"User-Agent": "Mozilla/5.0 (psx-engine news-routine; +github)"}
 MACRO_FEEDS = [
     ("Business Recorder", "https://www.brecorder.com/feeds/latest-news"),
     ("Dawn Business",     "https://www.dawn.com/feeds/business"),
-    ("Profit Pakistan Today", "https://profit.pakistantoday.com.pk/feed/"),
 ]
 
 

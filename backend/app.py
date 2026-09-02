@@ -4348,17 +4348,11 @@ async def _watchlist_refresh_loop():
                 print("[scan_cache] watchlist_scan tick skipped — cached result still fresh")
             else:
                 try:
-                    ran = _scan_cache.mark_running("watchlist_scan")
-                    if ran:
-                        result = await _run_watchlist_scan()
-                        _scan_cache.put("watchlist_scan", result)
-                    else:
-                        print("[scan_cache] watchlist_scan skipped — already running")
+                    result = await _run_watchlist_scan()
+                    _scan_cache.save("watchlist_scan", result)
+                    print(f"[scan_cache] watchlist_scan refreshed")
                 except Exception as e:
                     logger.error(f"watchlist_scan failed: {e}")
-                    ran = False
-                if not ran:
-                    print("[scan_cache] watchlist_scan tick skipped — an on-demand force-run was already in flight")
             if _cache_fresh("watchlist_alerts", WATCHLIST_REFRESH_INTERVAL):
                 print("[scan_cache] watchlist_alerts tick skipped — cached result still fresh")
             else:
@@ -4376,7 +4370,7 @@ async def _watchlist_refresh_loop():
                 try:
                     print("[scan_cache] Running end-of-day watchlist scan...")
                     result = await _run_watchlist_scan()
-                    _scan_cache.put("watchlist_scan", result)
+                    _scan_cache.save("watchlist_scan", result)
                     _last_eod_scan = today
                     print("[scan_cache] End-of-day watchlist scan complete")
                 except Exception as e:
