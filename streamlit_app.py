@@ -1206,6 +1206,11 @@ with tab_home:
     with _news_col:
         st.markdown("### 📰 Latest News")
         nr = _get("/news-feed")
+        _nr_mm = nr.get("macro_verdict") if isinstance(nr, dict) else None
+        if _nr_mm:
+            _nr_mm_icon = {"positive": "🟢", "negative": "🔴"}.get(_nr_mm.get("direction"), "⚪")
+            st.caption(f"{_nr_mm_icon} Market Mood: {_nr_mm.get('direction', 'neutral').title()} "
+                       f"({_nr_mm.get('score')}/100, {_nr_mm.get('confidence')} confidence)")
         if not nr or nr.get("status") != "ok" or not nr.get("symbols_with_news"):
             st.caption("No recent news · See Pulse tab for full feed")
         else:
@@ -1981,6 +1986,12 @@ with tab_pulse:
         feed = _get("/news-feed")
         if feed.get("status") == "ok":
             st.caption(f"{feed.get('as_of')} · {feed.get('symbols_with_news')} symbols")
+            _mm = feed.get("macro_verdict")
+            if _mm:
+                _mm_icon = {"positive": "🟢", "negative": "🔴"}.get(_mm.get("direction"), "⚪")
+                st.markdown(f"**{_mm_icon} Market Mood: {_mm.get('direction', 'neutral').title()}** "
+                            f"({_mm.get('score')}/100, {_mm.get('confidence')} confidence)")
+                st.caption(_mm.get("caveat", ""))
             if feed.get("stocks"):
                 _news_df = pd.DataFrame(feed["stocks"])[
                     ["symbol", "sector", "price", "observed_move_pct", "direction",

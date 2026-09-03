@@ -2209,7 +2209,7 @@ def news_feed_screen(max_age_minutes:int=30, limit:int=30, window_hours:int=48,
                 "max_age_minutes":max_age_minutes,
                 "symbols_with_news":len(items),
                 "no_headlines":(payload.get("symbols_with_no_news") or [])[:40],
-                "macro_headlines":macro,"stocks":items,
+                "macro_headlines":macro,"macro_verdict":payload.get("macro_verdict"),"stocks":items,
                 "method":payload.get("method","deterministic_keyword_v1"),
                 "impact_note":"`observed_move_pct` is what the stock actually did "
                               "this session. `sectors_conventionally_sensitive` is "

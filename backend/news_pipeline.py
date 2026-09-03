@@ -280,6 +280,13 @@ def run(symbols, window_hours=48, out_path=None, pause=0.4, with_macro=True):
             raw.extend(items)
         time.sleep(pause)
     macro = fetch_macro(cutoff) if with_macro else []
+    # Aggregate "market mood": the SAME deterministic keyword scorer used for
+    # every per-symbol verdict above, just run over the whole macro-feed
+    # headline set instead of one symbol's headlines -- reuses score_items()'s
+    # existing honesty rules (confidence capped at medium, thin-coverage
+    # shrinkage toward neutral, source URLs kept) rather than a separate,
+    # weaker aggregate sentiment implementation.
+    macro_verdict = score_items(macro) if macro else None
     payload = {"as_of": now.isoformat(), "window_hours": window_hours,
                "source": "Google News RSS (credible-desk filtered) + macro feeds",
                "method": "deterministic_keyword_v1",
@@ -288,6 +295,7 @@ def run(symbols, window_hours=48, out_path=None, pause=0.4, with_macro=True):
                "macro_headlines": [{"title": m["title"], "url": m["url"],
                                     "publisher": m["publisher"],
                                     "published": m["published"]} for m in macro],
+               "macro_verdict": macro_verdict,
                "note": "Verdicts are keyword-derived, never article-level "
                        "judgment; confidence is capped at medium. Symbols with "
                        "no matching headline are omitted entirely so the engine "
