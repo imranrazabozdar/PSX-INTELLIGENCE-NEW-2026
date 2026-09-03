@@ -2986,8 +2986,17 @@ with tab_patterns:
                        "forward-trend labeling to measure hit rate) — entry/stop/target here reuse "
                        "this project's own bullish/bearish engulfing convention instead: stop beyond "
                        "the signal candle's high/low + an ATR buffer, targets a measured move off "
-                       "the candle's own high-low range. See run_engulfing_star_backtest.py for the "
-                       "walk-forward PSX result before treating any signal here as validated.")
+                       "the candle's own high-low range.")
+            st.caption("⚠️ Backtested walk-forward on PSX (194 symbols, 168 resolved trades) at "
+                       "this geometry-based stop/target rule — **71.4% win rate, +0.34% average "
+                       "return per trade, 1.16 profit factor overall**, one of the few net-profitable "
+                       "signals this project has backtested. The two directions diverge sharply "
+                       "though: bearish signals (123 trades) carry the edge — **76.4% win rate, "
+                       "+0.81% avg return, 1.54 profit factor** — while bullish signals (45 trades) "
+                       "are a net loser — **57.8% win rate, -0.94% avg return, 0.75 profit factor**. "
+                       "Treat the bearish (short) side as the one with real support here; the "
+                       "bullish side is currently losing money at these defaults despite a win rate "
+                       "over 50%.")
 
     # Fetched once here for the same reason as the MHarris scan above --
     # one endpoint returns both BULL and BEAR hits together.
