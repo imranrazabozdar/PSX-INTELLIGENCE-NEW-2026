@@ -314,9 +314,13 @@ def main():
         "fingerprint_2": {"definition": "FNEL-style OBV/MFI quiet build after a breakout", "matches": fp2_matches},
     }
 
-    print("===JSON_START===")
-    print(json.dumps(output, indent=2, default=str))
-    print("===JSON_END===")
+    out_path = Path(__file__).parent / "fingerprint_scan_output.json"
+    out_path.write_text(json.dumps(output, indent=2, default=str))
+    print(f"Wrote {out_path} ({out_path.stat().st_size:,} bytes) -- "
+          f"uploaded as a workflow artifact, not printed to stdout, "
+          f"since match volume made the JSON too large for a single "
+          f"GitHub Actions log line (hit and fixed twice already this "
+          f"round: unsharded, then even 100-symbol shards).", file=sys.stderr)
 
 
 if __name__ == "__main__":

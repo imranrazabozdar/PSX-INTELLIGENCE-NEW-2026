@@ -38,3 +38,10 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
           FP_SCAN_SHARD: ${{ inputs.shard }}
         run: python run_fingerprint_scan.py
+
+      - name: 📦 Upload scan output as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fingerprint-scan-output-${{ github.run_id }}
+          path: backend/fingerprint_scan_output.json
+          retention-days: 7
