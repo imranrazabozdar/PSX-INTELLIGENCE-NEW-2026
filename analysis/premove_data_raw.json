@@ -1461,436 +1461,1380 @@
           "volume": 34392.0
         }
       ]
-    }
-  },
-  "company_announcements": {
-    "AICL": {
-      "symbol": "AICL",
-      "source": "https://dps.psx.com.pk/company/AICL",
-      "error": null,
-      "row_count": 26,
-      "rows": [
+    },
+    "THCCL": {
+      "requested_start": "2026-04-06",
+      "requested_end": "2026-07-09",
+      "report_start": "2026-06-15",
+      "report_end": "2026-07-09",
+      "rows_returned": 63,
+      "dates_present": [
+        "2026-04-06",
+        "2026-04-07",
+        "2026-04-08",
+        "2026-04-09",
+        "2026-04-10",
+        "2026-04-13",
+        "2026-04-14",
+        "2026-04-15",
+        "2026-04-16",
+        "2026-04-17",
+        "2026-04-20",
+        "2026-04-21",
+        "2026-04-22",
+        "2026-04-23",
+        "2026-04-24",
+        "2026-04-27",
+        "2026-04-28",
+        "2026-04-29",
+        "2026-04-30",
+        "2026-05-04",
+        "2026-05-05",
+        "2026-05-06",
+        "2026-05-07",
+        "2026-05-08",
+        "2026-05-11",
+        "2026-05-12",
+        "2026-05-13",
+        "2026-05-14",
+        "2026-05-15",
+        "2026-05-18",
+        "2026-05-19",
+        "2026-05-20",
+        "2026-05-21",
+        "2026-05-22",
+        "2026-05-25",
+        "2026-05-29",
+        "2026-06-01",
+        "2026-06-02",
+        "2026-06-03",
+        "2026-06-04",
+        "2026-06-05",
+        "2026-06-08",
+        "2026-06-09",
+        "2026-06-10",
+        "2026-06-11",
+        "2026-06-12",
+        "2026-06-15",
+        "2026-06-16",
+        "2026-06-17",
+        "2026-06-18",
+        "2026-06-19",
+        "2026-06-22",
+        "2026-06-23",
+        "2026-06-24",
+        "2026-06-29",
+        "2026-06-30",
+        "2026-07-01",
+        "2026-07-02",
+        "2026-07-03",
+        "2026-07-06",
+        "2026-07-07",
+        "2026-07-08",
+        "2026-07-09"
+      ],
+      "bars": [
         {
-          "cells": [
-            "Muhammad Ali Zeb",
-            "CEO"
-          ]
+          "date": "2026-04-06",
+          "symbol": "THCCL",
+          "open": 52.68,
+          "high": 53.1,
+          "low": 51.51,
+          "close": 52.73,
+          "volume": 841171.0
         },
         {
-          "cells": [
-            "Mian Umer Mansha",
-            "Chairperson"
-          ]
+          "date": "2026-04-07",
+          "symbol": "THCCL",
+          "open": 51.9,
+          "high": 53.1,
+          "low": 51.01,
+          "close": 52.98,
+          "volume": 313634.0
         },
         {
-          "cells": [
-            "Tameez-ul-Haque, FCA",
-            "Company Secretary"
-          ]
+          "date": "2026-04-08",
+          "symbol": "THCCL",
+          "open": 58.2,
+          "high": 58.28,
+          "low": 56.1,
+          "close": 58.28,
+          "volume": 1988035.0
         },
         {
-          "cells": [
-            "Aug 28, 2026",
-            "Transmission of Quarterly Report for the Period Ended 30 June 2026",
-            "View PDF"
-          ]
+          "date": "2026-04-09",
+          "symbol": "THCCL",
+          "open": 57.4,
+          "high": 62.0,
+          "low": 55.7,
+          "close": 59.79,
+          "volume": 3638182.0
         },
         {
-          "cells": [
-            "Aug 27, 2026",
-            "Financial Results for the Quarter Ended 30 June 2026",
-            "View PDF"
-          ]
+          "date": "2026-04-10",
+          "symbol": "THCCL",
+          "open": 59.05,
+          "high": 61.26,
+          "low": 59.05,
+          "close": 60.27,
+          "volume": 1440988.0
         },
         {
-          "cells": [
-            "Apr 30, 2026",
-            "Transmission of Quarterly Report for the period Ended 31 March 2026",
-            "View PDF"
-          ]
+          "date": "2026-04-13",
+          "symbol": "THCCL",
+          "open": 57.6,
+          "high": 57.9,
+          "low": 55.9,
+          "close": 56.11,
+          "volume": 1214261.0
         },
         {
-          "cells": [
-            "Apr 28, 2026",
-            "Financial Results for the Qarter Ended 31 March 2026",
-            "View PDF"
-          ]
+          "date": "2026-04-14",
+          "symbol": "THCCL",
+          "open": 57.0,
+          "high": 58.97,
+          "low": 57.0,
+          "close": 57.98,
+          "volume": 1580711.0
         },
         {
-          "cells": [
-            "Apr 28, 2026",
-            "Financial Results for the Quarter Ended 31 March 2026 REVOKED",
-            "View PDF"
-          ]
+          "date": "2026-04-15",
+          "symbol": "THCCL",
+          "open": 59.3,
+          "high": 61.5,
+          "low": 58.99,
+          "close": 59.72,
+          "volume": 3771533.0
         },
         {
-          "cells": [
-            "Aug 21, 2026",
-            "Board Meeting",
-            "View"
-          ]
+          "date": "2026-04-16",
+          "symbol": "THCCL",
+          "open": 60.0,
+          "high": 60.5,
+          "low": 59.09,
+          "close": 59.73,
+          "volume": 817361.0
         },
         {
-          "cells": [
-            "Jun 1, 2026",
-            "General Meetings / Briefing Sessions",
-            "View"
-          ]
+          "date": "2026-04-17",
+          "symbol": "THCCL",
+          "open": 60.21,
+          "high": 60.5,
+          "low": 59.5,
+          "close": 59.86,
+          "volume": 1031356.0
         },
         {
-          "cells": [
-            "May 22, 2026",
-            "General Meetings / Briefing Sessions",
-            "View PDF"
-          ]
+          "date": "2026-04-20",
+          "symbol": "THCCL",
+          "open": 59.0,
+          "high": 59.47,
+          "low": 56.2,
+          "close": 57.69,
+          "volume": 985204.0
         },
         {
-          "cells": [
-            "Apr 21, 2026",
-            "Board Meeting",
-            "View"
-          ]
+          "date": "2026-04-21",
+          "symbol": "THCCL",
+          "open": 57.73,
+          "high": 58.98,
+          "low": 57.7,
+          "close": 58.06,
+          "volume": 732697.0
         },
         {
-          "cells": [
-            "Apr 6, 2026",
-            "Notice of Annual General Meeting",
-            "View PDF"
-          ]
+          "date": "2026-04-22",
+          "symbol": "THCCL",
+          "open": 57.0,
+          "high": 57.59,
+          "low": 56.1,
+          "close": 56.92,
+          "volume": 358265.0
         },
         {
-          "cells": [
-            "May 22, 2026",
-            "Notice of Corporate Briefing Session",
-            "View PDF"
-          ]
+          "date": "2026-04-23",
+          "symbol": "THCCL",
+          "open": 56.92,
+          "high": 57.7,
+          "low": 56.5,
+          "close": 57.3,
+          "volume": 985869.0
         },
         {
-          "cells": [
-            "May 12, 2026",
-            "Credit of Final Cash Dividend",
-            "View"
-          ]
+          "date": "2026-04-24",
+          "symbol": "THCCL",
+          "open": 57.0,
+          "high": 58.64,
+          "low": 56.01,
+          "close": 57.82,
+          "volume": 1131136.0
         },
         {
-          "cells": [
-            "Apr 28, 2026",
-            "Filing of Certified Copy of Resolution passed by the shareholders in AGM",
-            "View PDF"
-          ]
+          "date": "2026-04-27",
+          "symbol": "THCCL",
+          "open": 57.03,
+          "high": 57.82,
+          "low": 56.71,
+          "close": 57.07,
+          "volume": 507063.0
         },
         {
-          "cells": [
-            "Feb 4, 2026",
-            "Unusual Movement in Price of the Shares of Adamjee Insurance Company Limited (AICL)",
-            "View PDF"
-          ]
+          "date": "2026-04-28",
+          "symbol": "THCCL",
+          "open": 56.15,
+          "high": 58.0,
+          "low": 55.0,
+          "close": 56.49,
+          "volume": 773611.0
         },
         {
-          "cells": [
-            "Feb 4, 2026",
-            "",
-            "View PDF"
-          ]
+          "date": "2026-04-29",
+          "symbol": "THCCL",
+          "open": 57.19,
+          "high": 57.19,
+          "low": 55.1,
+          "close": 55.65,
+          "volume": 1076114.0
         },
         {
-          "cells": [
-            "Profit after Taxation",
-            "5,132,718",
-            "4,050,202",
-            "2,262,030",
-            "2,585,013"
-          ]
+          "date": "2026-04-30",
+          "symbol": "THCCL",
+          "open": 55.3,
+          "high": 55.3,
+          "low": 51.8,
+          "close": 53.28,
+          "volume": 1095401.0
         },
         {
-          "cells": [
-            "EPS",
-            "14.66",
-            "11.57",
-            "6.46",
-            "7.39"
-          ]
+          "date": "2026-05-04",
+          "symbol": "THCCL",
+          "open": 53.0,
+          "high": 55.0,
+          "low": 53.0,
+          "close": 53.71,
+          "volume": 596913.0
         },
         {
-          "cells": [
-            "Profit after Taxation",
-            "1,589,654",
-            "1,309,740",
-            "1,546,927",
-            "1,028,973"
-          ]
+          "date": "2026-05-05",
+          "symbol": "THCCL",
+          "open": 53.49,
+          "high": 54.0,
+          "low": 52.0,
+          "close": 53.24,
+          "volume": 456965.0
         },
         {
-          "cells": [
-            "EPS",
-            "4.54",
-            "3.74",
-            "4.42",
-            "2.94"
-          ]
+          "date": "2026-05-06",
+          "symbol": "THCCL",
+          "open": 54.2,
+          "high": 56.25,
+          "low": 53.51,
+          "close": 55.38,
+          "volume": 2469227.0
         },
         {
-          "cells": [
-            "Gross Profit Margin (%)",
-            "1.01",
-            "0.56",
-            "(7.07)",
-            "(1.23)"
-          ]
+          "date": "2026-05-07",
+          "symbol": "THCCL",
+          "open": 55.98,
+          "high": 57.7,
+          "low": 55.05,
+          "close": 56.6,
+          "volume": 5528794.0
         },
         {
-          "cells": [
-            "Net Profit Margin (%)",
-            "12.98",
-            "15.01",
-            "11.71",
-            "15.22"
-          ]
+          "date": "2026-05-08",
+          "symbol": "THCCL",
+          "open": 55.5,
+          "high": 56.99,
+          "low": 55.4,
+          "close": 55.75,
+          "volume": 1499359.0
         },
         {
-          "cells": [
-            "EPS Growth (%)",
-            "26.71",
-            "79.10",
-            "(12.58)",
-            "(17.52)"
-          ]
+          "date": "2026-05-11",
+          "symbol": "THCCL",
+          "open": 54.05,
+          "high": 55.9,
+          "low": 54.05,
+          "close": 55.28,
+          "volume": 434894.0
         },
         {
-          "cells": [
-            "PEG",
-            "0.21",
-            "0.05",
-            "(0.42)",
-            "(0.22)"
-          ]
+          "date": "2026-05-12",
+          "symbol": "THCCL",
+          "open": 54.94,
+          "high": 55.5,
+          "low": 53.5,
+          "close": 53.65,
+          "volume": 768923.0
+        },
+        {
+          "date": "2026-05-13",
+          "symbol": "THCCL",
+          "open": 53.71,
+          "high": 53.99,
+          "low": 52.5,
+          "close": 53.15,
+          "volume": 456237.0
+        },
+        {
+          "date": "2026-05-14",
+          "symbol": "THCCL",
+          "open": 53.0,
+          "high": 54.3,
+          "low": 52.8,
+          "close": 53.15,
+          "volume": 428989.0
+        },
+        {
+          "date": "2026-05-15",
+          "symbol": "THCCL",
+          "open": 53.76,
+          "high": 53.8,
+          "low": 52.5,
+          "close": 53.02,
+          "volume": 151951.0
+        },
+        {
+          "date": "2026-05-18",
+          "symbol": "THCCL",
+          "open": 53.5,
+          "high": 53.5,
+          "low": 51.4,
+          "close": 51.69,
+          "volume": 543306.0
+        },
+        {
+          "date": "2026-05-19",
+          "symbol": "THCCL",
+          "open": 52.0,
+          "high": 52.49,
+          "low": 51.41,
+          "close": 51.56,
+          "volume": 758156.0
+        },
+        {
+          "date": "2026-05-20",
+          "symbol": "THCCL",
+          "open": 51.5,
+          "high": 52.78,
+          "low": 51.0,
+          "close": 52.13,
+          "volume": 694242.0
+        },
+        {
+          "date": "2026-05-21",
+          "symbol": "THCCL",
+          "open": 52.99,
+          "high": 53.24,
+          "low": 52.2,
+          "close": 52.4,
+          "volume": 446636.0
+        },
+        {
+          "date": "2026-05-22",
+          "symbol": "THCCL",
+          "open": 53.0,
+          "high": 53.0,
+          "low": 51.8,
+          "close": 52.11,
+          "volume": 389625.0
+        },
+        {
+          "date": "2026-05-25",
+          "symbol": "THCCL",
+          "open": 53.0,
+          "high": 53.69,
+          "low": 52.52,
+          "close": 52.98,
+          "volume": 1037184.0
+        },
+        {
+          "date": "2026-05-29",
+          "symbol": "THCCL",
+          "open": 54.05,
+          "high": 54.55,
+          "low": 53.0,
+          "close": 53.89,
+          "volume": 998020.0
+        },
+        {
+          "date": "2026-06-01",
+          "symbol": "THCCL",
+          "open": 54.1,
+          "high": 58.33,
+          "low": 53.1,
+          "close": 57.46,
+          "volume": 10433256.0
+        },
+        {
+          "date": "2026-06-02",
+          "symbol": "THCCL",
+          "open": 57.89,
+          "high": 60.87,
+          "low": 57.8,
+          "close": 59.08,
+          "volume": 9498390.0
+        },
+        {
+          "date": "2026-06-03",
+          "symbol": "THCCL",
+          "open": 59.4,
+          "high": 59.4,
+          "low": 57.2,
+          "close": 58.5,
+          "volume": 2331095.0
+        },
+        {
+          "date": "2026-06-04",
+          "symbol": "THCCL",
+          "open": 58.35,
+          "high": 60.9,
+          "low": 57.51,
+          "close": 60.13,
+          "volume": 3192473.0
+        },
+        {
+          "date": "2026-06-05",
+          "symbol": "THCCL",
+          "open": 61.38,
+          "high": 66.14,
+          "low": 61.1,
+          "close": 66.14,
+          "volume": 12973595.0
+        },
+        {
+          "date": "2026-06-08",
+          "symbol": "THCCL",
+          "open": 67.0,
+          "high": 72.0,
+          "low": 66.01,
+          "close": 69.34,
+          "volume": 22712353.0
+        },
+        {
+          "date": "2026-06-09",
+          "symbol": "THCCL",
+          "open": 70.49,
+          "high": 72.2,
+          "low": 69.11,
+          "close": 69.44,
+          "volume": 10057064.0
+        },
+        {
+          "date": "2026-06-10",
+          "symbol": "THCCL",
+          "open": 68.98,
+          "high": 70.7,
+          "low": 67.0,
+          "close": 67.36,
+          "volume": 4844927.0
+        },
+        {
+          "date": "2026-06-11",
+          "symbol": "THCCL",
+          "open": 66.99,
+          "high": 70.49,
+          "low": 65.13,
+          "close": 68.47,
+          "volume": 5157353.0
+        },
+        {
+          "date": "2026-06-12",
+          "symbol": "THCCL",
+          "open": 69.51,
+          "high": 70.75,
+          "low": 68.61,
+          "close": 69.16,
+          "volume": 5071777.0
+        },
+        {
+          "date": "2026-06-15",
+          "symbol": "THCCL",
+          "open": 71.89,
+          "high": 72.64,
+          "low": 70.0,
+          "close": 70.59,
+          "volume": 4972110.0
+        },
+        {
+          "date": "2026-06-16",
+          "symbol": "THCCL",
+          "open": 71.0,
+          "high": 71.5,
+          "low": 68.0,
+          "close": 68.69,
+          "volume": 3162187.0
+        },
+        {
+          "date": "2026-06-17",
+          "symbol": "THCCL",
+          "open": 69.0,
+          "high": 69.67,
+          "low": 67.75,
+          "close": 68.01,
+          "volume": 2620285.0
+        },
+        {
+          "date": "2026-06-18",
+          "symbol": "THCCL",
+          "open": 68.62,
+          "high": 70.3,
+          "low": 68.51,
+          "close": 69.25,
+          "volume": 3817569.0
+        },
+        {
+          "date": "2026-06-19",
+          "symbol": "THCCL",
+          "open": 69.35,
+          "high": 69.94,
+          "low": 67.0,
+          "close": 67.62,
+          "volume": 1950672.0
+        },
+        {
+          "date": "2026-06-22",
+          "symbol": "THCCL",
+          "open": 68.0,
+          "high": 68.34,
+          "low": 66.3,
+          "close": 66.49,
+          "volume": 2253115.0
+        },
+        {
+          "date": "2026-06-23",
+          "symbol": "THCCL",
+          "open": 67.3,
+          "high": 67.3,
+          "low": 66.0,
+          "close": 66.72,
+          "volume": 2611447.0
+        },
+        {
+          "date": "2026-06-24",
+          "symbol": "THCCL",
+          "open": 66.9,
+          "high": 67.21,
+          "low": 66.43,
+          "close": 66.61,
+          "volume": 1639380.0
+        },
+        {
+          "date": "2026-06-29",
+          "symbol": "THCCL",
+          "open": 66.5,
+          "high": 67.37,
+          "low": 64.65,
+          "close": 64.99,
+          "volume": 1580479.0
+        },
+        {
+          "date": "2026-06-30",
+          "symbol": "THCCL",
+          "open": 65.0,
+          "high": 66.5,
+          "low": 64.55,
+          "close": 65.66,
+          "volume": 984184.0
+        },
+        {
+          "date": "2026-07-01",
+          "symbol": "THCCL",
+          "open": 66.0,
+          "high": 69.0,
+          "low": 66.0,
+          "close": 68.47,
+          "volume": 6237100.0
+        },
+        {
+          "date": "2026-07-02",
+          "symbol": "THCCL",
+          "open": 69.45,
+          "high": 69.45,
+          "low": 67.39,
+          "close": 67.81,
+          "volume": 2616775.0
+        },
+        {
+          "date": "2026-07-03",
+          "symbol": "THCCL",
+          "open": 68.01,
+          "high": 69.11,
+          "low": 67.02,
+          "close": 68.04,
+          "volume": 1774265.0
+        },
+        {
+          "date": "2026-07-06",
+          "symbol": "THCCL",
+          "open": 68.0,
+          "high": 69.75,
+          "low": 67.51,
+          "close": 69.13,
+          "volume": 3310832.0
+        },
+        {
+          "date": "2026-07-07",
+          "symbol": "THCCL",
+          "open": 70.01,
+          "high": 75.25,
+          "low": 70.01,
+          "close": 74.2,
+          "volume": 20400496.0
+        },
+        {
+          "date": "2026-07-08",
+          "symbol": "THCCL",
+          "open": 72.8,
+          "high": 75.5,
+          "low": 67.92,
+          "close": 70.57,
+          "volume": 16241659.0
+        },
+        {
+          "date": "2026-07-09",
+          "symbol": "THCCL",
+          "open": 70.49,
+          "high": 76.48,
+          "low": 69.5,
+          "close": 73.21,
+          "volume": 17083919.0
         }
       ]
     },
-    "SHFA": {
-      "symbol": "SHFA",
-      "source": "https://dps.psx.com.pk/company/SHFA",
-      "error": null,
-      "row_count": 26,
-      "rows": [
+    "FNEL": {
+      "requested_start": "2026-01-11",
+      "requested_end": "2026-04-24",
+      "report_start": "2026-03-22",
+      "report_end": "2026-04-24",
+      "rows_returned": 72,
+      "dates_present": [
+        "2026-01-12",
+        "2026-01-13",
+        "2026-01-14",
+        "2026-01-15",
+        "2026-01-16",
+        "2026-01-19",
+        "2026-01-20",
+        "2026-01-21",
+        "2026-01-22",
+        "2026-01-23",
+        "2026-01-26",
+        "2026-01-27",
+        "2026-01-28",
+        "2026-01-29",
+        "2026-01-30",
+        "2026-02-02",
+        "2026-02-03",
+        "2026-02-04",
+        "2026-02-06",
+        "2026-02-09",
+        "2026-02-10",
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-16",
+        "2026-02-17",
+        "2026-02-18",
+        "2026-02-19",
+        "2026-02-20",
+        "2026-02-23",
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-16",
+        "2026-03-17",
+        "2026-03-18",
+        "2026-03-19",
+        "2026-03-24",
+        "2026-03-25",
+        "2026-03-26",
+        "2026-03-27",
+        "2026-03-30",
+        "2026-03-31",
+        "2026-04-01",
+        "2026-04-02",
+        "2026-04-03",
+        "2026-04-06",
+        "2026-04-07",
+        "2026-04-08",
+        "2026-04-09",
+        "2026-04-10",
+        "2026-04-13",
+        "2026-04-14",
+        "2026-04-15",
+        "2026-04-16",
+        "2026-04-17",
+        "2026-04-20",
+        "2026-04-21",
+        "2026-04-22",
+        "2026-04-23",
+        "2026-04-24"
+      ],
+      "bars": [
         {
-          "cells": [
-            "Dr. Zeeshan Bin Ishtiaque",
-            "CEO"
-          ]
+          "date": "2026-01-12",
+          "symbol": "FNEL",
+          "open": 18.49,
+          "high": 19.17,
+          "low": 18.3,
+          "close": 18.56,
+          "volume": 8958056.0
         },
         {
-          "cells": [
-            "Dr. Habib ur Rahman",
-            "Chairperson"
-          ]
+          "date": "2026-01-13",
+          "symbol": "FNEL",
+          "open": 19.01,
+          "high": 19.37,
+          "low": 18.21,
+          "close": 18.36,
+          "volume": 15804376.0
         },
         {
-          "cells": [
-            "Muhammad Naeem",
-            "Company Secretary"
-          ]
+          "date": "2026-01-14",
+          "symbol": "FNEL",
+          "open": 18.35,
+          "high": 18.45,
+          "low": 16.75,
+          "close": 17.02,
+          "volume": 7244113.0
         },
         {
-          "cells": [
-            "Apr 30, 2026",
-            "Transmission of Quarterly Report for the Period Ended March 31, 2026",
-            "View PDF"
-          ]
+          "date": "2026-01-15",
+          "symbol": "FNEL",
+          "open": 17.13,
+          "high": 17.69,
+          "low": 16.5,
+          "close": 16.94,
+          "volume": 4838375.0
         },
         {
-          "cells": [
-            "Apr 29, 2026",
-            "Mandatory Shariah Disclosures for the Half Year Ended December 31, 2025",
-            "View PDF"
-          ]
+          "date": "2026-01-16",
+          "symbol": "FNEL",
+          "open": 17.1,
+          "high": 18.24,
+          "low": 17.1,
+          "close": 17.35,
+          "volume": 10242893.0
         },
         {
-          "cells": [
-            "Apr 27, 2026",
-            "Financial Results for the 3rd Quarter Ended March 31, 2026",
-            "View PDF"
-          ]
+          "date": "2026-01-19",
+          "symbol": "FNEL",
+          "open": 18.0,
+          "high": 19.09,
+          "low": 17.5,
+          "close": 19.09,
+          "volume": 8048798.0
         },
         {
-          "cells": [
-            "Feb 27, 2026",
-            "Transmission of Quarterly Report for the Period Ended December 31, 2025",
-            "View PDF"
-          ]
+          "date": "2026-01-20",
+          "symbol": "FNEL",
+          "open": 19.97,
+          "high": 20.0,
+          "low": 17.45,
+          "close": 17.65,
+          "volume": 19791016.0
         },
         {
-          "cells": [
-            "Feb 23, 2026",
-            "Financial Results for the 2nd Quarter Ended December 31, 2025",
-            "View PDF"
-          ]
+          "date": "2026-01-21",
+          "symbol": "FNEL",
+          "open": 17.84,
+          "high": 17.85,
+          "low": 17.19,
+          "close": 17.29,
+          "volume": 4307671.0
         },
         {
-          "cells": [
-            "Sep 3, 2026",
-            "Board Meeting",
-            "View PDF"
-          ]
+          "date": "2026-01-22",
+          "symbol": "FNEL",
+          "open": 17.4,
+          "high": 18.48,
+          "low": 17.0,
+          "close": 17.64,
+          "volume": 13100213.0
         },
         {
-          "cells": [
-            "Jun 29, 2026",
-            "Board Meeting Other Than Financial Results",
-            "View PDF"
-          ]
+          "date": "2026-01-23",
+          "symbol": "FNEL",
+          "open": 17.66,
+          "high": 19.4,
+          "low": 17.46,
+          "close": 18.84,
+          "volume": 23532206.0
         },
         {
-          "cells": [
-            "Jun 19, 2026",
-            "Board Meeting Other Than Financial Results",
-            "View PDF"
-          ]
+          "date": "2026-01-26",
+          "symbol": "FNEL",
+          "open": 19.09,
+          "high": 19.3,
+          "low": 17.82,
+          "close": 18.34,
+          "volume": 10388003.0
         },
         {
-          "cells": [
-            "Apr 16, 2026",
-            "Board Meeting",
-            "View PDF"
-          ]
+          "date": "2026-01-27",
+          "symbol": "FNEL",
+          "open": 18.4,
+          "high": 19.2,
+          "low": 17.93,
+          "close": 18.09,
+          "volume": 11066866.0
         },
         {
-          "cells": [
-            "Apr 1, 2026",
-            "CERTIFIED COPY OF RESOLUTIONS ADOPTED IN THE EXTRAORDINARY GENERAL MEETING OF SHIFA INTERNATIONAL HOSPITALS LIMITED HELD ON APRIL 01, 2026",
-            "View PDF"
-          ]
+          "date": "2026-01-28",
+          "symbol": "FNEL",
+          "open": 18.28,
+          "high": 18.6,
+          "low": 17.86,
+          "close": 18.0,
+          "volume": 12275044.0
         },
         {
-          "cells": [
-            "Aug 31, 2026",
-            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
-            "View PDF"
-          ]
+          "date": "2026-01-29",
+          "symbol": "FNEL",
+          "open": 18.74,
+          "high": 19.0,
+          "low": 17.82,
+          "close": 18.11,
+          "volume": 13846068.0
         },
         {
-          "cells": [
-            "Aug 13, 2026",
-            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
-            "View PDF"
-          ]
+          "date": "2026-01-30",
+          "symbol": "FNEL",
+          "open": 18.0,
+          "high": 18.4,
+          "low": 17.41,
+          "close": 17.7,
+          "volume": 16707271.0
         },
         {
-          "cells": [
-            "Aug 6, 2026",
-            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
-            "View PDF"
-          ]
+          "date": "2026-02-02",
+          "symbol": "FNEL",
+          "open": 1.65,
+          "high": 1.93,
+          "low": 1.6,
+          "close": 1.65,
+          "volume": 191182675.0
         },
         {
-          "cells": [
-            "Jul 27, 2026",
-            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
-            "View PDF"
-          ]
+          "date": "2026-02-03",
+          "symbol": "FNEL",
+          "open": 1.7,
+          "high": 1.76,
+          "low": 1.62,
+          "close": 1.74,
+          "volume": 91350753.0
         },
         {
-          "cells": [
-            "Jul 21, 2026",
-            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
-            "View PDF"
-          ]
+          "date": "2026-02-04",
+          "symbol": "FNEL",
+          "open": 1.75,
+          "high": 1.81,
+          "low": 1.7,
+          "close": 1.72,
+          "volume": 32938146.0
         },
         {
-          "cells": [
-            "Sales",
-            "27,967,661",
-            "23,563,840",
-            "19,721,425",
-            "16,197,551"
-          ]
+          "date": "2026-02-06",
+          "symbol": "FNEL",
+          "open": 1.72,
+          "high": 1.76,
+          "low": 1.61,
+          "close": 1.63,
+          "volume": 50264390.0
         },
         {
-          "cells": [
-            "Profit after Taxation",
-            "2,328,980",
-            "1,362,074",
-            "1,181,406",
-            "1,162,549"
-          ]
+          "date": "2026-02-09",
+          "symbol": "FNEL",
+          "open": 1.63,
+          "high": 1.68,
+          "low": 1.57,
+          "close": 1.59,
+          "volume": 26090746.0
         },
         {
-          "cells": [
-            "Sales",
-            "7,295,690",
-            "7,771,133",
-            "7,615,508",
-            "6,948,721"
-          ]
+          "date": "2026-02-10",
+          "symbol": "FNEL",
+          "open": 1.6,
+          "high": 1.62,
+          "low": 1.54,
+          "close": 1.56,
+          "volume": 29726179.0
         },
         {
-          "cells": [
-            "Profit after Taxation",
-            "591,484",
-            "874,253",
-            "743,577",
-            "569,442"
-          ]
+          "date": "2026-02-11",
+          "symbol": "FNEL",
+          "open": 1.54,
+          "high": 1.66,
+          "low": 1.5,
+          "close": 1.56,
+          "volume": 51954245.0
         },
         {
-          "cells": [
-            "Gross Profit Margin (%)",
-            "100.00",
-            "100.00",
-            "100.00",
-            "100.00"
-          ]
+          "date": "2026-02-12",
+          "symbol": "FNEL",
+          "open": 1.55,
+          "high": 1.59,
+          "low": 1.46,
+          "close": 1.5,
+          "volume": 30912538.0
         },
         {
-          "cells": [
-            "Net Profit Margin (%)",
-            "8.33",
-            "5.78",
-            "5.99",
-            "7.18"
-          ]
+          "date": "2026-02-13",
+          "symbol": "FNEL",
+          "open": 1.5,
+          "high": 1.54,
+          "low": 1.49,
+          "close": 1.51,
+          "volume": 15882868.0
         },
         {
-          "cells": [
-            "EPS Growth (%)",
-            "70.95",
-            "15.30",
-            "1.63",
-            "66.12"
-          ]
+          "date": "2026-02-16",
+          "symbol": "FNEL",
+          "open": 1.55,
+          "high": 1.55,
+          "low": 1.4,
+          "close": 1.41,
+          "volume": 26673405.0
         },
         {
-          "cells": [
-            "PEG",
-            "0.18",
-            "0.44",
-            "4.02",
-            "0.15"
-          ]
+          "date": "2026-02-17",
+          "symbol": "FNEL",
+          "open": 1.45,
+          "high": 1.45,
+          "low": 1.35,
+          "close": 1.38,
+          "volume": 20184610.0
+        },
+        {
+          "date": "2026-02-18",
+          "symbol": "FNEL",
+          "open": 1.42,
+          "high": 1.42,
+          "low": 1.37,
+          "close": 1.4,
+          "volume": 10240561.0
+        },
+        {
+          "date": "2026-02-19",
+          "symbol": "FNEL",
+          "open": 1.44,
+          "high": 1.44,
+          "low": 1.2,
+          "close": 1.29,
+          "volume": 12420700.0
+        },
+        {
+          "date": "2026-02-20",
+          "symbol": "FNEL",
+          "open": 1.29,
+          "high": 1.33,
+          "low": 1.16,
+          "close": 1.26,
+          "volume": 22787240.0
+        },
+        {
+          "date": "2026-02-23",
+          "symbol": "FNEL",
+          "open": 1.26,
+          "high": 1.4,
+          "low": 1.2,
+          "close": 1.34,
+          "volume": 24647531.0
+        },
+        {
+          "date": "2026-02-24",
+          "symbol": "FNEL",
+          "open": 1.39,
+          "high": 1.49,
+          "low": 1.35,
+          "close": 1.47,
+          "volume": 27444317.0
+        },
+        {
+          "date": "2026-02-25",
+          "symbol": "FNEL",
+          "open": 1.5,
+          "high": 1.64,
+          "low": 1.45,
+          "close": 1.48,
+          "volume": 33421278.0
+        },
+        {
+          "date": "2026-02-26",
+          "symbol": "FNEL",
+          "open": 1.48,
+          "high": 1.56,
+          "low": 1.36,
+          "close": 1.52,
+          "volume": 20007346.0
+        },
+        {
+          "date": "2026-02-27",
+          "symbol": "FNEL",
+          "open": 1.64,
+          "high": 1.64,
+          "low": 1.45,
+          "close": 1.54,
+          "volume": 36245681.0
+        },
+        {
+          "date": "2026-03-02",
+          "symbol": "FNEL",
+          "open": 1.11,
+          "high": 1.46,
+          "low": 1.1,
+          "close": 1.23,
+          "volume": 41849359.0
+        },
+        {
+          "date": "2026-03-03",
+          "symbol": "FNEL",
+          "open": 1.2,
+          "high": 1.39,
+          "low": 1.2,
+          "close": 1.34,
+          "volume": 14780104.0
+        },
+        {
+          "date": "2026-03-04",
+          "symbol": "FNEL",
+          "open": 1.39,
+          "high": 1.39,
+          "low": 1.28,
+          "close": 1.33,
+          "volume": 11758055.0
+        },
+        {
+          "date": "2026-03-05",
+          "symbol": "FNEL",
+          "open": 1.35,
+          "high": 1.38,
+          "low": 1.31,
+          "close": 1.35,
+          "volume": 19282091.0
+        },
+        {
+          "date": "2026-03-06",
+          "symbol": "FNEL",
+          "open": 1.36,
+          "high": 1.36,
+          "low": 1.3,
+          "close": 1.31,
+          "volume": 7756355.0
+        },
+        {
+          "date": "2026-03-09",
+          "symbol": "FNEL",
+          "open": 1.3,
+          "high": 1.3,
+          "low": 1.14,
+          "close": 1.15,
+          "volume": 33608420.0
+        },
+        {
+          "date": "2026-03-10",
+          "symbol": "FNEL",
+          "open": 1.29,
+          "high": 1.32,
+          "low": 1.25,
+          "close": 1.27,
+          "volume": 15499891.0
+        },
+        {
+          "date": "2026-03-11",
+          "symbol": "FNEL",
+          "open": 1.31,
+          "high": 1.33,
+          "low": 1.2,
+          "close": 1.22,
+          "volume": 17023356.0
+        },
+        {
+          "date": "2026-03-12",
+          "symbol": "FNEL",
+          "open": 1.22,
+          "high": 1.26,
+          "low": 1.16,
+          "close": 1.19,
+          "volume": 14753958.0
+        },
+        {
+          "date": "2026-03-13",
+          "symbol": "FNEL",
+          "open": 1.18,
+          "high": 1.22,
+          "low": 1.14,
+          "close": 1.19,
+          "volume": 15933544.0
+        },
+        {
+          "date": "2026-03-16",
+          "symbol": "FNEL",
+          "open": 1.19,
+          "high": 1.21,
+          "low": 1.14,
+          "close": 1.17,
+          "volume": 11094286.0
+        },
+        {
+          "date": "2026-03-17",
+          "symbol": "FNEL",
+          "open": 1.18,
+          "high": 1.2,
+          "low": 1.14,
+          "close": 1.16,
+          "volume": 11254334.0
+        },
+        {
+          "date": "2026-03-18",
+          "symbol": "FNEL",
+          "open": 1.19,
+          "high": 1.23,
+          "low": 1.16,
+          "close": 1.2,
+          "volume": 8832641.0
+        },
+        {
+          "date": "2026-03-19",
+          "symbol": "FNEL",
+          "open": 1.2,
+          "high": 1.31,
+          "low": 1.15,
+          "close": 1.25,
+          "volume": 22028800.0
+        },
+        {
+          "date": "2026-03-24",
+          "symbol": "FNEL",
+          "open": 1.31,
+          "high": 1.31,
+          "low": 1.22,
+          "close": 1.25,
+          "volume": 8168773.0
+        },
+        {
+          "date": "2026-03-25",
+          "symbol": "FNEL",
+          "open": 1.25,
+          "high": 1.29,
+          "low": 1.2,
+          "close": 1.23,
+          "volume": 24816049.0
+        },
+        {
+          "date": "2026-03-26",
+          "symbol": "FNEL",
+          "open": 1.23,
+          "high": 1.24,
+          "low": 1.17,
+          "close": 1.18,
+          "volume": 33024724.0
+        },
+        {
+          "date": "2026-03-27",
+          "symbol": "FNEL",
+          "open": 1.19,
+          "high": 1.19,
+          "low": 1.14,
+          "close": 1.15,
+          "volume": 27181362.0
+        },
+        {
+          "date": "2026-03-30",
+          "symbol": "FNEL",
+          "open": 1.16,
+          "high": 1.16,
+          "low": 1.1,
+          "close": 1.11,
+          "volume": 19802685.0
+        },
+        {
+          "date": "2026-03-31",
+          "symbol": "FNEL",
+          "open": 1.14,
+          "high": 1.16,
+          "low": 1.11,
+          "close": 1.15,
+          "volume": 7605115.0
+        },
+        {
+          "date": "2026-04-01",
+          "symbol": "FNEL",
+          "open": 1.17,
+          "high": 1.25,
+          "low": 1.16,
+          "close": 1.19,
+          "volume": 10178494.0
+        },
+        {
+          "date": "2026-04-02",
+          "symbol": "FNEL",
+          "open": 1.12,
+          "high": 1.17,
+          "low": 1.11,
+          "close": 1.13,
+          "volume": 13756717.0
+        },
+        {
+          "date": "2026-04-03",
+          "symbol": "FNEL",
+          "open": 1.15,
+          "high": 1.16,
+          "low": 1.11,
+          "close": 1.14,
+          "volume": 6415726.0
+        },
+        {
+          "date": "2026-04-06",
+          "symbol": "FNEL",
+          "open": 1.12,
+          "high": 1.17,
+          "low": 1.12,
+          "close": 1.16,
+          "volume": 7294295.0
+        },
+        {
+          "date": "2026-04-07",
+          "symbol": "FNEL",
+          "open": 1.13,
+          "high": 1.18,
+          "low": 1.13,
+          "close": 1.16,
+          "volume": 3913268.0
+        },
+        {
+          "date": "2026-04-08",
+          "symbol": "FNEL",
+          "open": 1.3,
+          "high": 1.6,
+          "low": 1.22,
+          "close": 1.58,
+          "volume": 212312467.0
+        },
+        {
+          "date": "2026-04-09",
+          "symbol": "FNEL",
+          "open": 1.61,
+          "high": 1.61,
+          "low": 1.41,
+          "close": 1.47,
+          "volume": 81609572.0
+        },
+        {
+          "date": "2026-04-10",
+          "symbol": "FNEL",
+          "open": 1.45,
+          "high": 1.52,
+          "low": 1.4,
+          "close": 1.44,
+          "volume": 43189848.0
+        },
+        {
+          "date": "2026-04-13",
+          "symbol": "FNEL",
+          "open": 1.39,
+          "high": 1.39,
+          "low": 1.3,
+          "close": 1.31,
+          "volume": 33604339.0
+        },
+        {
+          "date": "2026-04-14",
+          "symbol": "FNEL",
+          "open": 1.34,
+          "high": 1.45,
+          "low": 1.32,
+          "close": 1.33,
+          "volume": 62630235.0
+        },
+        {
+          "date": "2026-04-15",
+          "symbol": "FNEL",
+          "open": 1.44,
+          "high": 1.44,
+          "low": 1.38,
+          "close": 1.39,
+          "volume": 35645478.0
+        },
+        {
+          "date": "2026-04-16",
+          "symbol": "FNEL",
+          "open": 1.44,
+          "high": 1.44,
+          "low": 1.4,
+          "close": 1.41,
+          "volume": 21110117.0
+        },
+        {
+          "date": "2026-04-17",
+          "symbol": "FNEL",
+          "open": 1.42,
+          "high": 1.47,
+          "low": 1.42,
+          "close": 1.46,
+          "volume": 30513310.0
+        },
+        {
+          "date": "2026-04-20",
+          "symbol": "FNEL",
+          "open": 1.45,
+          "high": 1.45,
+          "low": 1.31,
+          "close": 1.39,
+          "volume": 38950231.0
+        },
+        {
+          "date": "2026-04-21",
+          "symbol": "FNEL",
+          "open": 1.43,
+          "high": 1.43,
+          "low": 1.36,
+          "close": 1.38,
+          "volume": 28006993.0
+        },
+        {
+          "date": "2026-04-22",
+          "symbol": "FNEL",
+          "open": 1.38,
+          "high": 1.47,
+          "low": 1.35,
+          "close": 1.38,
+          "volume": 34293463.0
+        },
+        {
+          "date": "2026-04-23",
+          "symbol": "FNEL",
+          "open": 1.39,
+          "high": 1.74,
+          "low": 1.37,
+          "close": 1.7,
+          "volume": 286823348.0
+        },
+        {
+          "date": "2026-04-24",
+          "symbol": "FNEL",
+          "open": 1.73,
+          "high": 1.74,
+          "low": 1.49,
+          "close": 1.51,
+          "volume": 128291548.0
         }
       ]
     }
   },
-  "psx_wide_notices": {
-    "AICL": {
-      "source": "https://dps.psx.com.pk/announcements/psx",
-      "error": null,
-      "total_rows_seen": 0,
-      "matched_rows": [],
-      "diagnostic_if_zero_rows": {
-        "note": "no <tr> with >=2 <td> found -- page structure may differ from assumption",
-        "first_2000_chars_of_body": "Announcements - Pakistan Stock Exchange (PSX) Sep 3, 2026 3:50 PM PSX SUKUK PORTAL PSX KNOWLEDGE CENTER PSX CORPORATE WEBSITE Symbols Website My Portfolio Market Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report PSX SUKUK PORTAL PSX CORPORATE WEBSITE PSX KNOWLEDGE CENTER MY PORTFOLIO MARKET Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report BACK TO TOP KSE100 174,929.68 153.09 (0.09%) KSE100PR 52,888.84 40.07 (0.08%) ALLSHR 106,206.57 93.53 (0.09%) KSE30 52,185.07 50.80 (0.10%) KMI30 249,562.17 193.39 (0.08%) BKTI 48,975.28 -25.16 (-0.05%) OGTI 35,516.28 -147.93 (-0.41%) KMIALLSHR 68,658.82 42.70 (0.06%) PSXDIV20 80,770.73 338.65 (0.42%) UPP9 62,224.39 99.59 (0.16%) NITPGI 46,319.36 -20.34 (-0.04%) NBPPGI 49,945.22 19.50 (0.04%) MZNPI 31,041.49 0.91 (0.00%) JSMFI 45,414.82 -232.50 (-0.51%) ACI 22,850.75 149.66 (0.66%) JSGBKTI 74,361.29 101.97 (0.14%) HBLTTI 18,992.70 02-09-2026 4.99 (0.03%) MII30 22,534.96 23.35 (0.10%) Announcements ANNOUNCEMENT TYPE CDC Notices SECP Notices Companies Announcements NCCPL Notices PSX Notices Keyword COMPANY SYMBOL DATE Month Year SEARCH CLEAR Submitting ..."
-      }
-    },
-    "SHFA": {
-      "source": "https://dps.psx.com.pk/announcements/psx",
-      "error": null,
-      "total_rows_seen": 0,
-      "matched_rows": [],
-      "diagnostic_if_zero_rows": {
-        "note": "no <tr> with >=2 <td> found -- page structure may differ from assumption",
-        "first_2000_chars_of_body": "Announcements - Pakistan Stock Exchange (PSX) Sep 3, 2026 3:50 PM PSX SUKUK PORTAL PSX KNOWLEDGE CENTER PSX CORPORATE WEBSITE Symbols Website My Portfolio Market Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report PSX SUKUK PORTAL PSX CORPORATE WEBSITE PSX KNOWLEDGE CENTER MY PORTFOLIO MARKET Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report BACK TO TOP KSE100 174,929.68 153.09 (0.09%) KSE100PR 52,888.84 40.07 (0.08%) ALLSHR 106,206.57 93.53 (0.09%) KSE30 52,185.07 50.80 (0.10%) KMI30 249,562.17 193.39 (0.08%) BKTI 48,975.28 -25.16 (-0.05%) OGTI 35,516.28 -147.93 (-0.41%) KMIALLSHR 68,658.82 42.70 (0.06%) PSXDIV20 80,770.73 338.65 (0.42%) UPP9 62,224.39 99.59 (0.16%) NITPGI 46,319.36 -20.34 (-0.04%) NBPPGI 49,945.22 19.50 (0.04%) MZNPI 31,041.49 0.91 (0.00%) JSMFI 45,414.82 -232.50 (-0.51%) ACI 22,850.75 149.66 (0.66%) JSGBKTI 74,361.29 101.97 (0.14%) HBLTTI 18,992.70 02-09-2026 4.99 (0.03%) MII30 22,534.96 23.35 (0.10%) Announcements ANNOUNCEMENT TYPE CDC Notices SECP Notices Companies Announcements NCCPL Notices PSX Notices Keyword COMPANY SYMBOL DATE Month Year SEARCH CLEAR Submitting ..."
-      }
-    }
-  }
+  "company_announcements": {},
+  "psx_wide_notices": {}
 }
