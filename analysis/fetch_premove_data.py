@@ -49,10 +49,15 @@ HEAD = {
 
 TARGETS = [
     {"symbol": "AICL", "company_hint": "Adamjee",
-     "ohlc_start": "2026-07-08", "ohlc_end": "2026-08-07",
+     # ohlc_start extended ~70 calendar days before the report window so a
+     # genuine trailing 20-day AND 50-day volume average is computable for
+     # every day in the reported window, not just its last few days.
+     "ohlc_start": "2026-04-15", "ohlc_end": "2026-08-07",
+     "report_start": "2026-07-08", "report_end": "2026-08-07",
      "ann_start": "2026-07-08", "ann_end": "2026-08-10"},
     {"symbol": "SHFA", "company_hint": "Shifa",
-     "ohlc_start": "2026-05-28", "ohlc_end": "2026-06-18",
+     "ohlc_start": "2026-03-10", "ohlc_end": "2026-06-18",
+     "report_start": "2026-05-28", "report_end": "2026-06-18",
      "ann_start": "2026-05-28", "ann_end": "2026-06-22"},
 ]
 
@@ -113,6 +118,7 @@ def main():
         df = dps_scraper.fetch_psx_dps_ohlc(sym, start_date=t["ohlc_start"], end_date=t["ohlc_end"])
         output["ohlc"][sym] = {
             "requested_start": t["ohlc_start"], "requested_end": t["ohlc_end"],
+            "report_start": t["report_start"], "report_end": t["report_end"],
             "rows_returned": len(df),
             "dates_present": df["date"].tolist() if len(df) else [],
             "bars": df.to_dict("records") if len(df) else [],
