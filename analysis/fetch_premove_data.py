@@ -59,7 +59,24 @@ TARGETS = [
      "ohlc_start": "2026-03-10", "ohlc_end": "2026-06-18",
      "report_start": "2026-05-28", "report_end": "2026-06-18",
      "ann_start": "2026-05-28", "ann_end": "2026-06-22"},
+    {"symbol": "THCCL", "company_hint": "Thal",
+     "ohlc_start": "2026-04-06", "ohlc_end": "2026-07-09",
+     "report_start": "2026-06-15", "report_end": "2026-07-09",
+     "ann_start": "2026-06-15", "ann_end": "2026-07-13"},
+    {"symbol": "FNEL", "company_hint": "Fauji",
+     "ohlc_start": "2026-01-11", "ohlc_end": "2026-04-24",
+     "report_start": "2026-03-22", "report_end": "2026-04-24",
+     "ann_start": "2026-03-22", "ann_end": "2026-04-28"},
 ]
+
+# This run is pure price/volume/technical forensics only for all four
+# stocks -- announcements/catalyst-checking is explicitly out of scope
+# (already done for AICL/SHFA in the prior run; the user asked this run
+# skip it entirely, for all four, rather than mixing scopes). The
+# announcement-fetch functions below are kept (not deleted) since they're
+# real, working, reusable code for a future run that does want them --
+# they're simply not called from main() this time.
+FETCH_ANNOUNCEMENTS = False
 
 
 def fetch_company_announcements(symbol):
@@ -124,11 +141,14 @@ def main():
             "bars": df.to_dict("records") if len(df) else [],
         }
 
-        print(f"--- Fetching company announcements for {sym} ---", file=sys.stderr)
-        output["company_announcements"][sym] = fetch_company_announcements(sym)
+        if FETCH_ANNOUNCEMENTS:
+            print(f"--- Fetching company announcements for {sym} ---", file=sys.stderr)
+            output["company_announcements"][sym] = fetch_company_announcements(sym)
 
-        print(f"--- Fetching PSX-wide notices, filtering for {sym}/{t['company_hint']} ---", file=sys.stderr)
-        output["psx_wide_notices"][sym] = fetch_psx_wide_notices([sym, t["company_hint"]])
+            print(f"--- Fetching PSX-wide notices, filtering for {sym}/{t['company_hint']} ---", file=sys.stderr)
+            output["psx_wide_notices"][sym] = fetch_psx_wide_notices([sym, t["company_hint"]])
+        else:
+            print(f"--- Skipping announcements for {sym} (out of scope this run) ---", file=sys.stderr)
 
     print("===JSON_START===")
     print(json.dumps(output, indent=2, default=str))
