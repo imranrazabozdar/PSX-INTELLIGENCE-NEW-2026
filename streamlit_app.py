@@ -3693,8 +3693,15 @@ with tab_patterns:
                            "same pivot/breakout/confidence machinery, flipped: highs instead of lows, "
                            "requires a PRIOR UPTREND, SHORTS the breakdown below the neckline). It was "
                            "built alongside Inverse H&S but deliberately left unwired pending its own "
-                           "walk-forward backtest — see backend/run_hstop_backtest.py for the real PSX "
-                           "numbers before treating any signal here as validated.")
+                           "walk-forward backtest.")
+                st.caption("⚠️ Backtested walk-forward on PSX (202 symbols, only **7 signals** total — "
+                           "this is a strict 5-pivot structural pattern, same low signal density as "
+                           "Inverse H&S on this market): **42.9% win rate to Target 1, 0% reached "
+                           "Target 2, -4.42% average return per trade, 0.63 profit factor** — a small "
+                           "loser at these defaults, and n=7 is too thin to treat as a reliable "
+                           "estimate either way. Treat this as a documented, tracked signal, not a "
+                           "validated PSX edge — and re-run the backtest periodically as more history "
+                           "accumulates before trusting the number more than the sample size allows.")
 
         # Cup & Handle suspended — see CALIBRATION_LOG.md "MARKET STRUCTURE
         # CONCLUSION". Insufficient PSX signal density (2 signals in a 5yr,
