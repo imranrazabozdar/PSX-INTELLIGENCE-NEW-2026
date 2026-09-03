@@ -196,6 +196,7 @@ import level_breakout_detector as _level_breakout
 import gp_evolved_detector as _gp_evolved
 import confluence_engine as _confluence
 from patterns.advanced_pattern_adapter import scan_symbol as _scan_advanced_patterns
+from patterns.advanced_pattern_adapter import scan_symbol_bearish as _scan_hstop
 from patterns.cup_handle_adapter import scan_symbol as _scan_cup_handle
 from patterns.ascending_triangle_adapter import scan_symbol as _scan_ascending_triangle
 
@@ -3845,6 +3846,59 @@ def patterns_advanced_scan(request:Request, force:bool=False):
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("advanced_pattern_scan")
+    return out
+
+
+def _run_hstop_scan(symbols, ohlc_fn):
+    """Market-wide Head & Shoulders Top scan (backend/patterns/
+    advanced_pattern_adapter.py's scan_symbol_bearish -- the exact bearish
+    mirror of _run_advanced_pattern_scan's IHS/Double Bottom scan, kept as
+    its own function since HST signals need scan_symbol_bearish, not
+    scan_symbol). Same (symbols, ohlc_fn) injection shape for testability.
+    See backend/run_hstop_backtest.py for the walk-forward PSX backtest of
+    this exact detector."""
+    hits = []
+    for sym in symbols:
+        try:
+            rows = ohlc_fn(sym, 220)
+            hits.extend(_scan_hstop(sym, rows, min_rows=200))
+        except Exception as e:
+            logger.warning("hstop_scan failed for %s: %s: %s", sym, type(e).__name__, e)
+            continue
+    hits.sort(key=lambda r: r["symbol"])
+    return {"status": "ok", "scanned": len(symbols), "hits": hits}
+
+
+def _run_hstop_scan_default():
+    """Zero-arg entry point, same scan_run_log guard as advanced_pattern_scan
+    (HST needs the same 200+ session window per symbol -- one of the
+    heaviest scans, no reason to redo it twice in one day)."""
+    if scan_ran_today("hstop_scan"):
+        cached = _scan_cache.latest("hstop_scan")
+        if cached:
+            return cached
+        return {"status": "ok", "hits": [], "scanned": 0,
+                "note": "scan completed today, cache expired"}
+    coverage = ohlc_coverage()
+    symbols = [c["symbol"] for c in coverage]
+    result = _run_hstop_scan(symbols, ohlc_rows)
+    mark_scan_complete("hstop_scan", len(symbols))
+    return result
+
+
+@app.get("/patterns/hstop-scan")
+def patterns_hstop_scan(request:Request, force:bool=False):
+    """Market-wide Head & Shoulders Top scan -- SHORT-only (a bearish
+    topping pattern; the bullish mirror of this engine's Inverse H&S).
+    Cached/refreshed the same way as the other pattern scans; force=true
+    (admin token required) triggers an immediate re-run. See
+    backend/run_hstop_backtest.py for the walk-forward PSX backtest."""
+    cached = _scan_cache.latest("hstop_scan")
+    result, err = _serve_cached_and_refresh("hstop_scan", _run_hstop_scan_default, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("hstop_scan")
     return out
 
 

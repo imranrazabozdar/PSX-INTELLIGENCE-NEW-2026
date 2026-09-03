@@ -2,7 +2,7 @@
 hits into one per-symbol bullish/bearish vote count ("confluence"), so a
 dashboard can show ONE bullish list and ONE bearish list ranked by how many
 independent indicators agree, instead of forcing a reader to cross-check
-8 separate detector tabs each with their own buy/sell list (the confusion
+separate detector tabs each with their own buy/sell list (the confusion
 this module exists to fix, per explicit user request).
 
 DESIGN CHOICES (per explicit user direction):
@@ -11,7 +11,7 @@ DESIGN CHOICES (per explicit user direction):
     votes BULL on it (and correspondingly for bearish), sorted with the
     most-agreed-upon symbols first, then by fewest opposing votes.
   - "Agreement" is a raw vote COUNT across indicators, not weighted by
-    each indicator's own backtested track record -- several of the 8
+    each indicator's own backtested track record -- several of the
     families below backtested as net losers at their stated-default
     settings (see each family's own detector module docstring). This
     module reports agreement exactly as asked; each family's own
@@ -23,7 +23,7 @@ DESIGN CHOICES (per explicit user direction):
     no principled tie-break -- excluded from BOTH lists rather than
     arbitrarily assigned a lean.
 
-INDICATOR -> VOTE mapping (8 families, all read from the same
+INDICATOR -> VOTE mapping (9 families, all read from the same
 analysis_cache rows run_chart_pattern_refresh.py's daily cron already
 writes -- this module makes no live detector calls of its own, so it's
 only ever as fresh as the last daily refresh):
@@ -35,6 +35,8 @@ only ever as fresh as the last daily refresh):
   morning_star_scan        -> every hit is BULL (a bullish reversal pattern by definition)
   advanced_pattern_scan    -> every hit is BULL (only IHS/Double Bottom are wired, both bullish)
   gp_evolved_scan          -> hit['classification']  BUY->BULL, SELL->BEAR
+  hstop_scan               -> every hit is BEAR (Head & Shoulders Top, SHORT-only,
+                               the bearish mirror of advanced_pattern_scan's Inverse H&S)
 """
 
 FAMILIES = [
@@ -46,10 +48,11 @@ FAMILIES = [
     ("morning_star_scan", "Morning Star"),
     ("advanced_pattern_scan", "Advanced (IHS/Double Bottom)"),
     ("gp_evolved_scan", "GP-Evolved Formula"),
+    ("hstop_scan", "Head & Shoulders Top"),
 ]
 
 _ALWAYS_BULL = {"bullish_engulfing_scan", "morning_star_scan", "advanced_pattern_scan"}
-_ALWAYS_BEAR = {"triangle_regression_scan"}
+_ALWAYS_BEAR = {"triangle_regression_scan", "hstop_scan"}
 
 
 def _vote_for_hit(cache_key, hit):

@@ -1321,10 +1321,11 @@ with tab_home:
                                           f"confluence_bear_{_conf_scope}")
 
         with st.expander("📖 About Confluence Signals"):
-            st.caption("Merges 8 pattern-family scans: Bullish Engulfing, MHarris 5-Bar Reversal, "
+            st.caption("Merges 9 pattern-family scans: Bullish Engulfing, MHarris 5-Bar Reversal, "
                        "MACD+EMA200 Trend Resumption, Triangle Squeeze, Level Break Out, Morning "
-                       "Star, Advanced (IHS/Double Bottom), and GP-Evolved Formula. Agreement is a "
-                       "raw vote COUNT, not weighted by how each indicator actually backtested on "
+                       "Star, Advanced (IHS/Double Bottom), GP-Evolved Formula, and Head & "
+                       "Shoulders Top. Agreement is a raw vote COUNT, not weighted by how each "
+                       "indicator actually backtested on "
                        "PSX — several of these are net losers at their own default settings (see "
                        "each pattern's own expander in the Patterns tab for its real walk-forward "
                        "numbers). A high agreement count means several indicators independently "
@@ -3564,16 +3565,20 @@ with tab_patterns:
     # ----------------------------------------------- Structural Patterns ----
     with tab_structural:
         st.markdown('<div class="psx-section-eyebrow">CHART PATTERNS</div>'
-                    '<div class="psx-section-title">📐 Chart Patterns (IHS & Double Bottom)</div>',
+                    '<div class="psx-section-title">📐 Chart Patterns (IHS, Double Bottom & Head/Shoulders)</div>',
                     unsafe_allow_html=True)
         adv = _get("/patterns/advanced-scan", **_pat_refresh_params)
-        if adv.get("status") not in ("ok",):
+        hst = _get("/patterns/hstop-scan", **_pat_refresh_params)
+        if adv.get("status") not in ("ok",) and hst.get("status") not in ("ok",):
             st.info(adv.get("reason") or "Chart pattern scan unavailable right now.")
         else:
-            _ADV_PATTERN_LABELS = {"INVERSE_HS": "Inverse Head & Shoulders", "DOUBLE_BOTTOM": "Double Bottom"}
-            adv_hits_all = adv.get("hits") or []
+            _ADV_PATTERN_LABELS = {"INVERSE_HS": "Inverse Head & Shoulders", "DOUBLE_BOTTOM": "Double Bottom",
+                                    "HEAD_SHOULDERS_TOP": "Head & Shoulders Top"}
+            adv_hits_all = (adv.get("hits") or []) if adv.get("status") == "ok" else []
+            adv_hits_all = adv_hits_all + ((hst.get("hits") or []) if hst.get("status") == "ok" else [])
             adv_filter = st.selectbox(
-                "Pattern type", ["All", "Inverse Head & Shoulders", "Double Bottom"], key="adv_pattern_filter")
+                "Pattern type", ["All", "Inverse Head & Shoulders", "Double Bottom", "Head & Shoulders Top"],
+                key="adv_pattern_filter")
             if adv_filter != "All":
                 _adv_filter_raw = {v: k for k, v in _ADV_PATTERN_LABELS.items()}[adv_filter]
                 adv_hits_all = [h for h in adv_hits_all if h.get("pattern_type") == _adv_filter_raw]
@@ -3581,18 +3586,17 @@ with tab_patterns:
             if adv_hidden_n:
                 st.caption(f"{adv_hidden_n} signal(s) older than {RECENT_SIGNAL_DAYS}d hidden.")
             if not adv_hits:
-                st.info("No Inverse Head & Shoulders or Double Bottom signals right now.")
+                st.info("No Inverse Head & Shoulders, Double Bottom, or Head & Shoulders Top signals right now.")
             else:
                 names_adv = _company_names()
                 adv_rows = [{
                     "Symbol": h.get("symbol"), "Company": names_adv.get(h.get("symbol"), ""),
-                    # Every hit here is already a confirmed detection (both
-                    # patterns are long-side setups, and the backend has no
+                    # Every hit here is already a confirmed detection (no
                     # geometry-only/failed tier for this scanner) -- always
                     # actionable when present.
                     "Pattern": ("⚠️ " if h.get("pattern_type") == "INVERSE_HS" else "")
                                + _ADV_PATTERN_LABELS.get(h.get("pattern_type"), str(h.get("pattern_type"))),
-                    "Action": "🟢 BUY SIGNAL",
+                    "Action": "🔴 SELL SIGNAL" if h.get("pattern_type") == "HEAD_SHOULDERS_TOP" else "🟢 BUY SIGNAL",
                     "Entry": h.get("entry_price"), "Stop": h.get("stop_loss"),
                     "Target": h.get("target_1"),
                     "R:R": _rr_label(h.get("risk_reward_measured")),
@@ -3600,7 +3604,12 @@ with tab_patterns:
                 } for h in adv_hits]
 
                 def _adv_row_color(row):
-                    color = "rgba(34,197,94,0.12)" if row["Action"] == "🟢 BUY SIGNAL" else "rgba(139,150,163,0.06)"
+                    if row["Action"] == "🟢 BUY SIGNAL":
+                        color = "rgba(34,197,94,0.12)"
+                    elif row["Action"] == "🔴 SELL SIGNAL":
+                        color = "rgba(220,53,69,0.16)"
+                    else:
+                        color = "rgba(139,150,163,0.06)"
                     return [f"background-color: {color}"] * len(row)
 
                 _render_pattern_table(pd.DataFrame(adv_rows), _adv_row_color, "advanced_pattern_scan_table", {
@@ -3611,7 +3620,7 @@ with tab_patterns:
                     "R:R": st.column_config.TextColumn("R:R"),
                 }, date_col="Date", rr_colour_col="R:R")
 
-            with st.expander("📖 View Rules & Metrics for Chart Patterns (IHS & Double Bottom)"):
+            with st.expander("📖 View Rules & Metrics for Chart Patterns (IHS, Double Bottom & Head/Shoulders)"):
                 st.caption("⚠️ \"Pattern Quality\" is a deterministic geometric/volume score, NOT a "
                            "validated predictor of trade outcome — backtesting found zero statistically "
                            "significant correlation between this score and win/loss. Use it to understand "
@@ -3620,6 +3629,12 @@ with tab_patterns:
                            "using for position sizing only. IHS (⚠️) signals have structurally "
                            "underperformed Double Bottom signals in PSX backtesting. \"Regime\" is a "
                            "placeholder pending a KSE-100 index data feed.")
+                st.caption("Head & Shoulders Top is the exact bearish mirror of Inverse H&S (same engine, "
+                           "same pivot/breakout/confidence machinery, flipped: highs instead of lows, "
+                           "requires a PRIOR UPTREND, SHORTS the breakdown below the neckline). It was "
+                           "built alongside Inverse H&S but deliberately left unwired pending its own "
+                           "walk-forward backtest — see backend/run_hstop_backtest.py for the real PSX "
+                           "numbers before treating any signal here as validated.")
 
         # Cup & Handle suspended — see CALIBRATION_LOG.md "MARKET STRUCTURE
         # CONCLUSION". Insufficient PSX signal density (2 signals in a 5yr,

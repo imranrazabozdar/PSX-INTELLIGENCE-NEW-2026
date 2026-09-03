@@ -19,6 +19,8 @@ Pattern families:
   8. GP-Evolved Formula (BUY/SELL from already-trained per-symbol models;
      training itself is a separate, long-running offline workflow — see
      backend/run_gp_evolution_training.py) → analysis_cache key "gp_evolved_scan"
+  9. Head & Shoulders Top (SHORT-only, bearish mirror of Inverse H&S) →
+     analysis_cache key "hstop_scan"
 
 Uses turso_db for database access — works against Turso Cloud in CI and
 local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
@@ -43,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'patterns'))
 import turso_db
 import patterns_engine as _patterns
 from morning_star_detector import MorningStarDetector
-from advanced_pattern_adapter import scan_symbol
+from advanced_pattern_adapter import scan_symbol, scan_symbol_bearish
 import macd_ema_detector as _macdema
 import triangle_regression_detector as _triangle_reg
 import level_breakout_detector as _level_breakout
@@ -382,6 +384,31 @@ def run_advanced_pattern_scan(all_data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 3b. Head & Shoulders Top scan (SHORT-only, bearish mirror of IHS above) --
+#     see backend/run_hstop_backtest.py for the walk-forward PSX backtest.
+# ---------------------------------------------------------------------------
+
+def run_hstop_scan(all_data: dict) -> dict:
+    hits = []
+    scanned = 0
+    for symbol, ohlcv in all_data.items():
+        if len(ohlcv) < 200:
+            continue
+        scanned += 1
+        try:
+            signals = scan_symbol_bearish(symbol, ohlcv)
+            for sig in signals:
+                sig["symbol"] = symbol
+                hits.append(sig)
+        except Exception:
+            continue
+
+    hits.sort(key=lambda h: (h.get("confidence_score") is None,
+                              -(h.get("confidence_score") or 0)))
+    return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
 # Legacy chart_patterns table (kept for backward compat)
 # ---------------------------------------------------------------------------
 
@@ -492,6 +519,12 @@ def main():
         logger.info(f"  Scanned {adv_result['scanned']} symbols, {len(adv_result['hits'])} hits")
         _save_to_analysis_cache("advanced_pattern_scan", adv_result)
 
+        # --- 3b. Head & Shoulders Top (SHORT-only) ---
+        logger.info("Running Head & Shoulders Top scan...")
+        hst_result = run_hstop_scan(all_data)
+        logger.info(f"  Scanned {hst_result['scanned']} symbols, {len(hst_result['hits'])} hits")
+        _save_to_analysis_cache("hstop_scan", hst_result)
+
         # --- Legacy chart_patterns table (advanced patterns only) ---
         adv_patterns = adv_result.get("hits", [])
         stored = save_to_chart_patterns_table(adv_patterns)
@@ -508,6 +541,7 @@ def main():
         logger.info(f"  Level Break Out: {len(lb_result['hits'])} signals")
         logger.info(f"  GP-Evolved Formula: {len(gp_result['hits'])} signals (status={gp_result['status']})")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
+        logger.info(f"  Head & Shoulders Top: {len(hst_result['hits'])} signals")
         logger.info(f"  Advanced (IHS/DB): {len(adv_result['hits'])} signals")
 
         return 0

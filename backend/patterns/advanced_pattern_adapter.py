@@ -49,6 +49,7 @@ STRENGTH_MODERATE_THRESHOLD = 0.60
 _PIVOT_LABELS = {
     "INVERSE_HS": ["T1", "P1", "T2", "P2", "T3"],
     "DOUBLE_BOTTOM": ["B1", "PK", "B2"],
+    "HEAD_SHOULDERS_TOP": ["P1", "T1", "P2", "T2", "P3"],
 }
 
 # CALIBRATION ROUND 4, Change 3: static underperformance note, IHS only.
@@ -154,6 +155,66 @@ def scan_symbol(symbol: str, ohlc_rows: list, min_rows: int = 200) -> list:
             })
         except Exception:
             logger.debug("advanced_pattern_adapter: failed to flatten a signal for %s", symbol, exc_info=True)
+            continue
+
+    return hits
+
+
+def scan_symbol_bearish(symbol: str, ohlc_rows: list, min_rows: int = 200) -> list:
+    """Bearish counterpart of scan_symbol() -- runs
+    AdvancedPatternEngine.detect_head_shoulders_top() (the exact mirror of
+    the IHS scan, per that method's own docstring: 'kept separate ...
+    because Head & Shoulders Top has not been backtested yet and must not
+    be wired into any live caller of scan() by accident'). Now backtested
+    (see run_hstop_backtest.py) and wired here as its own adapter function
+    rather than folded into scan_symbol(), since HST signals carry
+    different field names (prior_rise_pct_actual vs IHS/DB's
+    prior_decline_pct_actual) and lack target_full_measured -- reusing
+    scan_symbol()'s flattening loop as-is would KeyError on an HST signal.
+    Same never-raises, empty-list-on-any-failure contract as scan_symbol()."""
+    n_rows = len(ohlc_rows) if ohlc_rows else 0
+    if n_rows < min_rows:
+        return []
+
+    try:
+        df = pd.DataFrame(ohlc_rows)
+        if "trade_date" not in df.columns:
+            return []
+        df = df.rename(columns={"trade_date": "date"})
+        df["symbol"] = symbol
+        result = _engine.detect_head_shoulders_top(df)
+    except Exception:
+        logger.debug("advanced_pattern_adapter: HST engine raised scanning %s", symbol, exc_info=True)
+        return []
+
+    if not result.signals:
+        return []
+
+    hits = []
+    for sig in result.signals:
+        try:
+            signal_date = sig["signal_date"]
+            signal_date_str = signal_date.strftime("%Y-%m-%d") if hasattr(signal_date, "strftime") \
+                else str(signal_date)
+            hits.append({
+                "symbol": symbol,
+                "pattern_type": sig["pattern_type"],
+                "pattern_subtype": sig["pattern_subtype"],
+                "signal_date": signal_date_str,
+                "strength_rating": _strength_rating(sig),
+                "entry_price": sig["entry_price"],
+                "stop_loss": sig["stop_loss"],
+                "target_1": sig["target_partial"],
+                "target_2": sig["target_measured"],
+                "risk_reward_measured": sig["risk_reward_measured"],
+                "confidence_score": sig["confidence_score"],
+                "neckline_price": sig["neckline_price"],
+                "prior_rise_pct_actual": sig["prior_rise_pct_actual"],
+                "pivot_summary": _pivot_summary(sig["pattern_type"], sig.get("pivots") or []),
+                "regime": _get_market_regime(sig["signal_date"]),
+            })
+        except Exception:
+            logger.debug("advanced_pattern_adapter: failed to flatten an HST signal for %s", symbol, exc_info=True)
             continue
 
     return hits

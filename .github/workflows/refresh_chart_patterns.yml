@@ -85,6 +85,13 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_level_breakout_backtest.py
 
+      - name: 📉 Backtest head and shoulders top
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_hstop_backtest.py
+
       - name: 📊 Summary
         if: always()
         run: |
@@ -92,7 +99,7 @@ jobs:
           echo "✅ Daily refresh workflow complete"
           echo ""
           echo "Step 1: OHLC data refresh from dps.psx.com.pk → Turso"
-          echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB, MHarris, MACD+EMA200, Triangle Squeeze, Level Break Out)"
+          echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB, MHarris, MACD+EMA200, Triangle Squeeze, Level Break Out, Head & Shoulders Top)"
           echo "        → results saved to analysis_cache in Turso"
           echo "Step 3: Signal accuracy backtest (intraday alerts vs forward returns)"
           echo "Step 4: Daily pattern backtest (walk-forward candlestick/structural pattern accuracy)"
@@ -100,3 +107,4 @@ jobs:
           echo "Step 6: MACD+EMA200 trend resumption backtest"
           echo "Step 7: Regression-channel triangle squeeze backtest"
           echo "Step 8: Level break out backtest"
+          echo "Step 9: Head and shoulders top backtest"
