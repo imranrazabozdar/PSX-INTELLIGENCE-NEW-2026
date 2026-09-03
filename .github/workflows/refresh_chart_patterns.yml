@@ -92,6 +92,13 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_hstop_backtest.py
 
+      - name: 🕯️ Backtest engulfing + star
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_engulfing_star_backtest.py
+
       - name: 📊 Summary
         if: always()
         run: |
@@ -108,3 +115,4 @@ jobs:
           echo "Step 7: Regression-channel triangle squeeze backtest"
           echo "Step 8: Level break out backtest"
           echo "Step 9: Head and shoulders top backtest"
+          echo "Step 10: Engulfing + star backtest"

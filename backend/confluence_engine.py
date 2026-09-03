@@ -23,7 +23,7 @@ DESIGN CHOICES (per explicit user direction):
     no principled tie-break -- excluded from BOTH lists rather than
     arbitrarily assigned a lean.
 
-INDICATOR -> VOTE mapping (9 families, all read from the same
+INDICATOR -> VOTE mapping (10 families, all read from the same
 analysis_cache rows run_chart_pattern_refresh.py's daily cron already
 writes -- this module makes no live detector calls of its own, so it's
 only ever as fresh as the last daily refresh):
@@ -37,6 +37,7 @@ only ever as fresh as the last daily refresh):
   gp_evolved_scan          -> hit['classification']  BUY->BULL, SELL->BEAR
   hstop_scan               -> every hit is BEAR (Head & Shoulders Top, SHORT-only,
                                the bearish mirror of advanced_pattern_scan's Inverse H&S)
+  engulfing_star_scan      -> hit['direction']       (BULL or BEAR)
 """
 
 FAMILIES = [
@@ -49,6 +50,7 @@ FAMILIES = [
     ("advanced_pattern_scan", "Advanced (IHS/Double Bottom)"),
     ("gp_evolved_scan", "GP-Evolved Formula"),
     ("hstop_scan", "Head & Shoulders Top"),
+    ("engulfing_star_scan", "Engulfing + Star Confirmed Reversal"),
 ]
 
 _ALWAYS_BULL = {"bullish_engulfing_scan", "morning_star_scan", "advanced_pattern_scan"}

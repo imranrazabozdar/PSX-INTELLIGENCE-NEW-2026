@@ -195,6 +195,7 @@ import triangle_regression_detector as _triangle_reg
 import level_breakout_detector as _level_breakout
 import gp_evolved_detector as _gp_evolved
 import confluence_engine as _confluence
+import engulfing_star_detector as _engulfing_star
 from patterns.advanced_pattern_adapter import scan_symbol as _scan_advanced_patterns
 from patterns.advanced_pattern_adapter import scan_symbol_bearish as _scan_hstop
 from patterns.cup_handle_adapter import scan_symbol as _scan_cup_handle
@@ -3393,6 +3394,46 @@ def _run_mharris_scan():
         hits.append(result)
     hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
     return {"status": "ok", "scanned": len(coverage), "hits": hits}
+
+
+def _run_engulfing_star_scan():
+    """Market-wide Engulfing+Star Confirmed Reversal scan (backend/
+    engulfing_star_detector.py) -- both BULL and BEAR hits in one list,
+    split by "direction", same convention as _run_mharris_scan. Needs
+    3 completed bars minimum (2 for the engulfing pair + 1 for ATR
+    context floor). See backend/run_engulfing_star_backtest.py for the
+    walk-forward PSX backtest of this exact rule."""
+    coverage = ohlc_coverage()
+    hits = []
+    for cov in coverage:
+        sym = cov["symbol"]
+        try:
+            result = _engulfing_star.detect_engulfing_star_reversal(ohlc_rows(sym, 30), date_key="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _engulfing_star.NO_ENGULFING_STAR_SIGNAL:
+            continue
+        result["symbol"] = sym
+        hits.append(result)
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
+    return {"status": "ok", "scanned": len(coverage), "hits": hits}
+
+
+@app.get("/patterns/engulfing-star-scan")
+def patterns_engulfing_star_scan(request:Request, force:bool=False):
+    """Market-wide Engulfing+Star Confirmed Reversal scan -- both BULL and
+    BEAR hits, split by the "direction" field. Cached/refreshed the same
+    way as every other pattern scan; force=true (admin token required)
+    triggers an immediate re-run. See _run_engulfing_star_scan's
+    docstring and run_engulfing_star_backtest.py for the walk-forward
+    PSX backtest."""
+    cached = _scan_cache.latest("engulfing_star_scan")
+    result, err = _serve_cached_and_refresh("engulfing_star_scan", _run_engulfing_star_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("engulfing_star_scan")
+    return out
 
 
 @app.get("/patterns/mharris-scan")

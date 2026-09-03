@@ -1321,11 +1321,11 @@ with tab_home:
                                           f"confluence_bear_{_conf_scope}")
 
         with st.expander("📖 About Confluence Signals"):
-            st.caption("Merges 9 pattern-family scans: Bullish Engulfing, MHarris 5-Bar Reversal, "
+            st.caption("Merges 10 pattern-family scans: Bullish Engulfing, MHarris 5-Bar Reversal, "
                        "MACD+EMA200 Trend Resumption, Triangle Squeeze, Level Break Out, Morning "
-                       "Star, Advanced (IHS/Double Bottom), GP-Evolved Formula, and Head & "
-                       "Shoulders Top. Agreement is a raw vote COUNT, not weighted by how each "
-                       "indicator actually backtested on "
+                       "Star, Advanced (IHS/Double Bottom), GP-Evolved Formula, Head & Shoulders "
+                       "Top, and Engulfing + Star Confirmed Reversal. Agreement is a raw vote "
+                       "COUNT, not weighted by how each indicator actually backtested on "
                        "PSX — several of these are net losers at their own default settings (see "
                        "each pattern's own expander in the Patterns tab for its real walk-forward "
                        "numbers). A high agreement count means several indicators independently "
@@ -2937,6 +2937,58 @@ with tab_patterns:
                        "defaults — treat this as a documented, tracked signal, not a validated "
                        "PSX edge.")
 
+    _engulfing_star_scan = _get("/patterns/engulfing-star-scan", **_pat_refresh_params)
+
+    def _render_engulfing_star_block(direction, header, action_label, row_color):
+        st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS</div>'
+                    f'<div class="psx-section-title">{header}</div>', unsafe_allow_html=True)
+        if not _scan_status_banner(_engulfing_star_scan, "Engulfing + Star Confirmed Reversal"):
+            return
+        age = _engulfing_star_scan.get("_cache_age_seconds")
+        age_str = f"{int(age // 60)} min ago" if isinstance(age, (int, float)) else "—"
+        running_note = " · a background refresh is running right now" if _engulfing_star_scan.get("_background_refresh_running") else ""
+        all_hits = [h for h in (_engulfing_star_scan.get("hits") or []) if h.get("direction") == direction]
+        hits, hidden_n = _filter_recent(all_hits, "pattern_date", f"engulfing_star_{direction.lower()}_hist_checkbox")
+        st.caption(f"📦 Scanned {_engulfing_star_scan.get('scanned', 0)} symbols with stored daily history · "
+                   f"last run {age_str}{running_note} · {len(hits)} symbol(s) currently showing this reversal"
+                   f"{f' ({hidden_n} older than {RECENT_SIGNAL_DAYS}d hidden)' if hidden_n else ''}.")
+        if not hits:
+            st.info(f"No symbol currently shows an Engulfing+Star {direction.title()}ish reversal "
+                    "on its latest completed daily candle.")
+            return
+        names_es = _company_names()
+        rows = [{
+            "symbol": h["symbol"], "company": names_es.get(h["symbol"], ""),
+            "action": action_label,
+            "entry": h.get("entry_price"), "stop": h.get("stop_loss"),
+            "target 1": h.get("target_1"), "date": h.get("pattern_date"),
+        } for h in hits]
+        esdf = pd.DataFrame(rows)
+
+        def _es_row_color(row):
+            return [f"background-color: {row_color}"] * len(row)
+
+        _render_pattern_table(esdf, _es_row_color, f"engulfing_star_{direction.lower()}_scan_table", {
+            "symbol": "Symbol", "company": "Company", "action": "Action",
+            "entry": st.column_config.NumberColumn("Entry", format="Rs %.2f"),
+            "stop": st.column_config.NumberColumn("Stop-Loss (Risk)", format="Rs %.2f"),
+            "target 1": st.column_config.NumberColumn("Target (Reward)", format="Rs %.2f"),
+            "date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+        }, date_col="date")
+
+        with st.expander("📖 View Rules & Metrics for Engulfing + Star Confirmed Reversal"):
+            st.caption("Market-wide scan, on the latest completed daily candle — translated from a "
+                       "reference systematic-trading notebook. Stricter than a plain engulfing "
+                       "pattern: the SAME candle must be both a full engulfing bar over the prior "
+                       "candle AND show a dominant wick on the reversal side (upper wick for "
+                       "bearish, lower wick for bullish) — two confirmations on one bar, not one.")
+            st.caption("The source notebook never defines a trade rule for this pattern (only "
+                       "forward-trend labeling to measure hit rate) — entry/stop/target here reuse "
+                       "this project's own bullish/bearish engulfing convention instead: stop beyond "
+                       "the signal candle's high/low + an ATR buffer, targets a measured move off "
+                       "the candle's own high-low range. See run_engulfing_star_backtest.py for the "
+                       "walk-forward PSX result before treating any signal here as validated.")
+
     # Fetched once here for the same reason as the MHarris scan above --
     # one endpoint returns both BULL and BEAR hits together.
     _macdema_scan = _get("/patterns/macdema-scan", **_pat_refresh_params)
@@ -3419,6 +3471,10 @@ with tab_patterns:
                               "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
 
         st.divider()
+        _render_engulfing_star_block("BULL", "🕯️ Engulfing + Star Confirmed Reversal (Bullish) — 1D",
+                                     "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
+
+        st.divider()
         _render_macdema_block("BULL", "📈 MACD+EMA200 Trend Resumption (Bullish) — 1D",
                               "🟢 BUY SIGNAL", "rgba(40, 167, 69, 0.22)")
 
@@ -3546,6 +3602,10 @@ with tab_patterns:
         st.divider()
         _render_mharris_block("BEAR", "🔁 MHarris 5-Bar Reversal (Bearish) — 1D",
                               "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
+
+        st.divider()
+        _render_engulfing_star_block("BEAR", "🕯️ Engulfing + Star Confirmed Reversal (Bearish) — 1D",
+                                     "🔴 SHORT SIGNAL", "rgba(220, 53, 69, 0.28)")
 
         st.divider()
         _render_macdema_block("BEAR", "📈 MACD+EMA200 Trend Resumption (Bearish) — 1D",

@@ -21,6 +21,8 @@ Pattern families:
      backend/run_gp_evolution_training.py) → analysis_cache key "gp_evolved_scan"
   9. Head & Shoulders Top (SHORT-only, bearish mirror of Inverse H&S) →
      analysis_cache key "hstop_scan"
+  10. Engulfing + Star Confirmed Reversal (BULL + BEAR) →
+      analysis_cache key "engulfing_star_scan"
 
 Uses turso_db for database access — works against Turso Cloud in CI and
 local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
@@ -51,6 +53,7 @@ import triangle_regression_detector as _triangle_reg
 import level_breakout_detector as _level_breakout
 import psx_live as _psx_live
 import gp_evolved_detector as _gp_evolved
+import engulfing_star_detector as _engulfing_star
 
 logging.basicConfig(
     level=logging.INFO,
@@ -276,6 +279,31 @@ def run_level_breakout_scan(all_data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 1g. Engulfing + Star Confirmed Reversal (BULL + BEAR) -- see
+#     backend/run_engulfing_star_backtest.py for the walk-forward PSX backtest.
+# ---------------------------------------------------------------------------
+
+def run_engulfing_star_scan(all_data: dict) -> dict:
+    hits = []
+    scanned = 0
+    for symbol, ohlcv in all_data.items():
+        if len(ohlcv) < 30:
+            continue
+        scanned += 1
+        try:
+            result = _engulfing_star.detect_engulfing_star_reversal(ohlcv, date_key="trade_date")
+        except Exception:
+            continue
+        if result["classification"] == _engulfing_star.NO_ENGULFING_STAR_SIGNAL:
+            continue
+        result["symbol"] = symbol
+        hits.append(result)
+
+    hits.sort(key=lambda r: (r["direction"] != "BULL", r["symbol"]))
+    return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
 # 1f. GP-Evolved Formula — TODAY's live signal from every already-trained
 #     model (training itself runs offline via the separate, long-running
 #     "GP evolution training (manual)" workflow -- see
@@ -482,6 +510,12 @@ def main():
         logger.info(f"  Scanned {mh_result['scanned']} symbols, {len(mh_result['hits'])} hits")
         _save_to_analysis_cache("mharris_scan", mh_result)
 
+        # --- 1g. Engulfing + Star Confirmed Reversal ---
+        logger.info("Running Engulfing + Star Confirmed Reversal scan...")
+        es_result = run_engulfing_star_scan(all_data)
+        logger.info(f"  Scanned {es_result['scanned']} symbols, {len(es_result['hits'])} hits")
+        _save_to_analysis_cache("engulfing_star_scan", es_result)
+
         # --- 1c. MACD+EMA200 Trend Resumption ---
         logger.info("Running MACD+EMA200 Trend Resumption scan...")
         me_result = run_macdema_scan(all_data)
@@ -542,6 +576,7 @@ def main():
         logger.info(f"  GP-Evolved Formula: {len(gp_result['hits'])} signals (status={gp_result['status']})")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
         logger.info(f"  Head & Shoulders Top: {len(hst_result['hits'])} signals")
+        logger.info(f"  Engulfing + Star Confirmed Reversal: {len(es_result['hits'])} signals")
         logger.info(f"  Advanced (IHS/DB): {len(adv_result['hits'])} signals")
 
         return 0
