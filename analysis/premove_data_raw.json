@@ -1,0 +1,1896 @@
+{
+  "ohlc": {
+    "AICL": {
+      "requested_start": "2026-04-15",
+      "requested_end": "2026-08-07",
+      "report_start": "2026-07-08",
+      "report_end": "2026-08-07",
+      "rows_returned": 77,
+      "dates_present": [
+        "2026-04-15",
+        "2026-04-16",
+        "2026-04-17",
+        "2026-04-20",
+        "2026-04-21",
+        "2026-04-22",
+        "2026-04-23",
+        "2026-04-24",
+        "2026-04-27",
+        "2026-04-28",
+        "2026-04-29",
+        "2026-04-30",
+        "2026-05-04",
+        "2026-05-05",
+        "2026-05-06",
+        "2026-05-07",
+        "2026-05-08",
+        "2026-05-11",
+        "2026-05-12",
+        "2026-05-13",
+        "2026-05-14",
+        "2026-05-15",
+        "2026-05-18",
+        "2026-05-19",
+        "2026-05-20",
+        "2026-05-21",
+        "2026-05-22",
+        "2026-05-25",
+        "2026-05-29",
+        "2026-06-01",
+        "2026-06-02",
+        "2026-06-03",
+        "2026-06-04",
+        "2026-06-05",
+        "2026-06-08",
+        "2026-06-09",
+        "2026-06-10",
+        "2026-06-11",
+        "2026-06-12",
+        "2026-06-15",
+        "2026-06-16",
+        "2026-06-17",
+        "2026-06-18",
+        "2026-06-19",
+        "2026-06-22",
+        "2026-06-23",
+        "2026-06-24",
+        "2026-06-29",
+        "2026-06-30",
+        "2026-07-01",
+        "2026-07-02",
+        "2026-07-03",
+        "2026-07-06",
+        "2026-07-07",
+        "2026-07-08",
+        "2026-07-09",
+        "2026-07-10",
+        "2026-07-13",
+        "2026-07-14",
+        "2026-07-15",
+        "2026-07-16",
+        "2026-07-17",
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24",
+        "2026-07-27",
+        "2026-07-28",
+        "2026-07-29",
+        "2026-07-30",
+        "2026-07-31",
+        "2026-08-03",
+        "2026-08-04",
+        "2026-08-05",
+        "2026-08-06",
+        "2026-08-07"
+      ],
+      "bars": [
+        {
+          "date": "2026-04-15",
+          "symbol": "AICL",
+          "open": 80.35,
+          "high": 84.0,
+          "low": 80.0,
+          "close": 80.86,
+          "volume": 929983.0
+        },
+        {
+          "date": "2026-04-16",
+          "symbol": "AICL",
+          "open": 82.5,
+          "high": 82.5,
+          "low": 80.0,
+          "close": 81.02,
+          "volume": 952662.0
+        },
+        {
+          "date": "2026-04-17",
+          "symbol": "AICL",
+          "open": 83.25,
+          "high": 84.25,
+          "low": 81.5,
+          "close": 82.78,
+          "volume": 449443.0
+        },
+        {
+          "date": "2026-04-20",
+          "symbol": "AICL",
+          "open": 80.5,
+          "high": 81.0,
+          "low": 77.0,
+          "close": 78.92,
+          "volume": 392811.0
+        },
+        {
+          "date": "2026-04-21",
+          "symbol": "AICL",
+          "open": 79.88,
+          "high": 81.5,
+          "low": 77.0,
+          "close": 79.91,
+          "volume": 220320.0
+        },
+        {
+          "date": "2026-04-22",
+          "symbol": "AICL",
+          "open": 80.99,
+          "high": 81.0,
+          "low": 77.5,
+          "close": 77.85,
+          "volume": 192666.0
+        },
+        {
+          "date": "2026-04-23",
+          "symbol": "AICL",
+          "open": 77.0,
+          "high": 79.99,
+          "low": 77.0,
+          "close": 79.3,
+          "volume": 132868.0
+        },
+        {
+          "date": "2026-04-24",
+          "symbol": "AICL",
+          "open": 78.5,
+          "high": 79.99,
+          "low": 76.0,
+          "close": 79.58,
+          "volume": 787424.0
+        },
+        {
+          "date": "2026-04-27",
+          "symbol": "AICL",
+          "open": 81.0,
+          "high": 81.0,
+          "low": 77.07,
+          "close": 78.69,
+          "volume": 471368.0
+        },
+        {
+          "date": "2026-04-28",
+          "symbol": "AICL",
+          "open": 78.0,
+          "high": 79.99,
+          "low": 77.55,
+          "close": 79.16,
+          "volume": 194214.0
+        },
+        {
+          "date": "2026-04-29",
+          "symbol": "AICL",
+          "open": 79.44,
+          "high": 80.0,
+          "low": 77.06,
+          "close": 78.4,
+          "volume": 455598.0
+        },
+        {
+          "date": "2026-04-30",
+          "symbol": "AICL",
+          "open": 77.0,
+          "high": 77.98,
+          "low": 74.01,
+          "close": 75.31,
+          "volume": 273821.0
+        },
+        {
+          "date": "2026-05-04",
+          "symbol": "AICL",
+          "open": 76.35,
+          "high": 79.97,
+          "low": 75.6,
+          "close": 76.52,
+          "volume": 203977.0
+        },
+        {
+          "date": "2026-05-05",
+          "symbol": "AICL",
+          "open": 74.5,
+          "high": 77.9,
+          "low": 74.5,
+          "close": 76.68,
+          "volume": 30723.0
+        },
+        {
+          "date": "2026-05-06",
+          "symbol": "AICL",
+          "open": 78.1,
+          "high": 83.0,
+          "low": 77.99,
+          "close": 80.33,
+          "volume": 325834.0
+        },
+        {
+          "date": "2026-05-07",
+          "symbol": "AICL",
+          "open": 80.95,
+          "high": 82.49,
+          "low": 79.99,
+          "close": 81.79,
+          "volume": 428760.0
+        },
+        {
+          "date": "2026-05-08",
+          "symbol": "AICL",
+          "open": 81.75,
+          "high": 83.55,
+          "low": 79.6,
+          "close": 82.68,
+          "volume": 255732.0
+        },
+        {
+          "date": "2026-05-11",
+          "symbol": "AICL",
+          "open": 81.2,
+          "high": 81.9,
+          "low": 79.46,
+          "close": 80.08,
+          "volume": 212451.0
+        },
+        {
+          "date": "2026-05-12",
+          "symbol": "AICL",
+          "open": 80.97,
+          "high": 80.97,
+          "low": 79.0,
+          "close": 79.26,
+          "volume": 44918.0
+        },
+        {
+          "date": "2026-05-13",
+          "symbol": "AICL",
+          "open": 80.39,
+          "high": 82.0,
+          "low": 78.11,
+          "close": 78.99,
+          "volume": 116125.0
+        },
+        {
+          "date": "2026-05-14",
+          "symbol": "AICL",
+          "open": 78.99,
+          "high": 81.0,
+          "low": 74.33,
+          "close": 76.35,
+          "volume": 439379.0
+        },
+        {
+          "date": "2026-05-15",
+          "symbol": "AICL",
+          "open": 76.8,
+          "high": 77.6,
+          "low": 74.11,
+          "close": 75.35,
+          "volume": 414391.0
+        },
+        {
+          "date": "2026-05-18",
+          "symbol": "AICL",
+          "open": 75.06,
+          "high": 75.06,
+          "low": 72.14,
+          "close": 72.41,
+          "volume": 166223.0
+        },
+        {
+          "date": "2026-05-19",
+          "symbol": "AICL",
+          "open": 72.5,
+          "high": 74.95,
+          "low": 72.0,
+          "close": 73.13,
+          "volume": 160137.0
+        },
+        {
+          "date": "2026-05-20",
+          "symbol": "AICL",
+          "open": 72.6,
+          "high": 73.44,
+          "low": 72.05,
+          "close": 72.77,
+          "volume": 178186.0
+        },
+        {
+          "date": "2026-05-21",
+          "symbol": "AICL",
+          "open": 73.99,
+          "high": 74.3,
+          "low": 72.2,
+          "close": 72.99,
+          "volume": 867102.0
+        },
+        {
+          "date": "2026-05-22",
+          "symbol": "AICL",
+          "open": 73.0,
+          "high": 74.5,
+          "low": 71.03,
+          "close": 72.92,
+          "volume": 546272.0
+        },
+        {
+          "date": "2026-05-25",
+          "symbol": "AICL",
+          "open": 77.0,
+          "high": 77.0,
+          "low": 73.55,
+          "close": 75.13,
+          "volume": 226397.0
+        },
+        {
+          "date": "2026-05-29",
+          "symbol": "AICL",
+          "open": 73.17,
+          "high": 76.4,
+          "low": 73.17,
+          "close": 75.63,
+          "volume": 220809.0
+        },
+        {
+          "date": "2026-06-01",
+          "symbol": "AICL",
+          "open": 75.0,
+          "high": 75.05,
+          "low": 73.11,
+          "close": 73.99,
+          "volume": 104962.0
+        },
+        {
+          "date": "2026-06-02",
+          "symbol": "AICL",
+          "open": 73.98,
+          "high": 73.98,
+          "low": 73.06,
+          "close": 73.48,
+          "volume": 33413.0
+        },
+        {
+          "date": "2026-06-03",
+          "symbol": "AICL",
+          "open": 73.27,
+          "high": 73.5,
+          "low": 71.26,
+          "close": 72.45,
+          "volume": 132652.0
+        },
+        {
+          "date": "2026-06-04",
+          "symbol": "AICL",
+          "open": 72.97,
+          "high": 74.9,
+          "low": 72.0,
+          "close": 73.66,
+          "volume": 213689.0
+        },
+        {
+          "date": "2026-06-05",
+          "symbol": "AICL",
+          "open": 73.5,
+          "high": 74.94,
+          "low": 72.7,
+          "close": 73.95,
+          "volume": 202196.0
+        },
+        {
+          "date": "2026-06-08",
+          "symbol": "AICL",
+          "open": 73.95,
+          "high": 73.95,
+          "low": 71.9,
+          "close": 73.05,
+          "volume": 22136.0
+        },
+        {
+          "date": "2026-06-09",
+          "symbol": "AICL",
+          "open": 73.02,
+          "high": 75.85,
+          "low": 73.02,
+          "close": 74.01,
+          "volume": 433039.0
+        },
+        {
+          "date": "2026-06-10",
+          "symbol": "AICL",
+          "open": 74.74,
+          "high": 75.35,
+          "low": 72.99,
+          "close": 73.01,
+          "volume": 444720.0
+        },
+        {
+          "date": "2026-06-11",
+          "symbol": "AICL",
+          "open": 73.49,
+          "high": 74.1,
+          "low": 72.3,
+          "close": 73.84,
+          "volume": 341718.0
+        },
+        {
+          "date": "2026-06-12",
+          "symbol": "AICL",
+          "open": 74.95,
+          "high": 75.94,
+          "low": 74.0,
+          "close": 74.6,
+          "volume": 343481.0
+        },
+        {
+          "date": "2026-06-15",
+          "symbol": "AICL",
+          "open": 76.98,
+          "high": 79.35,
+          "low": 75.85,
+          "close": 78.27,
+          "volume": 957031.0
+        },
+        {
+          "date": "2026-06-16",
+          "symbol": "AICL",
+          "open": 77.99,
+          "high": 82.83,
+          "low": 76.51,
+          "close": 81.89,
+          "volume": 939538.0
+        },
+        {
+          "date": "2026-06-17",
+          "symbol": "AICL",
+          "open": 81.89,
+          "high": 82.5,
+          "low": 80.2,
+          "close": 81.42,
+          "volume": 359138.0
+        },
+        {
+          "date": "2026-06-18",
+          "symbol": "AICL",
+          "open": 83.48,
+          "high": 84.0,
+          "low": 78.03,
+          "close": 80.66,
+          "volume": 462236.0
+        },
+        {
+          "date": "2026-06-19",
+          "symbol": "AICL",
+          "open": 80.7,
+          "high": 82.01,
+          "low": 79.12,
+          "close": 80.32,
+          "volume": 338350.0
+        },
+        {
+          "date": "2026-06-22",
+          "symbol": "AICL",
+          "open": 80.01,
+          "high": 82.0,
+          "low": 77.5,
+          "close": 80.19,
+          "volume": 313655.0
+        },
+        {
+          "date": "2026-06-23",
+          "symbol": "AICL",
+          "open": 81.0,
+          "high": 81.44,
+          "low": 78.38,
+          "close": 80.15,
+          "volume": 174027.0
+        },
+        {
+          "date": "2026-06-24",
+          "symbol": "AICL",
+          "open": 79.05,
+          "high": 80.74,
+          "low": 79.0,
+          "close": 79.61,
+          "volume": 590685.0
+        },
+        {
+          "date": "2026-06-29",
+          "symbol": "AICL",
+          "open": 80.88,
+          "high": 81.89,
+          "low": 78.26,
+          "close": 80.51,
+          "volume": 347791.0
+        },
+        {
+          "date": "2026-06-30",
+          "symbol": "AICL",
+          "open": 80.6,
+          "high": 81.0,
+          "low": 78.5,
+          "close": 80.05,
+          "volume": 979837.0
+        },
+        {
+          "date": "2026-07-01",
+          "symbol": "AICL",
+          "open": 79.9,
+          "high": 83.9,
+          "low": 79.83,
+          "close": 83.1,
+          "volume": 779972.0
+        },
+        {
+          "date": "2026-07-02",
+          "symbol": "AICL",
+          "open": 84.1,
+          "high": 85.0,
+          "low": 82.5,
+          "close": 82.91,
+          "volume": 514879.0
+        },
+        {
+          "date": "2026-07-03",
+          "symbol": "AICL",
+          "open": 82.7,
+          "high": 82.9,
+          "low": 80.8,
+          "close": 81.41,
+          "volume": 141353.0
+        },
+        {
+          "date": "2026-07-06",
+          "symbol": "AICL",
+          "open": 82.95,
+          "high": 85.99,
+          "low": 80.11,
+          "close": 83.85,
+          "volume": 536739.0
+        },
+        {
+          "date": "2026-07-07",
+          "symbol": "AICL",
+          "open": 84.0,
+          "high": 85.11,
+          "low": 82.5,
+          "close": 84.69,
+          "volume": 880820.0
+        },
+        {
+          "date": "2026-07-08",
+          "symbol": "AICL",
+          "open": 84.8,
+          "high": 85.0,
+          "low": 79.0,
+          "close": 81.68,
+          "volume": 1266800.0
+        },
+        {
+          "date": "2026-07-09",
+          "symbol": "AICL",
+          "open": 80.01,
+          "high": 82.0,
+          "low": 79.2,
+          "close": 80.5,
+          "volume": 703060.0
+        },
+        {
+          "date": "2026-07-10",
+          "symbol": "AICL",
+          "open": 80.5,
+          "high": 82.0,
+          "low": 80.0,
+          "close": 80.33,
+          "volume": 335866.0
+        },
+        {
+          "date": "2026-07-13",
+          "symbol": "AICL",
+          "open": 79.95,
+          "high": 81.0,
+          "low": 78.52,
+          "close": 80.26,
+          "volume": 265619.0
+        },
+        {
+          "date": "2026-07-14",
+          "symbol": "AICL",
+          "open": 79.0,
+          "high": 79.99,
+          "low": 75.11,
+          "close": 77.52,
+          "volume": 654548.0
+        },
+        {
+          "date": "2026-07-15",
+          "symbol": "AICL",
+          "open": 76.5,
+          "high": 78.8,
+          "low": 76.5,
+          "close": 77.95,
+          "volume": 202437.0
+        },
+        {
+          "date": "2026-07-16",
+          "symbol": "AICL",
+          "open": 78.52,
+          "high": 80.3,
+          "low": 77.54,
+          "close": 79.75,
+          "volume": 296704.0
+        },
+        {
+          "date": "2026-07-17",
+          "symbol": "AICL",
+          "open": 79.69,
+          "high": 79.9,
+          "low": 75.82,
+          "close": 76.79,
+          "volume": 513445.0
+        },
+        {
+          "date": "2026-07-20",
+          "symbol": "AICL",
+          "open": 76.5,
+          "high": 77.5,
+          "low": 74.56,
+          "close": 77.38,
+          "volume": 273185.0
+        },
+        {
+          "date": "2026-07-21",
+          "symbol": "AICL",
+          "open": 78.0,
+          "high": 79.0,
+          "low": 76.77,
+          "close": 77.37,
+          "volume": 311382.0
+        },
+        {
+          "date": "2026-07-22",
+          "symbol": "AICL",
+          "open": 77.25,
+          "high": 77.5,
+          "low": 75.81,
+          "close": 75.92,
+          "volume": 98692.0
+        },
+        {
+          "date": "2026-07-23",
+          "symbol": "AICL",
+          "open": 75.1,
+          "high": 76.48,
+          "low": 72.56,
+          "close": 73.02,
+          "volume": 472797.0
+        },
+        {
+          "date": "2026-07-24",
+          "symbol": "AICL",
+          "open": 72.0,
+          "high": 80.0,
+          "low": 70.65,
+          "close": 77.68,
+          "volume": 576672.0
+        },
+        {
+          "date": "2026-07-27",
+          "symbol": "AICL",
+          "open": 76.9,
+          "high": 85.45,
+          "low": 76.9,
+          "close": 82.33,
+          "volume": 914421.0
+        },
+        {
+          "date": "2026-07-28",
+          "symbol": "AICL",
+          "open": 83.87,
+          "high": 90.56,
+          "low": 82.01,
+          "close": 90.56,
+          "volume": 7505392.0
+        },
+        {
+          "date": "2026-07-29",
+          "symbol": "AICL",
+          "open": 89.97,
+          "high": 95.0,
+          "low": 86.8,
+          "close": 89.29,
+          "volume": 6614789.0
+        },
+        {
+          "date": "2026-07-30",
+          "symbol": "AICL",
+          "open": 86.2,
+          "high": 90.0,
+          "low": 85.05,
+          "close": 88.72,
+          "volume": 684678.0
+        },
+        {
+          "date": "2026-07-31",
+          "symbol": "AICL",
+          "open": 89.0,
+          "high": 95.87,
+          "low": 88.5,
+          "close": 92.46,
+          "volume": 3453495.0
+        },
+        {
+          "date": "2026-08-03",
+          "symbol": "AICL",
+          "open": 95.0,
+          "high": 98.9,
+          "low": 93.5,
+          "close": 93.8,
+          "volume": 1586120.0
+        },
+        {
+          "date": "2026-08-04",
+          "symbol": "AICL",
+          "open": 94.1,
+          "high": 96.5,
+          "low": 91.36,
+          "close": 91.92,
+          "volume": 955548.0
+        },
+        {
+          "date": "2026-08-05",
+          "symbol": "AICL",
+          "open": 93.3,
+          "high": 94.44,
+          "low": 91.51,
+          "close": 92.04,
+          "volume": 112797.0
+        },
+        {
+          "date": "2026-08-06",
+          "symbol": "AICL",
+          "open": 92.89,
+          "high": 97.88,
+          "low": 91.4,
+          "close": 96.03,
+          "volume": 2126245.0
+        },
+        {
+          "date": "2026-08-07",
+          "symbol": "AICL",
+          "open": 96.03,
+          "high": 100.0,
+          "low": 92.7,
+          "close": 96.37,
+          "volume": 1208729.0
+        }
+      ]
+    },
+    "SHFA": {
+      "requested_start": "2026-03-10",
+      "requested_end": "2026-06-18",
+      "report_start": "2026-05-28",
+      "report_end": "2026-06-18",
+      "rows_returned": 67,
+      "dates_present": [
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-16",
+        "2026-03-17",
+        "2026-03-18",
+        "2026-03-19",
+        "2026-03-24",
+        "2026-03-25",
+        "2026-03-26",
+        "2026-03-27",
+        "2026-03-30",
+        "2026-03-31",
+        "2026-04-01",
+        "2026-04-02",
+        "2026-04-03",
+        "2026-04-06",
+        "2026-04-07",
+        "2026-04-08",
+        "2026-04-09",
+        "2026-04-10",
+        "2026-04-13",
+        "2026-04-14",
+        "2026-04-15",
+        "2026-04-16",
+        "2026-04-17",
+        "2026-04-20",
+        "2026-04-21",
+        "2026-04-22",
+        "2026-04-23",
+        "2026-04-24",
+        "2026-04-27",
+        "2026-04-28",
+        "2026-04-29",
+        "2026-04-30",
+        "2026-05-04",
+        "2026-05-05",
+        "2026-05-06",
+        "2026-05-07",
+        "2026-05-08",
+        "2026-05-11",
+        "2026-05-12",
+        "2026-05-13",
+        "2026-05-14",
+        "2026-05-15",
+        "2026-05-18",
+        "2026-05-19",
+        "2026-05-20",
+        "2026-05-21",
+        "2026-05-22",
+        "2026-05-25",
+        "2026-05-29",
+        "2026-06-01",
+        "2026-06-02",
+        "2026-06-03",
+        "2026-06-04",
+        "2026-06-05",
+        "2026-06-08",
+        "2026-06-09",
+        "2026-06-10",
+        "2026-06-11",
+        "2026-06-12",
+        "2026-06-15",
+        "2026-06-16",
+        "2026-06-17",
+        "2026-06-18"
+      ],
+      "bars": [
+        {
+          "date": "2026-03-10",
+          "symbol": "SHFA",
+          "open": 460.0,
+          "high": 480.0,
+          "low": 460.0,
+          "close": 470.0,
+          "volume": 16407.0
+        },
+        {
+          "date": "2026-03-11",
+          "symbol": "SHFA",
+          "open": 487.0,
+          "high": 487.0,
+          "low": 473.0,
+          "close": 479.93,
+          "volume": 5864.0
+        },
+        {
+          "date": "2026-03-12",
+          "symbol": "SHFA",
+          "open": 483.0,
+          "high": 487.0,
+          "low": 471.0,
+          "close": 486.92,
+          "volume": 5826.0
+        },
+        {
+          "date": "2026-03-13",
+          "symbol": "SHFA",
+          "open": 480.0,
+          "high": 485.0,
+          "low": 470.0,
+          "close": 470.9,
+          "volume": 3552.0
+        },
+        {
+          "date": "2026-03-16",
+          "symbol": "SHFA",
+          "open": 479.99,
+          "high": 479.99,
+          "low": 470.9,
+          "close": 471.41,
+          "volume": 933.0
+        },
+        {
+          "date": "2026-03-17",
+          "symbol": "SHFA",
+          "open": 489.0,
+          "high": 489.0,
+          "low": 473.15,
+          "close": 474.18,
+          "volume": 4957.0
+        },
+        {
+          "date": "2026-03-18",
+          "symbol": "SHFA",
+          "open": 479.7,
+          "high": 479.99,
+          "low": 470.0,
+          "close": 478.88,
+          "volume": 65340.0
+        },
+        {
+          "date": "2026-03-19",
+          "symbol": "SHFA",
+          "open": 480.0,
+          "high": 480.0,
+          "low": 451.1,
+          "close": 466.3,
+          "volume": 32319.0
+        },
+        {
+          "date": "2026-03-24",
+          "symbol": "SHFA",
+          "open": 479.99,
+          "high": 479.99,
+          "low": 455.0,
+          "close": 464.59,
+          "volume": 3613.0
+        },
+        {
+          "date": "2026-03-25",
+          "symbol": "SHFA",
+          "open": 478.99,
+          "high": 478.99,
+          "low": 465.0,
+          "close": 470.98,
+          "volume": 4496.0
+        },
+        {
+          "date": "2026-03-26",
+          "symbol": "SHFA",
+          "open": 470.98,
+          "high": 470.98,
+          "low": 451.51,
+          "close": 466.24,
+          "volume": 2088.0
+        },
+        {
+          "date": "2026-03-27",
+          "symbol": "SHFA",
+          "open": 442.01,
+          "high": 464.9,
+          "low": 442.01,
+          "close": 450.79,
+          "volume": 4645.0
+        },
+        {
+          "date": "2026-03-30",
+          "symbol": "SHFA",
+          "open": 450.0,
+          "high": 450.0,
+          "low": 426.0,
+          "close": 433.55,
+          "volume": 20547.0
+        },
+        {
+          "date": "2026-03-31",
+          "symbol": "SHFA",
+          "open": 440.0,
+          "high": 440.0,
+          "low": 435.0,
+          "close": 439.72,
+          "volume": 2494.0
+        },
+        {
+          "date": "2026-04-01",
+          "symbol": "SHFA",
+          "open": 449.99,
+          "high": 458.0,
+          "low": 440.0,
+          "close": 448.91,
+          "volume": 32347.0
+        },
+        {
+          "date": "2026-04-02",
+          "symbol": "SHFA",
+          "open": 449.95,
+          "high": 449.95,
+          "low": 437.0,
+          "close": 440.32,
+          "volume": 3825.0
+        },
+        {
+          "date": "2026-04-03",
+          "symbol": "SHFA",
+          "open": 457.99,
+          "high": 457.99,
+          "low": 431.0,
+          "close": 440.31,
+          "volume": 3959.0
+        },
+        {
+          "date": "2026-04-06",
+          "symbol": "SHFA",
+          "open": 452.95,
+          "high": 454.0,
+          "low": 445.01,
+          "close": 449.99,
+          "volume": 7997.0
+        },
+        {
+          "date": "2026-04-07",
+          "symbol": "SHFA",
+          "open": 455.95,
+          "high": 455.95,
+          "low": 445.11,
+          "close": 450.0,
+          "volume": 2774.0
+        },
+        {
+          "date": "2026-04-08",
+          "symbol": "SHFA",
+          "open": 472.0,
+          "high": 495.0,
+          "low": 465.05,
+          "close": 491.98,
+          "volume": 107613.0
+        },
+        {
+          "date": "2026-04-09",
+          "symbol": "SHFA",
+          "open": 470.0,
+          "high": 498.99,
+          "low": 470.0,
+          "close": 493.32,
+          "volume": 36673.0
+        },
+        {
+          "date": "2026-04-10",
+          "symbol": "SHFA",
+          "open": 495.0,
+          "high": 500.01,
+          "low": 486.0,
+          "close": 490.47,
+          "volume": 112248.0
+        },
+        {
+          "date": "2026-04-13",
+          "symbol": "SHFA",
+          "open": 465.0,
+          "high": 488.0,
+          "low": 465.0,
+          "close": 476.43,
+          "volume": 11938.0
+        },
+        {
+          "date": "2026-04-14",
+          "symbol": "SHFA",
+          "open": 477.11,
+          "high": 492.75,
+          "low": 477.11,
+          "close": 483.29,
+          "volume": 100481.0
+        },
+        {
+          "date": "2026-04-15",
+          "symbol": "SHFA",
+          "open": 489.99,
+          "high": 500.0,
+          "low": 482.5,
+          "close": 494.23,
+          "volume": 99834.0
+        },
+        {
+          "date": "2026-04-16",
+          "symbol": "SHFA",
+          "open": 491.1,
+          "high": 508.8,
+          "low": 491.04,
+          "close": 494.2,
+          "volume": 14221.0
+        },
+        {
+          "date": "2026-04-17",
+          "symbol": "SHFA",
+          "open": 492.99,
+          "high": 525.0,
+          "low": 492.99,
+          "close": 515.5,
+          "volume": 111181.0
+        },
+        {
+          "date": "2026-04-20",
+          "symbol": "SHFA",
+          "open": 514.99,
+          "high": 515.0,
+          "low": 490.0,
+          "close": 513.07,
+          "volume": 23130.0
+        },
+        {
+          "date": "2026-04-21",
+          "symbol": "SHFA",
+          "open": 513.07,
+          "high": 519.95,
+          "low": 501.01,
+          "close": 505.0,
+          "volume": 6849.0
+        },
+        {
+          "date": "2026-04-22",
+          "symbol": "SHFA",
+          "open": 501.99,
+          "high": 509.99,
+          "low": 501.0,
+          "close": 503.57,
+          "volume": 2608.0
+        },
+        {
+          "date": "2026-04-23",
+          "symbol": "SHFA",
+          "open": 506.0,
+          "high": 506.0,
+          "low": 495.0,
+          "close": 496.34,
+          "volume": 14526.0
+        },
+        {
+          "date": "2026-04-24",
+          "symbol": "SHFA",
+          "open": 502.0,
+          "high": 502.0,
+          "low": 471.55,
+          "close": 489.64,
+          "volume": 19618.0
+        },
+        {
+          "date": "2026-04-27",
+          "symbol": "SHFA",
+          "open": 490.25,
+          "high": 504.0,
+          "low": 489.0,
+          "close": 489.29,
+          "volume": 16968.0
+        },
+        {
+          "date": "2026-04-28",
+          "symbol": "SHFA",
+          "open": 499.0,
+          "high": 499.0,
+          "low": 478.11,
+          "close": 482.11,
+          "volume": 30380.0
+        },
+        {
+          "date": "2026-04-29",
+          "symbol": "SHFA",
+          "open": 485.01,
+          "high": 485.01,
+          "low": 475.01,
+          "close": 478.57,
+          "volume": 16052.0
+        },
+        {
+          "date": "2026-04-30",
+          "symbol": "SHFA",
+          "open": 488.0,
+          "high": 488.0,
+          "low": 470.0,
+          "close": 474.72,
+          "volume": 4944.0
+        },
+        {
+          "date": "2026-05-04",
+          "symbol": "SHFA",
+          "open": 470.01,
+          "high": 486.0,
+          "low": 470.01,
+          "close": 483.17,
+          "volume": 17388.0
+        },
+        {
+          "date": "2026-05-05",
+          "symbol": "SHFA",
+          "open": 481.99,
+          "high": 481.99,
+          "low": 473.01,
+          "close": 478.92,
+          "volume": 861.0
+        },
+        {
+          "date": "2026-05-06",
+          "symbol": "SHFA",
+          "open": 485.0,
+          "high": 499.99,
+          "low": 480.0,
+          "close": 492.53,
+          "volume": 14767.0
+        },
+        {
+          "date": "2026-05-07",
+          "symbol": "SHFA",
+          "open": 493.0,
+          "high": 498.0,
+          "low": 476.01,
+          "close": 486.67,
+          "volume": 24423.0
+        },
+        {
+          "date": "2026-05-08",
+          "symbol": "SHFA",
+          "open": 482.0,
+          "high": 495.0,
+          "low": 471.0,
+          "close": 490.18,
+          "volume": 4450.0
+        },
+        {
+          "date": "2026-05-11",
+          "symbol": "SHFA",
+          "open": 493.99,
+          "high": 493.99,
+          "low": 485.12,
+          "close": 493.74,
+          "volume": 2234.0
+        },
+        {
+          "date": "2026-05-12",
+          "symbol": "SHFA",
+          "open": 493.0,
+          "high": 495.95,
+          "low": 488.0,
+          "close": 488.46,
+          "volume": 3476.0
+        },
+        {
+          "date": "2026-05-13",
+          "symbol": "SHFA",
+          "open": 489.0,
+          "high": 494.94,
+          "low": 488.47,
+          "close": 490.35,
+          "volume": 1983.0
+        },
+        {
+          "date": "2026-05-14",
+          "symbol": "SHFA",
+          "open": 490.11,
+          "high": 491.26,
+          "low": 488.01,
+          "close": 490.01,
+          "volume": 2638.0
+        },
+        {
+          "date": "2026-05-15",
+          "symbol": "SHFA",
+          "open": 499.99,
+          "high": 499.99,
+          "low": 480.08,
+          "close": 485.13,
+          "volume": 7015.0
+        },
+        {
+          "date": "2026-05-18",
+          "symbol": "SHFA",
+          "open": 478.0,
+          "high": 490.0,
+          "low": 478.0,
+          "close": 480.77,
+          "volume": 3289.0
+        },
+        {
+          "date": "2026-05-19",
+          "symbol": "SHFA",
+          "open": 495.99,
+          "high": 495.99,
+          "low": 465.0,
+          "close": 469.46,
+          "volume": 26506.0
+        },
+        {
+          "date": "2026-05-20",
+          "symbol": "SHFA",
+          "open": 474.99,
+          "high": 475.01,
+          "low": 466.0,
+          "close": 470.01,
+          "volume": 4107.0
+        },
+        {
+          "date": "2026-05-21",
+          "symbol": "SHFA",
+          "open": 489.99,
+          "high": 489.99,
+          "low": 471.05,
+          "close": 481.29,
+          "volume": 4181.0
+        },
+        {
+          "date": "2026-05-22",
+          "symbol": "SHFA",
+          "open": 474.05,
+          "high": 489.0,
+          "low": 471.0,
+          "close": 484.99,
+          "volume": 1950.0
+        },
+        {
+          "date": "2026-05-25",
+          "symbol": "SHFA",
+          "open": 491.98,
+          "high": 491.98,
+          "low": 472.01,
+          "close": 476.27,
+          "volume": 16669.0
+        },
+        {
+          "date": "2026-05-29",
+          "symbol": "SHFA",
+          "open": 478.0,
+          "high": 485.0,
+          "low": 456.65,
+          "close": 482.32,
+          "volume": 6076.0
+        },
+        {
+          "date": "2026-06-01",
+          "symbol": "SHFA",
+          "open": 488.95,
+          "high": 488.95,
+          "low": 472.0,
+          "close": 474.8,
+          "volume": 12848.0
+        },
+        {
+          "date": "2026-06-02",
+          "symbol": "SHFA",
+          "open": 480.0,
+          "high": 484.8,
+          "low": 462.66,
+          "close": 473.78,
+          "volume": 46425.0
+        },
+        {
+          "date": "2026-06-03",
+          "symbol": "SHFA",
+          "open": 479.99,
+          "high": 485.0,
+          "low": 466.11,
+          "close": 470.36,
+          "volume": 72623.0
+        },
+        {
+          "date": "2026-06-04",
+          "symbol": "SHFA",
+          "open": 477.94,
+          "high": 488.0,
+          "low": 467.0,
+          "close": 473.49,
+          "volume": 7915.0
+        },
+        {
+          "date": "2026-06-05",
+          "symbol": "SHFA",
+          "open": 474.0,
+          "high": 476.75,
+          "low": 470.0,
+          "close": 473.02,
+          "volume": 4186.0
+        },
+        {
+          "date": "2026-06-08",
+          "symbol": "SHFA",
+          "open": 473.02,
+          "high": 476.76,
+          "low": 463.01,
+          "close": 472.93,
+          "volume": 6563.0
+        },
+        {
+          "date": "2026-06-09",
+          "symbol": "SHFA",
+          "open": 483.3,
+          "high": 483.3,
+          "low": 468.01,
+          "close": 478.66,
+          "volume": 6454.0
+        },
+        {
+          "date": "2026-06-10",
+          "symbol": "SHFA",
+          "open": 467.3,
+          "high": 476.88,
+          "low": 467.3,
+          "close": 470.39,
+          "volume": 5520.0
+        },
+        {
+          "date": "2026-06-11",
+          "symbol": "SHFA",
+          "open": 482.94,
+          "high": 482.94,
+          "low": 470.0,
+          "close": 475.79,
+          "volume": 22790.0
+        },
+        {
+          "date": "2026-06-12",
+          "symbol": "SHFA",
+          "open": 481.05,
+          "high": 487.95,
+          "low": 477.0,
+          "close": 481.15,
+          "volume": 13076.0
+        },
+        {
+          "date": "2026-06-15",
+          "symbol": "SHFA",
+          "open": 482.0,
+          "high": 499.0,
+          "low": 482.0,
+          "close": 491.84,
+          "volume": 36614.0
+        },
+        {
+          "date": "2026-06-16",
+          "symbol": "SHFA",
+          "open": 491.84,
+          "high": 500.0,
+          "low": 485.01,
+          "close": 497.96,
+          "volume": 21033.0
+        },
+        {
+          "date": "2026-06-17",
+          "symbol": "SHFA",
+          "open": 497.96,
+          "high": 546.0,
+          "low": 497.96,
+          "close": 541.06,
+          "volume": 74731.0
+        },
+        {
+          "date": "2026-06-18",
+          "symbol": "SHFA",
+          "open": 549.95,
+          "high": 554.0,
+          "low": 501.0,
+          "close": 525.59,
+          "volume": 34392.0
+        }
+      ]
+    }
+  },
+  "company_announcements": {
+    "AICL": {
+      "symbol": "AICL",
+      "source": "https://dps.psx.com.pk/company/AICL",
+      "error": null,
+      "row_count": 26,
+      "rows": [
+        {
+          "cells": [
+            "Muhammad Ali Zeb",
+            "CEO"
+          ]
+        },
+        {
+          "cells": [
+            "Mian Umer Mansha",
+            "Chairperson"
+          ]
+        },
+        {
+          "cells": [
+            "Tameez-ul-Haque, FCA",
+            "Company Secretary"
+          ]
+        },
+        {
+          "cells": [
+            "Aug 28, 2026",
+            "Transmission of Quarterly Report for the Period Ended 30 June 2026",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Aug 27, 2026",
+            "Financial Results for the Quarter Ended 30 June 2026",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 30, 2026",
+            "Transmission of Quarterly Report for the period Ended 31 March 2026",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 28, 2026",
+            "Financial Results for the Qarter Ended 31 March 2026",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 28, 2026",
+            "Financial Results for the Quarter Ended 31 March 2026 REVOKED",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Aug 21, 2026",
+            "Board Meeting",
+            "View"
+          ]
+        },
+        {
+          "cells": [
+            "Jun 1, 2026",
+            "General Meetings / Briefing Sessions",
+            "View"
+          ]
+        },
+        {
+          "cells": [
+            "May 22, 2026",
+            "General Meetings / Briefing Sessions",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 21, 2026",
+            "Board Meeting",
+            "View"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 6, 2026",
+            "Notice of Annual General Meeting",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "May 22, 2026",
+            "Notice of Corporate Briefing Session",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "May 12, 2026",
+            "Credit of Final Cash Dividend",
+            "View"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 28, 2026",
+            "Filing of Certified Copy of Resolution passed by the shareholders in AGM",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Feb 4, 2026",
+            "Unusual Movement in Price of the Shares of Adamjee Insurance Company Limited (AICL)",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Feb 4, 2026",
+            "",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Profit after Taxation",
+            "5,132,718",
+            "4,050,202",
+            "2,262,030",
+            "2,585,013"
+          ]
+        },
+        {
+          "cells": [
+            "EPS",
+            "14.66",
+            "11.57",
+            "6.46",
+            "7.39"
+          ]
+        },
+        {
+          "cells": [
+            "Profit after Taxation",
+            "1,589,654",
+            "1,309,740",
+            "1,546,927",
+            "1,028,973"
+          ]
+        },
+        {
+          "cells": [
+            "EPS",
+            "4.54",
+            "3.74",
+            "4.42",
+            "2.94"
+          ]
+        },
+        {
+          "cells": [
+            "Gross Profit Margin (%)",
+            "1.01",
+            "0.56",
+            "(7.07)",
+            "(1.23)"
+          ]
+        },
+        {
+          "cells": [
+            "Net Profit Margin (%)",
+            "12.98",
+            "15.01",
+            "11.71",
+            "15.22"
+          ]
+        },
+        {
+          "cells": [
+            "EPS Growth (%)",
+            "26.71",
+            "79.10",
+            "(12.58)",
+            "(17.52)"
+          ]
+        },
+        {
+          "cells": [
+            "PEG",
+            "0.21",
+            "0.05",
+            "(0.42)",
+            "(0.22)"
+          ]
+        }
+      ]
+    },
+    "SHFA": {
+      "symbol": "SHFA",
+      "source": "https://dps.psx.com.pk/company/SHFA",
+      "error": null,
+      "row_count": 26,
+      "rows": [
+        {
+          "cells": [
+            "Dr. Zeeshan Bin Ishtiaque",
+            "CEO"
+          ]
+        },
+        {
+          "cells": [
+            "Dr. Habib ur Rahman",
+            "Chairperson"
+          ]
+        },
+        {
+          "cells": [
+            "Muhammad Naeem",
+            "Company Secretary"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 30, 2026",
+            "Transmission of Quarterly Report for the Period Ended March 31, 2026",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 29, 2026",
+            "Mandatory Shariah Disclosures for the Half Year Ended December 31, 2025",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 27, 2026",
+            "Financial Results for the 3rd Quarter Ended March 31, 2026",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Feb 27, 2026",
+            "Transmission of Quarterly Report for the Period Ended December 31, 2025",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Feb 23, 2026",
+            "Financial Results for the 2nd Quarter Ended December 31, 2025",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Sep 3, 2026",
+            "Board Meeting",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Jun 29, 2026",
+            "Board Meeting Other Than Financial Results",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Jun 19, 2026",
+            "Board Meeting Other Than Financial Results",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 16, 2026",
+            "Board Meeting",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Apr 1, 2026",
+            "CERTIFIED COPY OF RESOLUTIONS ADOPTED IN THE EXTRAORDINARY GENERAL MEETING OF SHIFA INTERNATIONAL HOSPITALS LIMITED HELD ON APRIL 01, 2026",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Aug 31, 2026",
+            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Aug 13, 2026",
+            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Aug 6, 2026",
+            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Jul 27, 2026",
+            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Jul 21, 2026",
+            "Disclosure of Interest by a Director CEO, or Executive of a listed company and their Spouses and the Substantial Shareholders u/c 5.6.1.(d) of PSX Regulations",
+            "View PDF"
+          ]
+        },
+        {
+          "cells": [
+            "Sales",
+            "27,967,661",
+            "23,563,840",
+            "19,721,425",
+            "16,197,551"
+          ]
+        },
+        {
+          "cells": [
+            "Profit after Taxation",
+            "2,328,980",
+            "1,362,074",
+            "1,181,406",
+            "1,162,549"
+          ]
+        },
+        {
+          "cells": [
+            "Sales",
+            "7,295,690",
+            "7,771,133",
+            "7,615,508",
+            "6,948,721"
+          ]
+        },
+        {
+          "cells": [
+            "Profit after Taxation",
+            "591,484",
+            "874,253",
+            "743,577",
+            "569,442"
+          ]
+        },
+        {
+          "cells": [
+            "Gross Profit Margin (%)",
+            "100.00",
+            "100.00",
+            "100.00",
+            "100.00"
+          ]
+        },
+        {
+          "cells": [
+            "Net Profit Margin (%)",
+            "8.33",
+            "5.78",
+            "5.99",
+            "7.18"
+          ]
+        },
+        {
+          "cells": [
+            "EPS Growth (%)",
+            "70.95",
+            "15.30",
+            "1.63",
+            "66.12"
+          ]
+        },
+        {
+          "cells": [
+            "PEG",
+            "0.18",
+            "0.44",
+            "4.02",
+            "0.15"
+          ]
+        }
+      ]
+    }
+  },
+  "psx_wide_notices": {
+    "AICL": {
+      "source": "https://dps.psx.com.pk/announcements/psx",
+      "error": null,
+      "total_rows_seen": 0,
+      "matched_rows": [],
+      "diagnostic_if_zero_rows": {
+        "note": "no <tr> with >=2 <td> found -- page structure may differ from assumption",
+        "first_2000_chars_of_body": "Announcements - Pakistan Stock Exchange (PSX) Sep 3, 2026 3:50 PM PSX SUKUK PORTAL PSX KNOWLEDGE CENTER PSX CORPORATE WEBSITE Symbols Website My Portfolio Market Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report PSX SUKUK PORTAL PSX CORPORATE WEBSITE PSX KNOWLEDGE CENTER MY PORTFOLIO MARKET Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report BACK TO TOP KSE100 174,929.68 153.09 (0.09%) KSE100PR 52,888.84 40.07 (0.08%) ALLSHR 106,206.57 93.53 (0.09%) KSE30 52,185.07 50.80 (0.10%) KMI30 249,562.17 193.39 (0.08%) BKTI 48,975.28 -25.16 (-0.05%) OGTI 35,516.28 -147.93 (-0.41%) KMIALLSHR 68,658.82 42.70 (0.06%) PSXDIV20 80,770.73 338.65 (0.42%) UPP9 62,224.39 99.59 (0.16%) NITPGI 46,319.36 -20.34 (-0.04%) NBPPGI 49,945.22 19.50 (0.04%) MZNPI 31,041.49 0.91 (0.00%) JSMFI 45,414.82 -232.50 (-0.51%) ACI 22,850.75 149.66 (0.66%) JSGBKTI 74,361.29 101.97 (0.14%) HBLTTI 18,992.70 02-09-2026 4.99 (0.03%) MII30 22,534.96 23.35 (0.10%) Announcements ANNOUNCEMENT TYPE CDC Notices SECP Notices Companies Announcements NCCPL Notices PSX Notices Keyword COMPANY SYMBOL DATE Month Year SEARCH CLEAR Submitting ..."
+      }
+    },
+    "SHFA": {
+      "source": "https://dps.psx.com.pk/announcements/psx",
+      "error": null,
+      "total_rows_seen": 0,
+      "matched_rows": [],
+      "diagnostic_if_zero_rows": {
+        "note": "no <tr> with >=2 <td> found -- page structure may differ from assumption",
+        "first_2000_chars_of_body": "Announcements - Pakistan Stock Exchange (PSX) Sep 3, 2026 3:50 PM PSX SUKUK PORTAL PSX KNOWLEDGE CENTER PSX CORPORATE WEBSITE Symbols Website My Portfolio Market Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report PSX SUKUK PORTAL PSX CORPORATE WEBSITE PSX KNOWLEDGE CENTER MY PORTFOLIO MARKET Today's Summary Trading Panel Market Indices Fixed Income Securities Detail Sector Summary Stock Screener Historical Data Eligible Scrips Graphical View Announcements PSX Notices Company Announcements Corporate Briefing Sessions (CBS) CDC Notices SECP Notices NCCPL Notices AGM/EOGM Calendar Payouts GIS Auction Results Companies Listing Status Circuit Breakers Reports Downloads Financial Reports Analysis Reports ND Verification PSX Indices Div. Discount Monthly Reports 5 Years Progress Report BACK TO TOP KSE100 174,929.68 153.09 (0.09%) KSE100PR 52,888.84 40.07 (0.08%) ALLSHR 106,206.57 93.53 (0.09%) KSE30 52,185.07 50.80 (0.10%) KMI30 249,562.17 193.39 (0.08%) BKTI 48,975.28 -25.16 (-0.05%) OGTI 35,516.28 -147.93 (-0.41%) KMIALLSHR 68,658.82 42.70 (0.06%) PSXDIV20 80,770.73 338.65 (0.42%) UPP9 62,224.39 99.59 (0.16%) NITPGI 46,319.36 -20.34 (-0.04%) NBPPGI 49,945.22 19.50 (0.04%) MZNPI 31,041.49 0.91 (0.00%) JSMFI 45,414.82 -232.50 (-0.51%) ACI 22,850.75 149.66 (0.66%) JSGBKTI 74,361.29 101.97 (0.14%) HBLTTI 18,992.70 02-09-2026 4.99 (0.03%) MII30 22,534.96 23.35 (0.10%) Announcements ANNOUNCEMENT TYPE CDC Notices SECP Notices Companies Announcements NCCPL Notices PSX Notices Keyword COMPANY SYMBOL DATE Month Year SEARCH CLEAR Submitting ..."
+      }
+    }
+  }
+}
