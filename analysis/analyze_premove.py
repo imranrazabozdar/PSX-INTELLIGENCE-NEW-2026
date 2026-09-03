@@ -32,12 +32,20 @@ from pathlib import Path
 DATA_PATH = str(Path(__file__).parent / "premove_data_raw.json")
 OUT_PATH = str(Path(__file__).parent / "premove_analysis.json")
 
-SYMBOLS = ["AICL", "SHFA", "THCCL", "FNEL"]
+SYMBOLS = ["AICL", "SHFA", "THCCL", "FNEL", "MDTL", "FPJM", "BNL", "DSIL", "SYM", "PREMA", "JSBL", "ILP"]
 MOVE_START = {
     "AICL": "2026-07-23",
     "SHFA": "2026-06-12",
     "THCCL": "2026-06-30",
     "FNEL": "2026-04-06",
+    "MDTL": "2026-07-23",
+    "FPJM": "2026-08-13",
+    "BNL": "2025-05-09",
+    "DSIL": "2026-07-31",
+    "SYM": "2026-04-30",
+    "PREMA": "2026-03-30",
+    "JSBL": "2026-05-19",
+    "ILP": "2026-06-02",
 }
 
 # FNEL's fetched series shows an abrupt ~90% single-day price adjustment
@@ -46,11 +54,13 @@ MOVE_START = {
 # share issue on PSX rather than a real one-day price return, and not a
 # wrong-scrip mixup (the post-2026-02-02 trajectory continues organically
 # at the new scale and its window-end values, 1.16 on 04-06 -> 1.74 on
-# 04-24, match the user-given reference prices almost exactly). Trimming
-# pre-adjustment bars keeps every moving-average/volatility calc for FNEL
-# from spanning that capital-structure discontinuity; see the report's
-# "Ticker identity & data-quality notes" section for FNEL.
-FNEL_TRIM_START = "2026-02-02"
+# 04-24, match the user-given reference prices almost exactly). This was
+# originally handled as a FNEL-specific hardcoded trim; as of this round
+# it's superseded by the general detect_price_cliffs()/trim_to_last_cliff()
+# mechanism below, applied to every symbol (asserted in main() to still
+# find this exact FNEL cliff, so the generalization doesn't silently
+# change the already-shipped FNEL finding).
+FNEL_KNOWN_CLIFF_DATE = "2026-02-02"
 
 
 # ---------------------------------------------------------------- indicators
@@ -126,6 +136,170 @@ def bollinger(closes, period=20, mult=2):
     upper = [m + mult * s if m is not None else None for m, s in zip(mid, std)]
     lower = [m - mult * s if m is not None else None for m, s in zip(mid, std)]
     return upper, mid, lower, std
+
+
+def typical_price(b):
+    return (b["high"] + b["low"] + b["close"]) / 3
+
+
+def obv(bars):
+    """On-Balance Volume: cumulative volume, added on an up close, subtracted
+    on a down close, unchanged on a flat close. Starts at 0 (bar 0 contributes
+    no direction yet, since there's no prior close to compare against)."""
+    out = [0]
+    for i in range(1, len(bars)):
+        prev_val = out[-1]
+        if bars[i]["close"] > bars[i - 1]["close"]:
+            out.append(prev_val + bars[i]["volume"])
+        elif bars[i]["close"] < bars[i - 1]["close"]:
+            out.append(prev_val - bars[i]["volume"])
+        else:
+            out.append(prev_val)
+    return out
+
+
+def ad_line(bars):
+    """Accumulation/Distribution Line: cumulative money-flow-volume, where
+    each bar's money flow multiplier reflects WHERE in its own high-low
+    range the close sits (+1 = closed at the high, -1 = closed at the low,
+    0 = closed at the midpoint) -- unlike OBV, which only looks at
+    close-to-close direction. A high-low range of 0 (no intrabar range)
+    contributes a multiplier of 0, not a division error."""
+    out = []
+    cum = 0.0
+    for b in bars:
+        rng = b["high"] - b["low"]
+        mfm = ((b["close"] - b["low"]) - (b["high"] - b["close"])) / rng if rng > 0 else 0.0
+        cum += mfm * b["volume"]
+        out.append(cum)
+    return out
+
+
+def mfi(bars, period=14):
+    """Money Flow Index: volume-weighted RSI. Typical price up day -> that
+    day's (typical_price * volume) counts as positive money flow; down day
+    -> negative. MFI = 100 - 100/(1 + positive_sum/negative_sum) over the
+    trailing `period` days. Uses simple (non-Wilder) rolling sums, the
+    standard MFI convention, distinct from this module's Wilder-smoothed
+    RSI -- documented here since the two indicators use different
+    smoothing by design, not an inconsistency."""
+    n = len(bars)
+    out = [None] * n
+    tp = [typical_price(b) for b in bars]
+    raw_mf = [tp[i] * bars[i]["volume"] for i in range(n)]
+    pos = [0.0] * n
+    neg = [0.0] * n
+    for i in range(1, n):
+        if tp[i] > tp[i - 1]:
+            pos[i] = raw_mf[i]
+        elif tp[i] < tp[i - 1]:
+            neg[i] = raw_mf[i]
+    for i in range(period, n):
+        pos_sum = sum(pos[i - period + 1:i + 1])
+        neg_sum = sum(neg[i - period + 1:i + 1])
+        if neg_sum == 0:
+            out[i] = 100.0
+        else:
+            mr = pos_sum / neg_sum
+            out[i] = 100 - (100 / (1 + mr))
+    return out
+
+
+def atr(bars, period=14):
+    """Average True Range, Wilder-smoothed (simple average of the first
+    `period` true-range values, then Wilder smoothing thereafter -- same
+    smoothing convention already used for this module's RSI)."""
+    n = len(bars)
+    tr = [None] * n
+    tr[0] = bars[0]["high"] - bars[0]["low"]
+    for i in range(1, n):
+        tr[i] = max(
+            bars[i]["high"] - bars[i]["low"],
+            abs(bars[i]["high"] - bars[i - 1]["close"]),
+            abs(bars[i]["low"] - bars[i - 1]["close"]),
+        )
+    out = [None] * n
+    if n <= period:
+        return out
+    avg = sum(tr[1:period + 1]) / period
+    out[period] = avg
+    for i in range(period + 1, n):
+        avg = (avg * (period - 1) + tr[i]) / period
+        out[i] = avg
+    return out
+
+
+def anchored_vwap(rows):
+    """Cumulative VWAP anchored at the FIRST row passed in (i.e. the
+    report window's start), not a true intraday VWAP -- only daily OHLCV
+    is available, so "VWAP" here means the volume-weighted average of each
+    day's typical price ((H+L+C)/3), accumulated from the window's first
+    day forward. This is an approximation, documented as such in the
+    report's method note; call this with the already-windowed report_rows
+    (not the full lookback series) so the anchor lands on the window's own
+    first day."""
+    out = []
+    cum_pv, cum_v = 0.0, 0.0
+    for r in rows:
+        tp = (r["high"] + r["low"] + r["close"]) / 3
+        cum_pv += tp * r["volume"]
+        cum_v += r["volume"]
+        out.append(cum_pv / cum_v if cum_v else None)
+    return out
+
+
+def ichimoku(bars, tenkan_period=9, kijun_period=26, senkou_b_period=52, displacement=26):
+    """Standard-period Ichimoku Cloud. Tenkan-sen/Kijun-sen are the
+    midpoint of the highest-high/lowest-low over their lookback; Senkou
+    Span A/B are the forward-plotted cloud boundaries (displaced +26
+    periods, i.e. index i's cloud-on-the-chart value is stored at
+    out["senkou_a"][i + displacement]); Chikou Span is the close plotted
+    26 periods back (out["chikou"][i - displacement] = close[i]). Because
+    of that forward shift, the cloud values covering the LAST `displacement`
+    days of any report window are necessarily produced from Tenkan/Kijun
+    computed inside the window itself, not from data further back --
+    documented in the report's method note as "provisional/still being
+    drawn in" for those trailing days, same caveat as real charting
+    platforms show for the unclosed forward cloud."""
+    n = len(bars)
+    highs = [b["high"] for b in bars]
+    lows = [b["low"] for b in bars]
+    closes = [b["close"] for b in bars]
+
+    def midpoint_channel(period):
+        out = [None] * n
+        for i in range(n):
+            if i + 1 < period:
+                continue
+            window_h = highs[i + 1 - period:i + 1]
+            window_l = lows[i + 1 - period:i + 1]
+            out[i] = (max(window_h) + min(window_l)) / 2
+        return out
+
+    tenkan = midpoint_channel(tenkan_period)
+    kijun = midpoint_channel(kijun_period)
+    senkou_b_base = midpoint_channel(senkou_b_period)
+
+    senkou_a = [None] * n
+    senkou_b = [None] * n
+    for i in range(n):
+        if tenkan[i] is not None and kijun[i] is not None:
+            target = i + displacement
+            if target < n:
+                senkou_a[target] = (tenkan[i] + kijun[i]) / 2
+        if senkou_b_base[i] is not None:
+            target = i + displacement
+            if target < n:
+                senkou_b[target] = senkou_b_base[i]
+
+    chikou = [None] * n
+    for i in range(n):
+        target = i - displacement
+        if target >= 0:
+            chikou[target] = closes[i]
+
+    return {"tenkan": tenkan, "kijun": kijun, "senkou_a": senkou_a,
+            "senkou_b": senkou_b, "chikou": chikou}
 
 
 # ------------------------------------------------------------- candle geometry
@@ -257,6 +431,57 @@ def support_resistance_note(i, bars, swing_lows, swing_highs, pct=0.02):
     return "; ".join(notes) if notes else ""
 
 
+# ------------------------------------------------------- price-cliff detector
+
+def detect_price_cliffs(bars, drop_threshold=0.30, vol_multiplier=3, trailing_window=10):
+    """General discontinuity check, applied to every symbol (not just
+    FNEL) per this round's instruction: flags a day whose close DROPS
+    >30% from the prior close AND whose volume is >3x the trailing
+    10-bar average volume -- the same signature (large price cliff +
+    abnormal volume) that caught FNEL's real 2026-02-02 bonus/rights
+    adjustment. Deliberately one-sided (drops only, not any large move in
+    either direction): a bonus or rights share issue mechanically dilutes
+    the per-share price DOWN, it never explains a price rising sharply --
+    an upward 30%+ day with high volume (FNEL's real 2026-04-08 breakout
+    included) is exactly the kind of genuine pre-move signal this whole
+    study exists to find, and must never be trimmed away as if it were a
+    data artifact. A plain >30% drop without the volume confirmation is
+    left alone too (that's just real volatility, not a capital-structure
+    artifact); requiring both keeps this from false-flagging an ordinary
+    limit-down session."""
+    cliffs = []
+    for i in range(1, len(bars)):
+        prev, cur = bars[i - 1], bars[i]
+        if not prev["close"]:
+            continue
+        ratio = cur["close"] / prev["close"]
+        if ratio > (1 - drop_threshold):
+            continue
+        window = bars[max(0, i - trailing_window):i]
+        vols = [b["volume"] for b in window if b["volume"]]
+        avg_vol = sum(vols) / len(vols) if vols else None
+        if avg_vol and cur["volume"] > vol_multiplier * avg_vol:
+            cliffs.append({
+                "date": cur["date"], "prev_date": prev["date"],
+                "prev_close": prev["close"], "close": cur["close"],
+                "ratio": round(ratio, 4), "volume": cur["volume"],
+                "avg_vol_trailing10": round(avg_vol, 0),
+            })
+    return cliffs
+
+
+def trim_to_last_cliff(bars, cliffs):
+    """If any cliffs were found, keep only bars from the LAST cliff's
+    date onward (the cliff day itself already reflects the new,
+    post-adjustment scale) so no moving-average/volatility calc spans
+    the discontinuity. Returns (trimmed_bars, applied_cliff_or_None)."""
+    if not cliffs:
+        return bars, None
+    last = cliffs[-1]
+    trimmed = [b for b in bars if b["date"] >= last["date"]]
+    return trimmed, last
+
+
 # ------------------------------------------------------------- main analysis
 
 def analyze(symbol, bars):
@@ -277,6 +502,12 @@ def analyze(symbol, bars):
     rsi14 = rsi(closes, 14)
     patterns = scan_patterns(bars)
     swing_lows, swing_highs = find_swings(bars, k=3)
+
+    mfi14 = mfi(bars, 14)
+    obv_vals = obv(bars)
+    ad_vals = ad_line(bars)
+    atr14 = atr(bars, 14)
+    ich = ichimoku(bars)
 
     rows = []
     for i, b in enumerate(bars):
@@ -315,6 +546,24 @@ def analyze(symbol, bars):
         candle_pattern = "; ".join(p[0] for p in pats)
         pattern_criteria_met = " | ".join(p[1] for p in pats)
 
+        # Ichimoku cloud position at this bar (senkou_a/b already carry the
+        # +26 forward displacement baked in by ichimoku(), so index i here
+        # is the cloud value actually plotted over bar i on the chart).
+        sa, sb = ich["senkou_a"][i], ich["senkou_b"][i]
+        if sa is not None and sb is not None:
+            cloud_top, cloud_bottom = max(sa, sb), min(sa, sb)
+            if closes[i] > cloud_top:
+                cloud_position = "above cloud"
+            elif closes[i] < cloud_bottom:
+                cloud_position = "below cloud"
+            else:
+                cloud_position = "inside cloud"
+            cloud_color = "bullish (green)" if sa > sb else ("bearish (red)" if sa < sb else "flat")
+            cloud_thickness = round(abs(sa - sb), 2)
+            ichimoku_note = f"{cloud_position}, cloud {cloud_color}, thickness {cloud_thickness:.2f}"
+        else:
+            ichimoku_note = "cloud not yet formed (insufficient history)"
+
         rows.append({
             "date": dates[i],
             "open": opens[i], "high": highs[i], "low": lows[i], "close": closes[i],
@@ -332,17 +581,45 @@ def analyze(symbol, bars):
             "ema20_gt_ema50": (ema20[i] > ema50[i]) if (ema20[i] is not None and ema50[i] is not None) else None,
             "rsi_14": round(rsi14[i], 1) if rsi14[i] is not None else None,
             "support_resistance_note": support_resistance_note(i, bars, swing_lows, swing_highs),
+            "mfi_14": round(mfi14[i], 1) if mfi14[i] is not None else None,
+            "obv": round(obv_vals[i], 0),
+            "ad_line": round(ad_vals[i], 0),
+            "atr_14": round(atr14[i], 4) if atr14[i] is not None else None,
+            "tenkan_sen": round(ich["tenkan"][i], 2) if ich["tenkan"][i] is not None else None,
+            "kijun_sen": round(ich["kijun"][i], 2) if ich["kijun"][i] is not None else None,
+            "ichimoku_note": ichimoku_note,
         })
+
+    # Flow divergence: does OBV/A-D Line move opposite to price on a given
+    # day? This is the "quiet accumulation/distribution" signal that a
+    # plain close-to-close volume ratio can't show -- price and volume
+    # both look ordinary, but the flow indicator is quietly leaning the
+    # other way. Computed as a second pass since it needs the prior row's
+    # already-rounded obv/ad_line values for a stable, reproducible read.
+    for i in range(1, len(rows)):
+        price_dir = "up" if rows[i]["close"] > rows[i - 1]["close"] else ("down" if rows[i]["close"] < rows[i - 1]["close"] else "flat")
+        obv_dir = "up" if rows[i]["obv"] > rows[i - 1]["obv"] else ("down" if rows[i]["obv"] < rows[i - 1]["obv"] else "flat")
+        ad_dir = "up" if rows[i]["ad_line"] > rows[i - 1]["ad_line"] else ("down" if rows[i]["ad_line"] < rows[i - 1]["ad_line"] else "flat")
+        notes = []
+        if price_dir != "flat" and obv_dir != "flat" and price_dir != obv_dir:
+            notes.append(f"OBV diverges from price (price {price_dir}, OBV {obv_dir})")
+        if price_dir != "flat" and ad_dir != "flat" and price_dir != ad_dir:
+            notes.append(f"A/D Line diverges from price (price {price_dir}, A/D {ad_dir})")
+        if obv_dir != "flat" and ad_dir != "flat" and obv_dir != ad_dir:
+            notes.append(f"OBV and A/D Line disagree with each other (OBV {obv_dir}, A/D {ad_dir})")
+        rows[i]["flow_divergence"] = "; ".join(notes) if notes else ""
+    if rows:
+        rows[0]["flow_divergence"] = ""
     return rows
 
 
 def find_crosses(rows):
-    """EMA20/EMA50 golden/death crosses and MACD histogram sign flips,
-    over whatever rows are passed in (call with the FULL series, not the
-    report-window slice, so a cross just before the window's start is
-    still visible)."""
-    ema_crosses, macd_crosses = [], []
-    prev_ema_state, prev_macd_state = None, None
+    """EMA20/EMA50 golden/death crosses, MACD histogram sign flips, and
+    Tenkan-sen/Kijun-sen crosses, over whatever rows are passed in (call
+    with the FULL series, not the report-window slice, so a cross just
+    before the window's start is still visible)."""
+    ema_crosses, macd_crosses, tk_crosses = [], [], []
+    prev_ema_state, prev_macd_state, prev_tk_state = None, None, None
     for r in rows:
         if r["ema20_gt_ema50"] is not None:
             state = r["ema20_gt_ema50"]
@@ -354,7 +631,12 @@ def find_crosses(rows):
             if prev_macd_state is not None and state != prev_macd_state:
                 macd_crosses.append({"date": r["date"], "type": "bullish (hist>0)" if state else "bearish (hist<0)"})
             prev_macd_state = state
-    return ema_crosses, macd_crosses
+        if r["tenkan_sen"] is not None and r["kijun_sen"] is not None:
+            state = r["tenkan_sen"] > r["kijun_sen"]
+            if prev_tk_state is not None and state != prev_tk_state:
+                tk_crosses.append({"date": r["date"], "type": "bullish (Tenkan>Kijun)" if state else "bearish (Tenkan<Kijun)"})
+            prev_tk_state = state
+    return ema_crosses, macd_crosses, tk_crosses
 
 
 def day_offsets(dates, move_start):
@@ -399,23 +681,42 @@ def first_occurrences(rows, dates, move_start):
 
 def main():
     data = json.load(open(DATA_PATH))
-    out, crosses, first_occ = {}, {}, {}
+    out, full_out, crosses, first_occ, cliffs_applied = {}, {}, {}, {}, {}
     for sym in SYMBOLS:
-        bars = data["ohlc"][sym]["bars"]
+        raw_bars = data["ohlc"][sym]["bars"]
+
+        cliffs = detect_price_cliffs(raw_bars)
+        bars, applied_cliff = trim_to_last_cliff(raw_bars, cliffs)
+        cliffs_applied[sym] = {"all_cliffs_detected": cliffs, "trim_applied": applied_cliff}
+
         if sym == "FNEL":
-            bars = [b for b in bars if b["date"] >= FNEL_TRIM_START]
+            assert applied_cliff is not None and applied_cliff["date"] == FNEL_KNOWN_CLIFF_DATE, (
+                f"General cliff detector no longer reproduces the known FNEL 2026-02-02 finding "
+                f"(got {applied_cliff}) -- investigate before trusting this run's output.")
+
         full_rows = analyze(sym, bars)
-        ema_crosses, macd_crosses = find_crosses(full_rows)
+        ema_crosses, macd_crosses, tk_crosses = find_crosses(full_rows)
 
         report_start = data["ohlc"][sym]["report_start"]
         report_end = data["ohlc"][sym]["report_end"]
         report_rows = [r for r in full_rows if report_start <= r["date"] <= report_end]
         report_dates = [r["date"] for r in report_rows]
 
+        # VWAP is anchored at the report window's own start (see
+        # anchored_vwap()'s docstring) -- computed here, after windowing,
+        # not inside analyze(), since it isn't a fixed-lookback indicator.
+        vwap_vals = anchored_vwap(report_rows)
+        for r, vw in zip(report_rows, vwap_vals):
+            r["vwap"] = round(vw, 2) if vw is not None else None
+            r["price_vs_vwap"] = ("above" if r["close"] > vw else ("below" if r["close"] < vw else "at")) if vw is not None else "n/a"
+
         golden_in_window = [c for c in ema_crosses if c["type"].startswith("golden") and report_start <= c["date"] <= report_end]
+        tk_in_window = [c for c in tk_crosses if report_start <= c["date"] <= report_end]
 
         out[sym] = report_rows
+        full_out[sym] = full_rows
         crosses[sym] = {"ema_crosses": ema_crosses, "macd_crosses": macd_crosses,
+                         "tk_crosses": tk_crosses, "tk_crosses_in_window": tk_in_window,
                          "report_start": report_start, "report_end": report_end}
         occ = first_occurrences(report_rows, report_dates, MOVE_START[sym])
         if golden_in_window:
@@ -424,8 +725,10 @@ def main():
             occ["first_ema_golden_cross"] = {"date": c0["date"], "day_offset": offs.get(c0["date"])}
         first_occ[sym] = occ
 
-    json.dump({"rows": out, "crosses": crosses, "first_occurrences": first_occ,
-               "move_start": MOVE_START}, open(OUT_PATH, "w"), indent=2)
+    json.dump({"rows": out, "full_rows": full_out, "crosses": crosses,
+               "first_occurrences": first_occ, "move_start": MOVE_START,
+               "price_cliffs": cliffs_applied},
+              open(OUT_PATH, "w"), indent=2)
 
     for sym in SYMBOLS:
         print(f"\n=== {sym} (report window {crosses[sym]['report_start']} to {crosses[sym]['report_end']}, move start {MOVE_START[sym]}) ===")
@@ -433,7 +736,8 @@ def main():
             print(r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"],
                   r["vol_ratio"], r["candle_pattern"], r["price_vs_ma20"], r["price_vs_ma50"],
                   r["bb_position"], r["macd_hist"], r["macd_hist_direction"], r["ema20_vs_ema50"],
-                  r["rsi_14"], r["support_resistance_note"])
+                  r["rsi_14"], r["support_resistance_note"], r["mfi_14"], r["obv"], r["ad_line"],
+                  r["atr_14"], r["vwap"], r["price_vs_vwap"], r["ichimoku_note"], r["flow_divergence"])
         print("First occurrences:", first_occ[sym])
 
 

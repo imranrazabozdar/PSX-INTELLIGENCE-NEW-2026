@@ -6,6 +6,12 @@ no hand-typed numbers (the lesson from the first pass of this study:
 hand-typed tables produced real transcription errors, caught only by
 cross-checking against the raw JSON).
 
+As of the indicator-expansion round, each stock gets TWO linked tables
+(same date key): a CORE table (OHLC/candle/trend, same 18 columns as
+before) and a VOLUME & FLOW table (MFI, OBV, A/D Line, ATR, VWAP,
+Ichimoku cloud position, flow-divergence note) -- kept separate rather
+than one very wide row, per this round's explicit instruction.
+
 Prints each stock's section to stdout, in order, so it can be piped
 straight into the report file's replacement/append points.
 """
@@ -19,20 +25,25 @@ RAW_PATH = str(Path(__file__).parent / "premove_data_raw.json")
 analysis = json.load(open(ANALYSIS_PATH))
 raw = json.load(open(RAW_PATH))
 MOVE_START = analysis["move_start"]
-SYMBOLS = ["AICL", "SHFA", "THCCL", "FNEL"]
+SYMBOLS = ["AICL", "SHFA", "THCCL", "FNEL", "MDTL", "FPJM", "BNL", "DSIL", "SYM", "PREMA", "JSBL", "ILP"]
 
-COLS = ["date", "open", "high", "low", "close", "volume", "vol_20d_avg", "vol_ratio",
-        "candle_pattern", "pattern_criteria_met", "price_vs_ma20", "price_vs_ma50",
-        "bb_position", "macd_hist", "macd_hist_direction", "ema20_vs_ema50", "rsi_14",
-        "support_resistance_note"]
-HEADERS = ["Date", "Open", "High", "Low", "Close", "Volume", "Vol 20d avg", "Vol ratio",
-           "Candle pattern", "Pattern criteria met", "Price vs MA20", "Price vs MA50",
-           "BB position", "MACD hist", "MACD dir", "EMA20 vs EMA50", "RSI(14)",
-           "Support/resistance note"]
+CORE_COLS = ["date", "open", "high", "low", "close", "volume", "vol_20d_avg", "vol_ratio",
+             "candle_pattern", "pattern_criteria_met", "price_vs_ma20", "price_vs_ma50",
+             "bb_position", "macd_hist", "macd_hist_direction", "ema20_vs_ema50", "rsi_14",
+             "support_resistance_note"]
+CORE_HEADERS = ["Date", "Open", "High", "Low", "Close", "Volume", "Vol 20d avg", "Vol ratio",
+                "Candle pattern", "Pattern criteria met", "Price vs MA20", "Price vs MA50",
+                "BB position", "MACD hist", "MACD dir", "EMA20 vs EMA50", "RSI(14)",
+                "Support/resistance note"]
+
+FLOW_COLS = ["date", "mfi_14", "obv", "ad_line", "atr_14", "vwap", "price_vs_vwap",
+             "tenkan_sen", "kijun_sen", "ichimoku_note", "flow_divergence"]
+FLOW_HEADERS = ["Date", "MFI(14)", "OBV", "A/D Line", "ATR(14)", "VWAP (window-anchored)",
+                 "Price vs VWAP", "Tenkan-sen", "Kijun-sen", "Ichimoku cloud", "Flow divergence"]
 
 
-INT_COLS = {"volume", "vol_20d_avg"}
-RATIO_COLS = {"vol_ratio", "rsi_14"}
+INT_COLS = {"volume", "vol_20d_avg", "obv", "ad_line"}
+RATIO_COLS = {"vol_ratio", "rsi_14", "mfi_14"}
 
 
 def fmt(v, col=None):
@@ -77,7 +88,7 @@ def weekday_gap_rows(rows, report_start, report_end):
     return gaps
 
 
-def build_table(sym):
+def _build_table(sym, cols, headers):
     rows = analysis["rows"][sym]
     report_start = analysis["crosses"][sym]["report_start"]
     report_end = analysis["crosses"][sym]["report_end"]
@@ -87,15 +98,23 @@ def build_table(sym):
     merged.sort(key=lambda x: x[0])
 
     lines = []
-    lines.append("| " + " | ".join(HEADERS) + " |")
-    lines.append("|" + "---|" * len(HEADERS))
+    lines.append("| " + " | ".join(headers) + " |")
+    lines.append("|" + "---|" * len(headers))
     for date, r in merged:
         if r is None:
-            cells = [date] + ["—"] * (len(HEADERS) - 2) + ["No PSX trading data (weekday, no trade recorded / holiday)"]
+            cells = [date] + ["—"] * (len(headers) - 2) + ["No PSX trading data (weekday, no trade recorded / holiday)"]
         else:
-            cells = [fmt(r[c], c) for c in COLS]
+            cells = [fmt(r[c], c) for c in cols]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
+
+
+def build_core_table(sym):
+    return _build_table(sym, CORE_COLS, CORE_HEADERS)
+
+
+def build_flow_table(sym):
+    return _build_table(sym, FLOW_COLS, FLOW_HEADERS)
 
 
 def what_fired(sym):
@@ -117,10 +136,26 @@ def what_fired(sym):
         parts.append(f"BB {r['bb_position']}")
         parts.append(f"MACD hist {r['macd_hist']:.4f} ({r['macd_hist_direction']})" if r["macd_hist"] is not None else "MACD hist n/a")
         parts.append(r["ema20_vs_ema50"])
+        if r["mfi_14"] is not None:
+            parts.append(f"MFI {r['mfi_14']:.1f}")
+        if r["price_vs_vwap"] and r["price_vs_vwap"] != "n/a":
+            parts.append(f"price {r['price_vs_vwap']} VWAP")
+        if r["ichimoku_note"] and "not yet formed" not in r["ichimoku_note"]:
+            parts.append(r["ichimoku_note"])
+        if r["flow_divergence"]:
+            parts.append(r["flow_divergence"])
         if r["support_resistance_note"]:
             parts.append(r["support_resistance_note"])
         lines.append(f"{label} ({d}): " + ", ".join(parts))
     return "\n".join(lines)
+
+
+def flow_divergence_days(sym):
+    """All days in this stock's report window where OBV/A-D Line/price
+    disagreed -- pulled out separately since this is exactly the "quiet
+    accumulation/distribution" signal the richer indicator set was added
+    to hunt for."""
+    return [(r["date"], r["flow_divergence"]) for r in analysis["rows"][sym] if r["flow_divergence"]]
 
 
 def cross_stock_table():
@@ -149,9 +184,13 @@ def cross_stock_table():
 
 if __name__ == "__main__":
     for sym in SYMBOLS:
-        print(f"\n\n===== {sym} TABLE =====\n")
-        print(build_table(sym))
+        print(f"\n\n===== {sym} CORE TABLE =====\n")
+        print(build_core_table(sym))
+        print(f"\n\n===== {sym} FLOW TABLE =====\n")
+        print(build_flow_table(sym))
         print(f"\n\n===== {sym} WHAT FIRED =====\n")
         print(what_fired(sym))
+        print(f"\n\n===== {sym} FLOW DIVERGENCE DAYS =====\n")
+        print(flow_divergence_days(sym))
     print("\n\n===== CROSS-STOCK TABLE =====\n")
     print(cross_stock_table())
