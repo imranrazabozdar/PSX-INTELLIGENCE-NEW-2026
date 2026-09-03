@@ -100,6 +100,26 @@ def label_trigger(bars, i, atr_i):
     return 0, bars[i + MAX_HOLD]["close"], MAX_HOLD
 
 
+def evaluate_verdict(n, n_pos):
+    """Pre-registered evaluation rule, factored out so other scripts (the
+    26-indicator sweep) can reuse the EXACT same logic rather than
+    reimplementing it. Returns (verdict, precision_pct_or_None,
+    ci_low_pct_or_None, ci_high_pct_or_None). Behavior is identical to
+    the inline logic in main() below -- this is a pure extraction, not a
+    change (added after BB_OVERSOLD's own run/report already existed)."""
+    if n < N_FLOOR:
+        return f"INCONCLUSIVE — insufficient sample size (n={n}, floor={N_FLOOR})", None, None, None
+    precision = n_pos / n
+    ci_low, ci_high = proportion_confint(n_pos, n, alpha=0.05, method="wilson")
+    ci_low_pct, ci_high_pct = ci_low * 100, ci_high * 100
+    if ci_low_pct > 50.0:
+        verdict = "PASS — statistically significant edge, proceed to Phase 2 eligibility"
+    else:
+        verdict = ("FAIL — indistinguishable from noise, Phase 2 is KILLED, do not run Phase 2 "
+                   "under any circumstance regardless of how close the result was")
+    return verdict, precision * 100, ci_low_pct, ci_high_pct
+
+
 def main():
     now = datetime.now(timezone.utc)
     end_date = now.date()
