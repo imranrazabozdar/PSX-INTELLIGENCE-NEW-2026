@@ -2,6 +2,15 @@ name: Pre-move fingerprint out-of-sample scan (manual, one-off)
 
 on:
   workflow_dispatch:
+    inputs:
+      shard:
+        description: >
+          Optional "i/n" shard selector (e.g. "1/5") to split the full-
+          universe scan across multiple runs, keeping each run's printed
+          JSON blob under GitHub Actions' per-line log-storage limit.
+          Empty runs the full universe in one go.
+        required: false
+        default: ''
 
 jobs:
   scan:
@@ -27,4 +36,5 @@ jobs:
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          FP_SCAN_SHARD: ${{ inputs.shard }}
         run: python run_fingerprint_scan.py

@@ -18,6 +18,7 @@ are NOT tuned after seeing results -- this is a genuine out-of-sample
 test, not curve-fitting.
 """
 import json
+import os
 import sys
 import statistics
 from pathlib import Path
@@ -229,11 +230,13 @@ def scan_fingerprint_2(sym, rows):
     return matches
 
 
-def baseline_win_rate_10d(all_rows_by_symbol):
+def baseline_win_rate_10d_counts(all_rows_by_symbol):
     """Freshly computed from the SAME universe/timeframe as this scan,
     same methodology as backend/indicator_backtester.py's BASELINE row:
     % of ANY eligible bar (enough forward history) with positive
-    forward-10-trading-day close-to-close return."""
+    forward-10-trading-day close-to-close return. Returns raw counts
+    (not a pre-divided percentage) so multiple sharded runs can be
+    summed exactly before computing the final percentage."""
     total, positive = 0, 0
     for sym, rows in all_rows_by_symbol.items():
         closes = [r["close"] for r in rows]
@@ -243,7 +246,7 @@ def baseline_win_rate_10d(all_rows_by_symbol):
                 total += 1
                 if closes[i + 10] > closes[i]:
                     positive += 1
-    return {"n_eligible_bars": total, "win_rate_10d_pct": (positive / total * 100) if total else None}
+    return {"n_eligible_bars": total, "n_positive": positive}
 
 
 def wilson_interval(k, n, z=1.96):
@@ -265,52 +268,50 @@ def main():
 
     print("Loading full universe from Turso daily_ohlc ...", file=sys.stderr)
     universe = load_universe()
-    print(f"Universe: {len(universe)} symbols with >= {MIN_BARS} bars", file=sys.stderr)
+    print(f"Universe (before sharding): {len(universe)} symbols with >= {MIN_BARS} bars", file=sys.stderr)
+
+    # Optional shard selection (FP_SCAN_SHARD="i/n", 1-indexed) so a run's
+    # printed JSON blob stays small enough for GitHub Actions' per-line
+    # log-storage limit -- the first unsharded attempt at this scan
+    # produced a payload large enough that the head of the log (including
+    # the ===JSON_START=== marker) was silently dropped, the same failure
+    # mode already hit and fixed for analysis/fetch_premove_data.py.
+    shard_spec = os.environ.get("FP_SCAN_SHARD", "").strip()
+    sorted_syms = sorted(universe.keys())
+    if shard_spec:
+        i_str, n_str = shard_spec.split("/")
+        shard_i, shard_n = int(i_str), int(n_str)
+        sorted_syms = [s for idx, s in enumerate(sorted_syms) if idx % shard_n == (shard_i - 1)]
+        print(f"Shard {shard_i}/{shard_n}: {len(sorted_syms)} symbols this run", file=sys.stderr)
 
     all_rows = {}
     fp1_matches, fp2_matches = [], []
-    for i, (sym, bars) in enumerate(universe.items()):
-        rows = analyze(sym, bars)
+    for i, sym in enumerate(sorted_syms):
+        rows = analyze(sym, universe[sym])
         all_rows[sym] = rows
         fp1_matches.extend(scan_fingerprint_1(sym, rows))
         fp2_matches.extend(scan_fingerprint_2(sym, rows))
         if (i + 1) % 50 == 0:
-            print(f"  processed {i + 1}/{len(universe)} symbols "
+            print(f"  processed {i + 1}/{len(sorted_syms)} symbols "
                   f"(fp1={len(fp1_matches)}, fp2={len(fp2_matches)} so far)", file=sys.stderr)
 
     print(f"Scan complete: {len(fp1_matches)} fingerprint-1 matches, "
           f"{len(fp2_matches)} fingerprint-2 matches", file=sys.stderr)
 
-    baseline = baseline_win_rate_10d(all_rows)
+    baseline_counts = baseline_win_rate_10d_counts(all_rows)
 
-    def summarize(matches):
-        out = {"n_matches": len(matches)}
-        for h in (5, 10, 20):
-            vals = [m[f"fwd_{h}d"] for m in matches if m.get(f"fwd_{h}d") is not None]
-            if vals:
-                wins = sum(1 for v in vals if v > 0)
-                out[f"h{h}d"] = {
-                    "n": len(vals), "mean_pct": statistics.mean(vals) * 100,
-                    "median_pct": statistics.median(vals) * 100,
-                    "win_rate_pct": wins / len(vals) * 100,
-                }
-                if h == 10:
-                    out[f"h{h}d"]["wilson_95ci"] = wilson_interval(wins, len(vals))
-            else:
-                out[f"h{h}d"] = None
-        n_bo = sum(1 for m in matches if m.get("breakout_within_15d"))
-        out["breakout_within_15d_pct"] = (n_bo / len(matches) * 100) if matches else None
-        return out
-
+    # Raw matches + raw baseline counts only -- all summary statistics
+    # (mean/median/win-rate/Wilson CI) are computed client-side after
+    # merging every shard's output, not per-shard, so nothing needs
+    # re-deriving from partial data.
     output = {
-        "universe_symbol_count": len(universe),
+        "shard": shard_spec or "unsharded",
+        "symbols_this_run": len(sorted_syms),
         "min_bars_required": MIN_BARS,
-        "baseline_win_rate_10d_freshly_computed": baseline,
+        "baseline_counts_this_shard": baseline_counts,
         "baseline_win_rate_10d_cited": 44.55,
-        "fingerprint_1": {"definition": "SHFA-style MFI-deep-oversold base",
-                           "summary": summarize(fp1_matches), "matches": fp1_matches},
-        "fingerprint_2": {"definition": "FNEL-style OBV/MFI quiet build after a breakout",
-                           "summary": summarize(fp2_matches), "matches": fp2_matches},
+        "fingerprint_1": {"definition": "SHFA-style MFI-deep-oversold base", "matches": fp1_matches},
+        "fingerprint_2": {"definition": "FNEL-style OBV/MFI quiet build after a breakout", "matches": fp2_matches},
     }
 
     print("===JSON_START===")
