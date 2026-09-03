@@ -315,17 +315,20 @@ def main():
     }
 
     out_path = Path(__file__).parent / "fingerprint_scan_output.json"
-    blob = json.dumps(output, indent=2, default=str)
-    out_path.write_text(blob)
+    pretty_blob = json.dumps(output, indent=2, default=str)
+    out_path.write_text(pretty_blob)
     print(f"Wrote {out_path} ({out_path.stat().st_size:,} bytes), also "
           f"uploaded as a workflow artifact.", file=sys.stderr)
-    # Also printed to stdout: the actual output turned out small enough
-    # (~165KB) to be well under the size that earlier caused GitHub
-    # Actions to truncate the head of the log for a naive unsharded
-    # attempt with a much more verbose intermediate representation --
-    # kept as a second, redundant retrieval path alongside the artifact.
+    # Also printed to stdout, as a second retrieval path alongside the
+    # artifact (this sandbox's own egress proxy blocks the artifact
+    # download URL). Printed COMPACT (no indent), on one line: GitHub
+    # Actions prefixes every raw log line with its own ~28-char
+    # timestamp, so an indented, multi-thousand-line JSON dump nearly
+    # doubles in size purely from that per-line overhead -- compact
+    # single-line output avoids paying that multiplier at all.
+    compact_blob = json.dumps(output, separators=(",", ":"), default=str)
     print("===JSON_START===")
-    print(blob)
+    print(compact_blob)
     print("===JSON_END===")
 
 
