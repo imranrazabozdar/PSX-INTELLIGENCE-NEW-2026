@@ -2,6 +2,17 @@ name: Pre-move study data fetch (manual, one-off)
 
 on:
   workflow_dispatch:
+    inputs:
+      symbols:
+        description: >
+          Optional comma-separated symbol subset (e.g. "AICL,SHFA"). Empty
+          runs every symbol in TARGETS. Use this to split a large TARGETS
+          list across multiple runs -- a single run's printed JSON blob is
+          one long log line, and GitHub Actions truncates the head of a
+          log that grows too large, which silently drops the
+          ===JSON_START=== marker on a big enough combined payload.
+        required: false
+        default: ''
 
 jobs:
   fetch:
@@ -22,5 +33,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas beautifulsoup4 lxml
 
-      - name: 📡 Fetch AICL/SHFA OHLC + announcements (real PSX portal data)
+      - name: 📡 Fetch OHLC (real PSX portal data)
+        env:
+          PREMOVE_SYMBOLS: ${{ inputs.symbols }}
         run: python analysis/fetch_premove_data.py

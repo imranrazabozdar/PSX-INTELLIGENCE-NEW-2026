@@ -30,6 +30,7 @@ Sources, all read-only, no invented data:
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -161,7 +162,14 @@ def fetch_psx_wide_notices(keywords):
 def main():
     output = {"ohlc": {}, "company_announcements": {}, "psx_wide_notices": {}}
 
-    for t in TARGETS:
+    targets = TARGETS
+    syms_filter = os.environ.get("PREMOVE_SYMBOLS", "").strip()
+    if syms_filter:
+        wanted = {s.strip().upper() for s in syms_filter.split(",") if s.strip()}
+        targets = [t for t in TARGETS if t["symbol"].upper() in wanted]
+        print(f"--- PREMOVE_SYMBOLS filter active: {sorted(wanted)} -> {len(targets)} target(s) ---", file=sys.stderr)
+
+    for t in targets:
         sym = t["symbol"]
         print(f"--- Fetching OHLC for {sym} ({t['ohlc_start']} to {t['ohlc_end']}) ---", file=sys.stderr)
         df = dps_scraper.fetch_psx_dps_ohlc(sym, start_date=t["ohlc_start"], end_date=t["ohlc_end"])
