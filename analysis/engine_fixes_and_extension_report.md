@@ -207,3 +207,98 @@ scraper/backfill.
 
 No technical indicator, candlestick, or price-pattern analysis was run in this task. No new
 forensic-model or exposure-matrix engine was built to fill Fix 1's gap.
+
+---
+
+## NRL leverage verification (follow-up)
+
+### Sourced figure
+
+`dps.psx.com.pk`, `stockanalysis.com`, `tradingview.com`, `marketscreener.com`,
+`brecorder.com`, and `pacra.com` were all attempted directly (via WebFetch) for NRL's
+balance sheet and were all blocked by this environment's network egress proxy, same as in
+the original refinery study. Web search (not blocked) turned up NRL's **FY2025-26 annual
+results** — a materially newer filing than anything used so far in this project's NRL
+figures:
+
+| Metric | FY2025 (old, on file) | **FY2025-26 (new)** |
+|---|---|---|
+| Period end | 2025-06-30 | **2026-06-30** |
+| Net result | Loss -PKR 14.866bn | **Profit +PKR 6.16bn** |
+| EPS | -Rs185.91 | **+Rs77.09** |
+| Operating result | Loss -PKR 7.70bn | Profit +PKR 20.16bn |
+| Revenue | PKR 307.66bn (net) | PKR 588.55bn gross / PKR 440.84bn net (+44.2%) |
+| Long-term debt | (not separately sourced before) | **PKR 3.75bn**, down from PKR 11.25bn |
+| Total equity | PKR 50.316bn | **PKR 56.45bn** |
+| Total assets | PKR 149.495bn | PKR 166.24bn |
+| Total liabilities | — | PKR 109.79bn (see caveat below) |
+
+**Citation:** results released 2026-08-25; reported consistently across two independent
+outlets citing the same PSX-sourced figures — [mmnews.tv, "NRL returns to profit with
+Rs6.16 billion earnings in FY2025-26"](https://mmnews.tv/nrl-returns-to-profit-with-rs6-16-billion-earnings-in-fy2025-26/)
+and [bloompakistan.com, "National Refinery Returns to Profit with Rs. 6.16 Billion
+Earnings in FY26"](https://bloompakistan.com/national-refinery-returns-to-profit-with-rs-6-16-billion-earnings-in-fy26/)
+— both blocked from direct WebFetch in this environment but corroborated via web search
+snippets against each other and against a third source's matching net-revenue growth
+figure. This is a real improvement over the prior UNVERIFIED state, but falls short of
+directly reading a PSX filing or `dps.psx.com.pk`, which this report states plainly rather
+than overstating confidence.
+
+**Computed D/E = 0.07** (long-term debt PKR 3.75bn / total equity PKR 56.45bn, as of
+2026-06-30). **Caveat, stated explicitly:** this uses long-term debt only, matching the one
+figure both sources reported; a short-term/current-borrowings breakdown was not found in
+this search, so 0.07 may understate NRL's true interest-bearing leverage if it carries
+meaningful short-term debt. Total liabilities (PKR 109.79bn) was deliberately **not** used
+for D/E — that figure includes trade payables and provisions (refineries carry very large
+payables to crude suppliers), not just interest-bearing debt, and using it would overstate
+leverage on a basis inconsistent with how `de` is computed elsewhere in this pipeline (e.g.
+PRL's and ATRL's cached/sourced D/E values, which are debt-only).
+
+### Applied the same way as PRL's correction
+
+`backend/fundamentals_analyzer.py`'s `FUNDAMENTALS_FILING_DATE_OVERRIDE["NRL"]` was updated
+from `"2025-06-30"` to **`"2026-06-30"`**, with a full citation comment (PRL's and the rest
+of the file were not touched). Staleness re-check:
+
+| Ticker | `data_as_of` | `age_days` | `stale` |
+|---|---|---|---|
+| **NRL** | 2026-06-30 (updated) | 66 | **False** — clears the 120-day threshold |
+| PRL (unchanged) | 2025-06-30 | 431 | True |
+| ATRL (unchanged) | 2026-08-30 | 5 | False |
+| CNERGY (unchanged) | 2026-08-30 | 5 | False |
+
+### Re-run: `catalyst_exposure.py` Pass B, all four companies
+
+NRL's classification was also updated to reflect the new, sourced result: `loss_making`
+flips from `True` (per the old FY2025 loss) to **`False`** (per the new FY2026 profit),
+since the theoretical-magnitude axis is driven by that fact, not just D/E. `execution_override`
+for NRL was set to `de=0.07` (sourced, dated as above). PRL and ATRL's overrides are
+unchanged from the prior run.
+
+| Ticker | Magnitude | Execution capacity |
+|---|---|---|
+| PRL | high | weak (high leverage) — D/E=1.41, sourced |
+| **NRL** | **lower** (was: high) | **strong (low leverage)** (was: UNVERIFIED) — D/E=0.07, sourced |
+| ATRL | lower | strong (low leverage) — D/E=0.0, sourced |
+| CNERGY | lower | strong (low leverage) |
+
+### Does this change the ranking?
+
+**Yes — on both axes, not just the one gap this follow-up set out to close.** The original
+open gap was execution capacity (NRL: UNVERIFIED → now strong), but sourcing NRL's real
+current filing also revealed its loss-making status — the premise behind calling it a
+"high theoretical magnitude" beneficiary in both the original manual study and the prior
+`catalyst_exposure.py` run — is now out of date too: NRL already returned to profit in
+FY2026, independent of the still-pending Brownfield upgrade agreements. NRL now matches
+ATRL and CNERGY's profile (lower magnitude, strong execution) rather than PRL's (high
+magnitude, weak execution) — closing the gap with CNERGY/ATRL and widening it with PRL,
+which remains the only high-magnitude/high-risk case among the four. This is a genuine
+correction to the earlier framing, not just detail-filling: the original manual study's
+"PRL and NRL both matter most because both are loss-making" argument no longer holds for
+NRL once its FY2026 turnaround is accounted for; PRL is now the outlier of the four on the
+theoretical-magnitude axis, not one of two.
+
+**Files changed in this follow-up:** `backend/fundamentals_analyzer.py` (NRL's
+`FUNDAMENTALS_FILING_DATE_OVERRIDE` entry only) and this report section. `catalyst_exposure.py`
+itself was not modified — the corrected run used its existing `execution_override` and
+`loss_making` inputs, exactly as designed.

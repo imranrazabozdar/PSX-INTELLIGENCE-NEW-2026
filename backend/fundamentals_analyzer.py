@@ -41,9 +41,20 @@ FUNDAMENTALS_FILING_DATE_OVERRIDE = {
     # quarter, so the conservative anchor is the last CONFIRMED filing date,
     # not this cache's refresh date.
     "PRL": "2025-06-30",
-    # FY2025 annual result (net loss -PKR 14.866bn), period ended 2025-06-30,
-    # reported 2025-08-11 (Profit/Pakistan Today).
-    "NRL": "2025-06-30",
+    # UPDATED (follow-up task, 2026-09-03): FY2026 annual result now available
+    # and confirmed -- NRL swung to a net PROFIT of PKR 6.16bn (EPS Rs77.09,
+    # vs FY2025's -PKR 14.87bn loss/-Rs185.91 EPS), period ended 2026-06-30,
+    # results released 2026-08-25. Long-term debt fell sharply, PKR 11.25bn ->
+    # PKR 3.75bn; total equity rose to PKR 56.45bn; total assets PKR 166.24bn.
+    # Corroborated across two independent outlets citing the same figures
+    # (mmnews.tv, bloompakistan.com), both reporting the same PSX-sourced
+    # results. This SUPERSEDES the prior "2025-06-30" anchor used when NRL's
+    # execution capacity was still unverified in the original catalyst_exposure
+    # re-run -- see "NRL leverage verification (follow-up)" in
+    # analysis/engine_fixes_and_extension_report.md for the corrected D/E and
+    # its calculation caveat (long-term debt only; short-term borrowings
+    # breakdown was not found in this search).
+    "NRL": "2026-06-30",
 }
 
 
