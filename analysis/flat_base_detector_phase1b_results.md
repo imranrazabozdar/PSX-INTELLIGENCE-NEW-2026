@@ -90,11 +90,65 @@ No flat base detected in the 60-day lookback window.
 
 Sample: same 50 stocks as Phase 1a's VCP baseline (seed=42), scanned with `detect_flat_base(ticker, lookback_days=126)` -- other params at their exact defaults.
 
-*(All 50 sampled stocks failed to load -- e.g. `no such table: daily_ohlc` -- this environment can't reach the daily_ohlc DB. Run in GitHub Actions with LIBSQL secrets to populate this table.)*
+| ticker | num_flat_base_found | avg_flat_base_quality_score | pct_textbook_flat_bases |
+|---|---|---|---|
+| ABL | 13 | 33.55 | 0.0 |
+| AGP | 7 | 34.98 | 0.0 |
+| ASTL | 9 | 32.80 | 0.0 |
+| AVN | 7 | 44.39 | 0.0 |
+| BAFL | 8 | 29.73 | 0.0 |
+| BAHL | 7 | 34.22 | 0.0 |
+| BECO | 5 | 35.70 | 0.0 |
+| BLUEX | 3 | 57.80 | 0.0 |
+| BML | 2 | 40.64 | 0.0 |
+| BOP | 5 | 27.66 | 0.0 |
+| CLOV | 5 | 35.23 | 0.0 |
+| CNERGY | 6 | 39.75 | 0.0 |
+| CPHL | 10 | 32.99 | 0.0 |
+| DGKC | 3 | 25.41 | 0.0 |
+| ECPL | error: zero rows returned | — | — |
+| FABL | 6 | 28.03 | 0.0 |
+| FCL | 6 | 33.00 | 0.0 |
+| GAL | 5 | 25.93 | 0.0 |
+| GDL | 7 | 32.00 | 0.0 |
+| HMB | 15 | 39.17 | 0.0 |
+| IMAGE | 6 | 30.69 | 0.0 |
+| ITANZ | 1 | 19.58 | 0.0 |
+| KEL | 9 | 32.26 | 0.0 |
+| LUCK | 4 | 31.09 | 0.0 |
+| MARI | 8 | 30.67 | 0.0 |
+| MLCF | 2 | 18.29 | 0.0 |
+| MUGHAL | 4 | 28.56 | 0.0 |
+| NBP | 3 | 34.72 | 0.0 |
+| NRL | 6 | 36.95 | 0.0 |
+| OGDC | 12 | 25.22 | 0.0 |
+| PACE | 3 | 37.55 | 0.0 |
+| POWER | 3 | 37.18 | 0.0 |
+| PPL | 5 | 27.38 | 0.0 |
+| PSO | 7 | 37.75 | 0.0 |
+| PTC | 3 | 29.06 | 0.0 |
+| QTECH | 2 | 34.02 | 0.0 |
+| SAZEW | 5 | 30.74 | 0.0 |
+| SEARL | 6 | 30.24 | 0.0 |
+| SLGL | 4 | 41.48 | 0.0 |
+| SNGP | 3 | 32.17 | 0.0 |
+| SPSL | 4 | 29.34 | 0.0 |
+| SSGC | 1 | 52.30 | 0.0 |
+| STL | error: zero rows returned | — | — |
+| STLR | 0 | — | — |
+| SYS | 8 | 30.67 | 0.0 |
+| TBL | 5 | 31.97 | 0.0 |
+| TOMCL | 1 | 46.69 | 0.0 |
+| UBL | 4 | 16.96 | 0.0 |
+| WASL | 2 | 48.98 | 0.0 |
+| WAVESAPP | 4 | 40.44 | 0.0 |
 
 ### Summary
 
-- No stocks loaded successfully; no baseline statistics available.
+- Stocks successfully scanned: **48**
+- Average flat base frequency: **5.29 per stock** over ~126 trading days
+- Distribution: **1** with 0, **3** with exactly 1, **44** with 2+
+- Stocks with >=1 textbook flat base among random stocks: **0/48** -> []
 
 ## Section 3: Assessment & Decisions for Phase 1c
 
@@ -111,6 +165,10 @@ The detector is **NEEDS REWORK**: the detector or definition needs rework before
 - **SYM**: 4 flat base(s) detected, but the closest breakout still landed 21 trading days from the known move-start (outside the 5-day hit window).
 - **PREMA**: 1 flat base(s) detected, but the closest breakout still landed 7 trading days from the known move-start (outside the 5-day hit window).
 - **JSBL**: No 12-35 day window with range<=12% and volume contracted to <=75% of its prior level was found anywhere in the 60-day lookback -- this stock's pre-move structure isn't a flat/tight base by this definition.
+
+### Signal-vs-noise check
+
+Average flat base frequency on the 50 random stocks was **5.29 per stock**; the hit rate on known moves was **36.4%**. Firing no more often on known real moves than on random stocks is evidence against real signal.
 
 ## Section 4: Code & Definitions Locked
 
