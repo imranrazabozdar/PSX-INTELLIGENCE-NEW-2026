@@ -13,12 +13,71 @@ de (debt/equity ratio), div_yield (%).
 import json
 import os
 from collections import defaultdict
+from datetime import date
 
 import config
 
 log_neutral = 50.0
 _METRICS = ("pe", "eps_growth", "roe", "de", "div_yield")
 _MIN_PEERS = 3            # sector-relative needs at least this many peers w/ a metric
+
+STALENESS_THRESHOLD_DAYS = 120  # ~1 quarterly filing cycle; older likely means a
+                                 # newer quarter exists that this data doesn't reflect
+
+# Manually-sourced overrides for symbols where separate research confirmed the
+# cached ratios' TRUE underlying filing date is materially older than the
+# cache's own fetch timestamp (i.e. the upstream source -- stockanalysis.com --
+# had not yet reflected a more recent filing even though our cache was
+# recently re-scraped). Same honest, manually-maintained pattern as
+# config.FUNDAMENTALS itself -- every entry must cite where the filing date
+# came from and never be a guess. Default (no entry here) is the cache's own
+# recorded fetch date, which is itself a real, non-guessed date.
+FUNDAMENTALS_FILING_DATE_OVERRIDE = {
+    # FY2025 annual result (net loss -PKR 4.659bn), period ended 2025-06-30,
+    # reported 2025-08-18 (Profit/Pakistan Today). The cached D/E=0.39 was
+    # shown in analysis/refinery_sector_fundamental_study.md to already be
+    # stale versus a later-reported Q1 FY2026 debt increase to D/E=1.41 --
+    # i.e. stockanalysis.com's own figures for PRL lag its most recent
+    # quarter, so the conservative anchor is the last CONFIRMED filing date,
+    # not this cache's refresh date.
+    "PRL": "2025-06-30",
+    # UPDATED (follow-up task, 2026-09-03): FY2026 annual result now available
+    # and confirmed -- NRL swung to a net PROFIT of PKR 6.16bn (EPS Rs77.09,
+    # vs FY2025's -PKR 14.87bn loss/-Rs185.91 EPS), period ended 2026-06-30,
+    # results released 2026-08-25. Long-term debt fell sharply, PKR 11.25bn ->
+    # PKR 3.75bn; total equity rose to PKR 56.45bn; total assets PKR 166.24bn.
+    # Corroborated across two independent outlets citing the same figures
+    # (mmnews.tv, bloompakistan.com), both reporting the same PSX-sourced
+    # results. This SUPERSEDES the prior "2025-06-30" anchor used when NRL's
+    # execution capacity was still unverified in the original catalyst_exposure
+    # re-run -- see "NRL leverage verification (follow-up)" in
+    # analysis/engine_fixes_and_extension_report.md for the corrected D/E and
+    # its calculation caveat (long-term debt only; short-term borrowings
+    # breakdown was not found in this search).
+    "NRL": "2026-06-30",
+}
+
+
+def _data_as_of(symbol, cache_as_of):
+    """The date the cached ratios actually trace back to -- sourced, never
+    today's date, never guessed. Defaults to the cache's own recorded fetch
+    date (already a real date stored in fundamentals.json); overridden only
+    where FUNDAMENTALS_FILING_DATE_OVERRIDE has independently confirmed the
+    true underlying filing is materially older than that fetch date."""
+    return FUNDAMENTALS_FILING_DATE_OVERRIDE.get(symbol) or cache_as_of
+
+
+def _staleness(data_as_of):
+    """(age_days, is_stale) from an ISO date string, or (None, None) if
+    data_as_of is missing/unparseable -- never raises, never fabricates."""
+    if not data_as_of or data_as_of == "n/a":
+        return None, None
+    try:
+        d = date.fromisoformat(data_as_of)
+    except ValueError:
+        return None, None
+    age_days = (date.today() - d).days
+    return age_days, age_days > STALENESS_THRESHOLD_DAYS
 
 # Auto-fetched ratios cache (written by fundamentals_fetcher.py). Manual entries
 # in config.FUNDAMENTALS override anything here.
@@ -97,15 +156,28 @@ def _lin(x, lo, hi, lo_score, hi_score):
     return lo_score + t * (hi_score - lo_score)
 
 
-def analyze(symbol):
-    # Merge auto-fetched cache with manual config overrides (config wins).
+def raw_ratios(symbol):
+    """The merged (cache + config-override) raw ratio dict for `symbol`,
+    e.g. {"pe": 3.79, "roe": 45.49, "de": 0.39} -- whatever's present, no
+    defaults filled in. Exposed for callers (e.g. catalyst_exposure.py)
+    that need a specific raw value rather than analyze()'s formatted
+    "have" strings; same merge precedence as analyze() itself."""
     data = dict(_CACHE.get("data", {}).get(symbol, {}))
     data.update((getattr(config, "FUNDAMENTALS", {}) or {}).get(symbol, {}))
+    return data
+
+
+def analyze(symbol):
+    # Merge auto-fetched cache with manual config overrides (config wins).
+    data = raw_ratios(symbol)
     as_of = (getattr(config, "FUNDAMENTALS_AS_OF", "") or _CACHE.get("as_of")
              or "n/a")
+    data_as_of = _data_as_of(symbol, as_of)
+    age_days, stale = _staleness(data_as_of)
     if not data:
         return {"symbol": symbol, "score": log_neutral, "low_confidence": True,
-                "as_of": as_of, "have": [],
+                "as_of": as_of, "data_as_of": data_as_of, "age_days": age_days,
+                "stale": stale, "have": [],
                 "notes": ["No fundamentals data — neutral 50. Run "
                           "`python fundamentals_fetcher.py` or add "
                           f"config.FUNDAMENTALS['{symbol}']."]}
@@ -138,7 +210,8 @@ def analyze(symbol):
     parts = [p for p in parts if p is not None]
     if not parts:
         return {"symbol": symbol, "score": log_neutral, "low_confidence": True,
-                "as_of": as_of, "have": [],
+                "as_of": as_of, "data_as_of": data_as_of, "age_days": age_days,
+                "stale": stale, "have": [],
                 "notes": ["Fundamentals entry present but no usable ratios — "
                           "neutral 50."]}
 
@@ -147,5 +220,9 @@ def analyze(symbol):
     notes.append(f"Fundamentals ({as_of}): " + ", ".join(have)
                  + (" [sector-relative blend]" if rel_used[0] else "")
                  + ". Verify against the latest quarterly before acting.")
+    if stale:
+        notes.append(f"STALE — verify against latest filing (data_as_of={data_as_of}, "
+                     f"{age_days} days old, threshold={STALENESS_THRESHOLD_DAYS}).")
     return {"symbol": symbol, "score": score, "low_confidence": thin,
-            "as_of": as_of, "have": have, "notes": notes}
+            "as_of": as_of, "data_as_of": data_as_of, "age_days": age_days,
+            "stale": stale, "have": have, "notes": notes}
