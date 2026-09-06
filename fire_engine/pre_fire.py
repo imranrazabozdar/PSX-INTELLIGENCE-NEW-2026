@@ -12,7 +12,7 @@ PRE-FIRE (ALL must hold, as of the latest candle):
 """
 from datetime import datetime, timedelta
 
-from fire_engine.compression import is_compression_active
+from fire_engine.compression import detect_price_compression, is_compression_active
 from fire_engine.support_resistance import is_support_holding, calculate_support_resistance
 
 
@@ -62,19 +62,47 @@ def detect_pre_fire(candles: list, mfi_series: list, mfi_derivatives: dict,
 
     detected = acceleration_ok and compression_active and volume_ok and support_holding and not_near_close
 
-    # Score within the 0-70 WATCH..PRE-FIRE band: proportional credit for
-    # each of the 4 substantive conditions (acceleration/compression/
-    # volume/support), each worth up to 17.5 points -- near-close is a
-    # gate, not a scored component.
-    score = 0.0
-    if acceleration_ok:
-        score += 17.5
+    # Score within the 0-70 WATCH..PRE-FIRE band: each of the 4 substantive
+    # conditions (acceleration/compression/volume/support) is worth up to
+    # 17.5 points, scaled by HOW STRONGLY it passed -- not a flat 17.5 for
+    # merely clearing its gate. That flat-credit version was a real bug:
+    # prefire_detected requires ALL FOUR gates to hold at once, so every
+    # single event actually logged (scheduler.py only calls log_fire_event
+    # when prefire_detected is True) necessarily had all four gates passing
+    # -- meaning every stored PRE_FIRE row scored exactly 17.5*4 = 70.0,
+    # with zero possible variance, regardless of how different the
+    # underlying MFI/volume/compression numbers actually were (reported as
+    # "all PRE-FIRE signals showing FIRE Score = 70" against real 2026-09-04
+    # production data). The 0-70 range was only ever reachable by
+    # non-detected cases, which are never stored at all.
+    #
+    # acceleration: passing at exactly the threshold earns half credit;
+    # 2x the threshold (a clearly documented, tunable calibration choice,
+    # not a fixed law) earns full credit.
+    accel_score = 17.5 * min(1.0, mfi_acceleration / (2 * pf_cfg["mfi_acceleration_threshold"])) if acceleration_ok else 0.0
+
+    # compression: tighter than the threshold earns more credit than a
+    # compression that barely qualifies (e.g. via the adaptive-ATR method
+    # without also being tight in simple percentage terms).
+    compression_score = 0.0
     if compression_active:
-        score += 17.5
-    if volume_ok:
-        score += 17.5
-    if support_holding:
-        score += 17.5
+        lookback = cfg["compression"]["lookback_minutes"]
+        periods = detect_price_compression(candles[-lookback:], cfg["compression"])
+        range_pct = periods[-1]["price_range_pct"] if periods else cfg["compression"]["price_change_pct"]
+        compression_score = 17.5 * max(0.0, min(1.0, 1 - range_pct / cfg["compression"]["price_change_pct"]))
+
+    # volume: thinner volume earns more credit than volume that's merely
+    # under the elevated-RV cutoff -- "MFI rising on thin volume" (this
+    # module's own PRE-FIRE rule 3) is the stronger version of this signal.
+    volume_score = 17.5 * max(0.0, min(1.0, (pf_cfg["max_relative_volume"] - relative_volume) / pf_cfg["max_relative_volume"])) \
+        if volume_ok else 0.0
+
+    # support: calculate_support_resistance()'s own level_strength (0-1,
+    # more historical touches at the level = more meaningfully defended).
+    support_score = 17.5 * calculate_support_resistance(candles, cfg["support_resistance"])["level_strength"] \
+        if support_holding else 0.0
+
+    score = accel_score + compression_score + volume_score + support_score
     if not not_near_close:
         score = 0.0  # near-close disqualifies PRE-FIRE scoring entirely
 

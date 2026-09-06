@@ -4,6 +4,7 @@ or a throwaway local sqlite file, never chart.scstrade.com."""
 import os
 import sys
 import tempfile
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -14,6 +15,7 @@ from fire_engine.scoring import calculate_fire_score
 from fire_engine.database import DatabaseManager
 from fire_engine.exclusions import is_stock_excluded, filter_excluded_stocks
 from fire_engine.config import load_config
+from fire_engine.pre_fire import detect_pre_fire
 
 
 def _mk_candle(dt, o, h, l, c, v):
@@ -159,3 +161,48 @@ def test_query_candles_round_trip():
         db.close()
         assert len(rows) == 3
         assert rows[0]["symbol"] == "AICL"
+
+
+# ------------------------------------------------------------ pre_fire ----
+def test_prefire_score_varies_with_signal_strength_not_flat_70():
+    """Regression test for the "every logged PRE-FIRE score is exactly 70"
+    bug found against real 2026-09-04 production data: prefire_detected
+    requires ALL FOUR gates (acceleration/compression/volume/support) to
+    hold at once, so if the score were a flat 17.5 credit per passing gate
+    (the original, buggy version), every detected case -- the only ones
+    scheduler.py ever logs -- would score exactly 70 with zero variance,
+    regardless of how different the underlying numbers actually were. The
+    score must scale with how strongly each gate passed, not just whether
+    it did."""
+    cfg = load_config()
+    accel_threshold = cfg["pre_fire"]["mfi_acceleration_threshold"]
+    max_rv = cfg["pre_fire"]["max_relative_volume"]
+    candle = {"datetime": "2026-09-04 10:00:00", "date": "2026-09-04", "time_of_day": "10:00",
+              "open": 100.0, "high": 100.5, "low": 99.5, "close": 100.0, "volume": 1000}
+    candles = [candle]
+
+    with patch("fire_engine.pre_fire.is_compression_active", return_value=True), \
+         patch("fire_engine.pre_fire.is_support_holding", return_value=True), \
+         patch("fire_engine.pre_fire.detect_price_compression") as mock_compress, \
+         patch("fire_engine.pre_fire.calculate_support_resistance") as mock_support:
+
+        # Barely passing: right at each threshold, no bonus strength anywhere.
+        mock_compress.return_value = [{"price_range_pct": cfg["compression"]["price_change_pct"]}]
+        mock_support.return_value = {"level_strength": 0.0}
+        barely = detect_pre_fire(
+            candles, mfi_series=[50.0], mfi_derivatives={"delta_5": accel_threshold, "delta_15": 0},
+            relative_volume=max_rv - 1e-6, cfg=cfg,
+        )
+
+        # Strongly passing: well past every threshold.
+        mock_compress.return_value = [{"price_range_pct": 0.0}]
+        mock_support.return_value = {"level_strength": 1.0}
+        strong = detect_pre_fire(
+            candles, mfi_series=[50.0], mfi_derivatives={"delta_5": 2 * accel_threshold, "delta_15": 0},
+            relative_volume=0.0, cfg=cfg,
+        )
+
+    assert barely["prefire_detected"] is True
+    assert strong["prefire_detected"] is True
+    assert strong["prefire_score"] == 70
+    assert barely["prefire_score"] < strong["prefire_score"]
