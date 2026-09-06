@@ -23,7 +23,13 @@ permissions:
 jobs:
   fire_batch:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60, not 30: this job now runs FIRE then Wyckoff back to back, sharing
+    # one job-level timeout. The FIRE step alone measured ~21 minutes on
+    # its own real production run (2026-09-04, run 34031050189) after its
+    # Turso round-trip fixes; the Wyckoff step adds its own daily+4h fetch
+    # and detection pass on top of that in the same job, so 30 was already
+    # too tight for both steps combined.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
