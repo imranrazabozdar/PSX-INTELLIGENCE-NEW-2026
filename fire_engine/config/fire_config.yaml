@@ -1,0 +1,111 @@
+# ============================================================================
+# PSX FIRE ENGINE - CONFIGURATION
+# ============================================================================
+# All thresholds live here, not hard-coded in the engine modules. Loaded by
+# fire_engine/config.py's load_config().
+
+system:
+  version: "1.0"
+  environment: "development"
+  log_level: "INFO"
+
+database:
+  type: "sqlite"
+  path: "./fire_engine/psx_fire.db"
+
+mfi:
+  length: 14
+  acceleration_threshold_5m: 15     # points, over 5 candles
+  acceleration_threshold_15m: 20    # points, over 15 candles
+  min_mfi_for_fire: 50              # MFI level FIRE requires
+
+volume:
+  lookback_sessions: 30
+  min_lookback_required: 5          # below this, use progressive average instead
+  elevated_rv: 1.5
+  abnormal_rv: 2.0
+  extreme_rv: 3.0
+
+compression:
+  price_change_pct: 0.10            # 0.1%, method 1 (simple) threshold
+  lookback_minutes: 15
+  adaptive_atr_ratio: 0.5           # method 2: current ATR <= this x 30-day ATR
+  severity_thresholds:
+    mild: 0.05
+    moderate: 0.03
+    severe: 0.01
+
+absorption:
+  min_relative_volume: 1.5
+  max_price_displacement_pct: 0.05
+  lookback_minutes: 15
+
+support_resistance:
+  lookback_candles: 20
+
+pre_fire:
+  mfi_acceleration_threshold: 20
+  compression_required: true
+  support_required: true
+  max_relative_volume: 1.5          # RV must stay below this (thin/normal volume)
+
+fire:
+  min_fire_score: 75
+  min_relative_volume_expansion: 2.0
+  min_mfi_for_confirmation: 50
+  rejection_check_minutes: 5        # breakout must hold this long to not be "rejected"
+
+fire_scoring:
+  weights:
+    mfi_acceleration: 20
+    mfi_persistence: 10
+    price_compression: 15
+    volume_absorption: 20
+    support_structure: 10
+    volume_expansion: 10
+    breakout_confirmation: 15
+  thresholds:
+    watch: 40
+    prefire: 60
+    strong_fire: 75
+    extreme_fire: 90
+
+session:
+  market_open: "09:00"
+  market_close: "16:30"
+  near_close_minutes: 30
+  expected_candles_per_day: 480
+
+stocks:
+  universe:
+    - AICL
+    - SHFA
+    - MDTL
+    - THCCL
+    - PREMA
+
+exclusion:
+  enabled: true
+  config_module: "fire_engine.excluded_sectors_config"
+
+data_source:
+  type: "SCSTrade"
+  url: "https://www.scstrade.com/"
+  retry_attempts: 3
+  retry_delay_seconds: 60
+  timeout_seconds: 300
+  playwright:
+    headless: true
+    timeout_ms: 30000
+
+scheduling:
+  enabled: true
+  daily_collection_time: "16:30"
+  daily_report_time: "17:00"
+  timezone: "Asia/Karachi"
+
+dashboard:
+  enabled: true
+  type: "streamlit"
+  port: 8501
+  auto_refresh_minutes: 5
