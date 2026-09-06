@@ -53,10 +53,14 @@ def run_symbol_for_date(db, symbol: str, date: str, cfg: dict) -> dict:
         return {"symbol": symbol, "date": date, "status": "NO_DATA", "events_logged": 0}
 
     validation = validate_trading_session(symbol, candles, cfg["session"]["expected_candles_per_day"])
-    db.insert_candles(symbol, candles, session_id=f"{symbol}:{date}",
-                       data_quality_status=validation["quality_status"])
+    # trading_sessions row must exist BEFORE inserting candles that reference
+    # it via market_candles.session_id's FOREIGN KEY -- inserting candles
+    # first (the original order here) violated that constraint on every
+    # symbol with real data in the first production run.
     db.upsert_session(f"{symbol}:{date}", date, validation["total_candles"],
                        validation["expected_candles"], validation["quality_status"])
+    db.insert_candles(symbol, candles, session_id=f"{symbol}:{date}",
+                       data_quality_status=validation["quality_status"])
     if not validation["is_valid"]:
         return {"symbol": symbol, "date": date, "status": validation["quality_status"],
                 "events_logged": 0, "issues": validation["issues"][:10]}
