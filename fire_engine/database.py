@@ -149,21 +149,45 @@ def _row_to_candle(row) -> dict:
 
 
 class DatabaseManager:
-    """Thin wrapper around a sqlite3 connection to psx_fire.db. Every write
-    that can collide with existing data uses INSERT ... ON CONFLICT DO
-    UPDATE (UPSERT) against the table's own UNIQUE constraint, so re-running
-    the same ingestion twice is a no-op, not a duplicate or an error --
-    the idempotency the spec's testing section explicitly requires."""
+    """Thin wrapper around a database connection. Every write that can
+    collide with existing data uses INSERT ... ON CONFLICT DO UPDATE
+    (UPSERT) against the table's own UNIQUE constraint, so re-running the
+    same ingestion twice is a no-op, not a duplicate or an error -- the
+    idempotency the spec's testing section explicitly requires.
 
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-        initialize_database(db_path)
-        self.conn = sqlite3.connect(db_path)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA foreign_keys = ON")
+    Two ways to construct it:
+      - DatabaseManager(db_path="psx_fire.db") -- standalone local sqlite
+        file, own connection, closed by this instance. Used for local
+        development/testing (e.g. by run_daily_batch.py when invoked
+        without --shared-db).
+      - DatabaseManager(conn=<existing connection>) -- an already-open
+        connection this instance does NOT own/close, e.g.
+        backend/turso_db.get_connection() -- so the FIRE Engine's tables
+        live in the SAME database backend/app.py's Patterns tab already
+        reads from, not a second, invisible-to-the-app sqlite file. Both
+        sqlite3 connections and turso_db's wrapper support execute/
+        executemany/executescript with dict-like rows, so this class
+        works unmodified against either.
+    """
+
+    def __init__(self, db_path: str = None, conn=None):
+        if conn is not None and db_path is not None:
+            raise ValueError("pass either db_path or conn, not both")
+        if conn is not None:
+            self.conn = conn
+            self.db_path = None
+            self._owns_conn = False
+        else:
+            self.db_path = db_path
+            self.conn = sqlite3.connect(db_path)
+            self.conn.row_factory = sqlite3.Row
+            self._owns_conn = True
+        self.conn.executescript(SCHEMA_SQL)
+        self.conn.commit()
 
     def close(self):
-        self.conn.close()
+        if self._owns_conn:
+            self.conn.close()
 
     def __enter__(self):
         return self

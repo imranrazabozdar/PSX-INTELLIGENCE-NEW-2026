@@ -3285,6 +3285,62 @@ with tab_patterns:
                            "history/overlap, or no evolved formula cleared the minimum-trade-count "
                            "guard on validation).")
 
+    # ---------------------------------------------- PSX FIRE Engine block ----
+    # 1-minute MFI + time-of-day relative volume + compression/absorption ->
+    # PRE-FIRE/FIRE, scored 0-100. Reads the last completed daily batch
+    # (fire_engine/run_daily_batch.py, its own scheduled job) via
+    # /patterns/fire-scan -- NOT computed live here, same cached-scan
+    # convention as every other block on this tab. Shown above the Long/
+    # Short/Structural sub-tabs since it isn't inherently directional the
+    # same way those are, and priority ranking (highest fire_score first)
+    # is the point: which stocks are exhibiting the behaviour right now.
+    st.markdown('<div class="psx-section-eyebrow">MARKET BEHAVIOUR</div>'
+                '<div class="psx-section-title">🔥 PSX FIRE Engine — Priority Setups</div>', unsafe_allow_html=True)
+    _fire_scan = _get("/patterns/fire-scan", **_pat_refresh_params)
+    if _scan_status_banner(_fire_scan, "PSX FIRE Engine"):
+        _fire_hits = _fire_scan.get("hits") or []
+        _fire_date = _fire_scan.get("date")
+        if not _fire_hits:
+            st.info(_fire_scan.get("reason") or
+                    "No PRE-FIRE/FIRE setups in the most recent completed daily batch.")
+        else:
+            st.caption(f"Last completed scan: {_fire_date or '—'} · {_fire_scan.get('scanned', 0)} "
+                       "symbol(s) with an active setup, ranked by FIRE score (highest priority first). "
+                       "A strength score, not a probability or profitability claim.")
+            names_fire = _company_names()
+            _fire_rows = [{
+                "symbol": h["symbol"], "company": names_fire.get(h["symbol"], ""),
+                "status": "🔴 FIRE" if h["classification"] == "FIRE" else "🟡 PRE-FIRE",
+                "fire score": h.get("fire_score"),
+                "mfi": h.get("mfi_value"),
+                "relative volume": h.get("relative_volume"),
+                "volume condition": h.get("volume_condition"),
+                "time": str(h.get("event_time") or "")[-8:],
+                "notes": h.get("notes"),
+            } for h in _fire_hits]
+            _firedf = pd.DataFrame(_fire_rows)
+
+            def _fire_row_color(row):
+                color = "rgba(220, 53, 69, 0.22)" if row["status"] == "🔴 FIRE" else "rgba(255, 193, 7, 0.18)"
+                return [f"background-color: {color}"] * len(row)
+
+            _render_pattern_table(_firedf, _fire_row_color, "fire_scan_table", {
+                "symbol": "Symbol", "company": "Company", "status": "Status",
+                "fire score": st.column_config.NumberColumn("FIRE Score", format="%d"),
+                "mfi": st.column_config.NumberColumn("MFI(14)", format="%.1f"),
+                "relative volume": st.column_config.NumberColumn("Rel. Volume", format="%.2fx"),
+                "volume condition": "Volume", "time": "Time", "notes": "Notes",
+            })
+        with st.expander("📖 View Rules & Metrics for the FIRE Engine"):
+            st.caption("Detects MFI acceleration + time-of-day relative volume (median-based, not "
+                       "global) + price compression preceding a volume-confirmed breakout, on real "
+                       "1-minute PSX data from SCS (Standard Capital Securities). PRE-FIRE = setup "
+                       "forming (score 60-74); FIRE = breakout confirmed (score >=75). Runs once "
+                       "per day after market close, not live intraday yet -- see "
+                       "fire_engine/run_daily_batch.py.")
+
+    st.divider()
+
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
 

@@ -229,6 +229,17 @@ import scan_cache_engine as _scan_cache
 # not-yet-smoke-tested caveat on the Turso path.
 import turso_db
 
+# fire_engine/ lives one level up (repo_root/fire_engine, sibling of
+# repo_root/backend where this file runs with backend/ as cwd) -- add the
+# repo root to sys.path so its fire_events/daily_reports tables (written
+# by fire_engine/run_daily_batch.py against this SAME turso_db connection)
+# are readable here for the Patterns tab's FIRE scan.
+import sys as _sys
+from pathlib import Path as _Path
+_REPO_ROOT = str(_Path(__file__).parent.parent)
+if _REPO_ROOT not in _sys.path:
+    _sys.path.insert(0, _REPO_ROOT)
+
 # ---- V4.12: official ticker -> company name map (dps.psx.com.pk/symbols).
 try:
     import names as _names
@@ -3433,6 +3444,73 @@ def patterns_engulfing_star_scan(request:Request, force:bool=False):
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("engulfing_star_scan")
+    return out
+
+
+def _run_fire_scan():
+    """PSX FIRE Engine (fire_engine/) results for the most recent completed
+    daily batch -- NOT computed live here. fire_engine/run_daily_batch.py
+    runs after market close (its own scheduled job, same GitHub Actions
+    cron convention as refresh_chart_patterns.yml) against this SAME
+    turso_db connection, writing fire_events; this just reads the latest
+    date's rows back out and ranks by fire_score, so the Patterns tab
+    always reflects "when market scan completes" per that job's own
+    schedule, not a per-request recomputation.
+
+    One "hit" per symbol -- its single highest-scoring event_type in
+    ('FIRE', 'PRE_FIRE') for that date, since a symbol can log several
+    PRE_FIRE/FIRE events across a session and the tab wants one priority-
+    ranked row per stock, not one row per intra-session event. Sorted by
+    fire_score descending (highest-priority setups first)."""
+    with db() as c:
+        try:
+            row = c.execute(
+                "SELECT MAX(event_date) AS d FROM fire_events "
+                "WHERE event_type IN ('FIRE','PRE_FIRE')"
+            ).fetchone()
+        except Exception as exc:
+            return {"status": "ok", "scanned": 0, "hits": [],
+                    "reason": f"fire_events not available yet ({type(exc).__name__}); "
+                              "the daily batch (fire_engine/run_daily_batch.py) hasn't run "
+                              "against this database yet."}
+        latest_date = row["d"] if row else None
+        if not latest_date:
+            return {"status": "ok", "scanned": 0, "hits": [],
+                    "reason": "No FIRE Engine events logged yet -- run "
+                              "fire_engine/run_daily_batch.py after a market close first."}
+        events = [dict(r) for r in c.execute(
+            "SELECT * FROM fire_events WHERE event_date = ? AND event_type IN ('FIRE','PRE_FIRE')",
+            (latest_date,),
+        ).fetchall()]
+
+    by_symbol = {}
+    for e in events:
+        if e["event_type"] not in ("FIRE", "PRE_FIRE"):
+            continue
+        cur = by_symbol.get(e["symbol"])
+        if cur is None or (e["fire_score"] or 0) > (cur["fire_score"] or 0):
+            by_symbol[e["symbol"]] = e
+
+    hits = sorted(by_symbol.values(), key=lambda e: -(e["fire_score"] or 0))
+    for h in hits:
+        h["classification"] = h["event_type"]  # matches other scans' field naming
+    return {"status": "ok", "scanned": len(by_symbol), "date": latest_date, "hits": hits}
+
+
+@app.get("/patterns/fire-scan")
+def patterns_fire_scan(request:Request, force:bool=False):
+    """PSX FIRE Engine (MFI + time-of-day relative volume + compression/
+    absorption -> PRE-FIRE/FIRE, 0-100 strength score) -- reads the most
+    recent completed daily batch's results, ranked by fire_score
+    descending. See _run_fire_scan's docstring: this is a strength score,
+    not a probability/profitability claim, and reflects the last time
+    fire_engine/run_daily_batch.py ran, not a live per-request scan."""
+    cached = _scan_cache.latest("fire_scan")
+    result, err = _serve_cached_and_refresh("fire_scan", _run_fire_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("fire_scan")
     return out
 
 

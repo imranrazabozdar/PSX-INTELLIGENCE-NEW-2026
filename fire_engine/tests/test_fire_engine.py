@@ -1,0 +1,161 @@
+"""Unit tests for the PSX FIRE Engine. Run with: pytest fire_engine/tests/
+No network access needed -- everything here exercises pure computation
+or a throwaway local sqlite file, never chart.scstrade.com."""
+import os
+import sys
+import tempfile
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+from fire_engine.mfi_engine import calculate_mfi, calculate_mfi_derivatives, compare_mfi
+from fire_engine.volume_engine import classify_volume
+from fire_engine.validators import validate_trading_session
+from fire_engine.scoring import calculate_fire_score
+from fire_engine.database import DatabaseManager
+from fire_engine.exclusions import is_stock_excluded, filter_excluded_stocks
+from fire_engine.config import load_config
+
+
+def _mk_candle(dt, o, h, l, c, v):
+    return {"datetime": dt, "date": dt[:10], "time_of_day": dt[11:16],
+            "open": o, "high": h, "low": l, "close": c, "volume": v}
+
+
+def _rising_candles(n=20, start=100.0, step=0.5, vol=1000):
+    out, price = [], start
+    for i in range(n):
+        price += step
+        out.append(_mk_candle(f"2026-01-01 09:{i:02d}:00", price - 0.1, price + 0.2, price - 0.2, price, vol))
+    return out
+
+
+# --------------------------------------------------------------------- MFI --
+def test_mfi_all_rising_approaches_100():
+    mfi = calculate_mfi(_rising_candles(step=0.5), length=14)
+    assert mfi[-1] == 100.0
+
+
+def test_mfi_all_falling_approaches_0():
+    mfi = calculate_mfi(_rising_candles(step=-0.5), length=14)
+    assert mfi[-1] == 0.0
+
+
+def test_mfi_insufficient_history_is_none():
+    mfi = calculate_mfi(_rising_candles(n=5), length=14)
+    assert all(v is None for v in mfi)
+
+
+def test_mfi_derivatives_direction_and_persistence():
+    mfi = calculate_mfi(_rising_candles(n=30, step=0.5), length=14)
+    d = calculate_mfi_derivatives(mfi)
+    assert d["direction"] in (0, 1)
+    assert d["persistence"] >= 0
+
+
+def test_compare_mfi_flags_real_discrepancy():
+    calculated = [50.0, 60.0, 70.0]
+    imported = [50.0, 60.0, 90.0]  # last value is way off
+    report = compare_mfi(calculated, imported, tolerance=1.0)
+    assert report["comparable"]
+    assert report["num_discrepancies"] == 1
+
+
+# ---------------------------------------------------------- Relative volume --
+def test_classify_volume_thresholds():
+    cfg = {"elevated_rv": 1.5, "abnormal_rv": 2.0, "extreme_rv": 3.0}
+    assert classify_volume(0.8, cfg) == "BELOW_AVERAGE"
+    assert classify_volume(1.2, cfg) == "NORMAL"
+    assert classify_volume(1.7, cfg) == "ELEVATED"
+    assert classify_volume(2.5, cfg) == "ABNORMAL"
+    assert classify_volume(3.5, cfg) == "EXTREME"
+
+
+# -------------------------------------------------------------- Validation --
+def test_validation_flags_ohlc_violation():
+    bad = [_mk_candle("2026-01-01 09:00:00", 100, 99, 98, 100, 1000)]  # high < open
+    report = validate_trading_session("TEST", bad, expected_candles=1)
+    assert report["quality_status"] == "ANOMALY"
+    assert not report["is_valid"]
+
+
+def test_validation_flags_duplicate_timestamp():
+    candles = [
+        _mk_candle("2026-01-01 09:00:00", 100, 101, 99, 100, 1000),
+        _mk_candle("2026-01-01 09:00:00", 100, 101, 99, 100, 1000),
+    ]
+    report = validate_trading_session("TEST", candles, expected_candles=2)
+    assert report["duplicate_count"] == 1
+
+
+def test_validation_detects_time_gap():
+    candles = [
+        _mk_candle("2026-01-01 09:00:00", 100, 101, 99, 100, 1000),
+        _mk_candle("2026-01-01 09:05:00", 100, 101, 99, 100, 1000),
+    ]
+    report = validate_trading_session("TEST", candles, expected_candles=2)
+    assert any("Time gap" in i for i in report["issues"])
+
+
+def test_validation_clean_session_is_complete():
+    candles = _rising_candles(n=5)
+    report = validate_trading_session("TEST", candles, expected_candles=5)
+    assert report["quality_status"] == "COMPLETE"
+    assert report["is_valid"]
+
+
+# ------------------------------------------------------------ FIRE scoring --
+def test_fire_score_all_max_is_100():
+    cfg = load_config()
+    result = calculate_fire_score(
+        mfi_acceleration=cfg["mfi"]["acceleration_threshold_15m"] * 2,
+        mfi_persistence=20, price_compression_active=True, absorption_score=100,
+        support_strength=1.0, volume_expansion=cfg["volume"]["abnormal_rv"] * 2,
+        breakout_confirmed=True, cfg=cfg,
+    )
+    assert result["total_score"] == 100
+    assert result["rating"] == "EXTREME_FIRE"
+
+
+def test_fire_score_all_zero_is_no_setup():
+    cfg = load_config()
+    result = calculate_fire_score(
+        mfi_acceleration=0, mfi_persistence=0, price_compression_active=False,
+        absorption_score=0, support_strength=0.0, volume_expansion=0,
+        breakout_confirmed=False, cfg=cfg,
+    )
+    assert result["total_score"] == 0
+    assert result["rating"] == "NO_SETUP"
+
+
+# --------------------------------------------------------------- Exclusions --
+def test_exclusion_filter():
+    excluded = ["AABS", "BATA"]
+    assert is_stock_excluded("aabs", excluded)  # case-insensitive
+    assert not is_stock_excluded("AICL", excluded)
+    kept = filter_excluded_stocks(["AICL", "AABS", "SHFA", "BATA"], excluded)
+    assert kept == ["AICL", "SHFA"]
+
+
+# ------------------------------------------------------- Idempotent storage --
+def test_insert_candles_is_idempotent():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test_fire.db")
+        db = DatabaseManager(db_path=db_path)
+        candles = _rising_candles(n=3)
+        db.insert_candles("AICL", candles)
+        db.insert_candles("AICL", candles)  # run twice
+        count = db.conn.execute("SELECT COUNT(*) AS n FROM market_candles").fetchone()["n"]
+        db.close()
+        assert count == 3  # not 6
+
+
+def test_query_candles_round_trip():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test_fire.db")
+        db = DatabaseManager(db_path=db_path)
+        candles = _rising_candles(n=3)
+        db.insert_candles("AICL", candles)
+        rows = db.query_candles("AICL", "2026-01-01", "2026-01-01")
+        db.close()
+        assert len(rows) == 3
+        assert rows[0]["symbol"] == "AICL"
