@@ -30,3 +30,7 @@ jobs:
       - name: 🔍 Probe scstrade.com structure
         working-directory: fire_engine
         run: python _probe_scstrade.py
+
+      - name: ✅ Verify production scraper module end-to-end
+        working-directory: .
+        run: python -m fire_engine._test_scraper
