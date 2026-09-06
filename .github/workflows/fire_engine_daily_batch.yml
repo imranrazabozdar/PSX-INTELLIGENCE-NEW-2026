@@ -90,6 +90,19 @@ jobs:
             python -m fire_engine.run_wyckoff_batch
           fi
 
+      - name: 🧹 Prune ohlcv_4h cache (keep last 35 days)
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        # Housekeeping only -- never fails the job. store_4h_data()/
+        # backfill_4h.py only ever INSERT/UPSERT into ohlcv_4h, so without
+        # this it grows unbounded; daily_ohlc is untouched on purpose (see
+        # db_prune_cache.py's module docstring).
+        continue-on-error: true
+        run: |
+          python -m fire_engine.db_prune_cache --retention-days 35
+
   backfill_4h:
     # Runs standalone, in parallel with fire_batch above -- pre-warms
     # ohlcv_4h for the whole universe over an explicit date range in one
