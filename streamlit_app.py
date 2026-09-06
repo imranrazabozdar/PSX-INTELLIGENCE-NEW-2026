@@ -3401,18 +3401,37 @@ with tab_patterns:
                 "price": st.column_config.NumberColumn("Price", format="%.2f"),
             })
             with st.expander("Component breakdown (why each symbol scored what it did)"):
-                for h in _wyckoff_hits:
+                # Checklist, not raw JSON -- the JSON dump repeated the exact
+                # same 4 booleans the score breakdown line already showed,
+                # took several screen-heights per symbol on a phone, and
+                # buried the two pass/fail GATES (is_consolidating,
+                # macd_confirmation) that aren't shown anywhere else even
+                # though both must hold for any signal to fire at all.
+                _mark = lambda ok: "✅" if ok else "❌"
+                for i, h in enumerate(_wyckoff_hits):
                     try:
                         components = json.loads(h.get("components") or "{}")
                     except (TypeError, ValueError):
                         components = {}
-                    st.write(f"**{h['symbol']}** | Score: {h.get('accumulation_score')} | "
-                             f"Signal: {h.get('signal_type')}")
-                    st.caption(f"BB compression: {h.get('bb_width_score')}/20 · "
-                               f"Supply exhaustion: {h.get('dry_supply_score')}/20 · "
-                               f"Absorption: {h.get('absorption_score')}/30 · "
-                               f"OBV divergence: {h.get('obv_divergence_score')}/30")
-                    st.json(components)
+                    if i > 0:
+                        st.divider()
+                    st.markdown(f"**{h['symbol']}** — {h.get('accumulation_score')}/100, "
+                                f"{_signal_badge.get(h.get('signal_type'), h.get('signal_type'))}")
+                    st.markdown(
+                        f"{_mark(components.get('bb_compression'))} BB Compression "
+                        f"— {h.get('bb_width_score')}/20  \n"
+                        f"{_mark(components.get('supply_exhaustion'))} Supply Exhaustion "
+                        f"— {h.get('dry_supply_score')}/20  \n"
+                        f"{_mark(components.get('absorption'))} Absorption "
+                        f"— {h.get('absorption_score')}/30  \n"
+                        f"{_mark(components.get('obv_divergence'))} OBV Divergence "
+                        f"— {h.get('obv_divergence_score')}/30"
+                    )
+                    st.caption(
+                        f"Required gates (both must hold): "
+                        f"{_mark(components.get('is_consolidating'))} Consolidating · "
+                        f"{_mark(components.get('macd_confirmation'))} MACD Confirmed"
+                    )
         with st.expander("📖 View Rules & Metrics for Wyckoff Accumulation"):
             st.caption("Detects consolidation (tight 20-day range, by % or ATR) + supply exhaustion "
                        "(volume drying up) + absorption (high volume, tight spread) + OBV/price "
