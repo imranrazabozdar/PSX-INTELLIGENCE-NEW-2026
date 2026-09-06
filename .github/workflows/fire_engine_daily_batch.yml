@@ -43,9 +43,16 @@ jobs:
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        # Must run as `-m fire_engine.run_daily_batch` (a package submodule),
+        # not `python fire_engine/run_daily_batch.py` -- the latter only
+        # puts fire_engine/ itself on sys.path, not the repo root, so
+        # `import fire_engine.config` (an absolute intra-package import)
+        # fails with ModuleNotFoundError. -m runs with the repo root (cwd)
+        # on sys.path, which is what every fire_engine module assumes.
         run: |
           if [ -n "${{ github.event.inputs.date }}" ]; then
-            python fire_engine/run_daily_batch.py --date "${{ github.event.inputs.date }}"
+            python -m fire_engine.run_daily_batch --date "${{ github.event.inputs.date }}"
           else
-            python fire_engine/run_daily_batch.py
+            python -m fire_engine.run_daily_batch
           fi

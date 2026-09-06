@@ -50,12 +50,8 @@ def main():
     ok = sum(1 for r in result["results"] if r["status"] not in ("ERROR", "NO_DATA"))
     errors = [r for r in result["results"] if r["status"] == "ERROR"]
     total_events = sum(r.get("events_logged", 0) for r in result["results"])
-    print(f"Daily batch for {result['date']}: {ok}/{len(result['results'])} symbols processed OK, "
+    print(f"\nDaily batch for {result['date']}: {ok}/{len(result['results'])} symbols processed OK, "
           f"{total_events} events logged.")
-    for r in result["results"]:
-        print(f"  {r['symbol']}: status={r['status']} events={r.get('events_logged', 0)} "
-              f"fire={r.get('fire_count', 0)} prefire={r.get('prefire_count', 0)}"
-              + (f" ERROR={r.get('error')}" if r["status"] == "ERROR" else ""))
     if errors:
         sys.exit(1)
 

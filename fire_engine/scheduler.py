@@ -137,10 +137,25 @@ def run_symbol_for_date(db, symbol: str, date: str, cfg: dict) -> dict:
     }
 
 
-def run_daily_batch(db, cfg: dict, date: str = None) -> dict:
+def _default_progress(msg):
+    print(msg, flush=True)  # flush explicitly -- stdout piped to a GitHub
+                             # Actions log (not a tty) is block-buffered by
+                             # default, which would otherwise silently
+                             # defeat the entire point of per-symbol
+                             # progress: nothing would show up until the
+                             # buffer filled or the process exited.
+
+
+def run_daily_batch(db, cfg: dict, date: str = None, progress=_default_progress) -> dict:
     """Entry point: run every non-excluded configured symbol for `date`
     (defaults to yesterday, since this always runs after that day's
-    close). Returns {date, results: [per-symbol summaries]}."""
+    close). Returns {date, results: [per-symbol summaries]}.
+
+    `progress` is called once per symbol as it finishes (default: print),
+    so an unattended run (GitHub Actions) shows live per-symbol progress
+    in its log instead of only a summary at the very end -- the
+    difference between "the log went quiet for 20 minutes, is it stuck?"
+    and being able to see exactly which symbol it's on."""
     if date is None:
         date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -150,10 +165,15 @@ def run_daily_batch(db, cfg: dict, date: str = None) -> dict:
         universe = filter_excluded_stocks(universe, excluded)
 
     results = []
-    for symbol in universe:
+    for i, symbol in enumerate(universe, 1):
         try:
-            results.append(run_symbol_for_date(db, symbol, date, cfg))
+            r = run_symbol_for_date(db, symbol, date, cfg)
         except Exception as exc:
-            results.append({"symbol": symbol, "date": date, "status": "ERROR", "error": str(exc)})
+            r = {"symbol": symbol, "date": date, "status": "ERROR", "error": str(exc)}
+        results.append(r)
+        progress(f"[{i}/{len(universe)}] {symbol}: status={r['status']} "
+                 f"events={r.get('events_logged', 0)} fire={r.get('fire_count', 0)} "
+                 f"prefire={r.get('prefire_count', 0)}"
+                 + (f" ERROR={r.get('error')}" if r["status"] == "ERROR" else ""))
 
     return {"date": date, "results": results}
