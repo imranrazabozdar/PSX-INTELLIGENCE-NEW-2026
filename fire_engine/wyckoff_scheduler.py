@@ -42,7 +42,7 @@ def _store_result(db, scan_id: int, prepared: dict) -> None:
             is_consolidating, macd_confirmation, bb_width, obv_slope, price_slope,
             consolidation_pct, consolidation_atr, spread_atr_ratio, co_atr_ratio,
             volume_sma_20, atr_14, current_price, current_volume, components)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(scan_date, symbol) DO UPDATE SET
              scan_id=excluded.scan_id, accumulation_score=excluded.accumulation_score,
              signal_type=excluded.signal_type, bb_width_score=excluded.bb_width_score,
