@@ -77,12 +77,102 @@ session:
   expected_candles_per_day: 480
 
 stocks:
+  # Full watchlist (backend/app.py's WATCHLIST_SYMBOLS, 89 symbols) --
+  # not a hand-picked subset. exclusion.enabled below still removes any
+  # of these that also appear in the excluded-sectors list (currently
+  # just YOUW, per that list's own 244-of-519 gap -- see
+  # fire_engine/excluded_sectors_config.py's docstring) at batch-run time,
+  # so this list intentionally is NOT pre-filtered here.
   universe:
-    - AICL
-    - SHFA
-    - MDTL
-    - THCCL
+    - CNERGY
+    - PRL
+    - BOP
+    - FNEL
+    - KEL
+    - SSGC
+    - PACE
+    - WAVESAPP
+    - NBP
+    - PIBTL
+    - FCL
+    - PPL
+    - BLUEX
+    - AKBL
     - PREMA
+    - BECO
+    - BAFL
+    - LOTCHEM
+    - NRL
+    - SYS
+    - HUBC
+    - AICL
+    - THCCL
+    - FCCL
+    - HASCOL
+    - ABL
+    - PSO
+    - HBL
+    - OGDC
+    - AVN
+    - SLGL
+    - SPSL
+    - POWER
+    - UBL
+    - TRG
+    - TOMCL
+    - AIRLINK
+    - FFL
+    - SEARL
+    - CLOV
+    - SNBL
+    - SNGP
+    - MDTL
+    - BML
+    - BNL
+    - BAHL
+    - SYM
+    - WASL
+    - CPHL
+    - FFC
+    - MARI
+    - MUGHAL
+    - BGL
+    - GAL
+    - GDL
+    - YOUW
+    - ZAL
+    - AGP
+    - LOADS
+    - KOHC
+    - SAZEW
+    - WAHDAT
+    - STCL
+    - GLAXO
+    - TGL
+    - MCB
+    - JSBL
+    - IMAGE
+    - SCBPL
+    - BOK
+    - AGTL
+    - ECPL
+    - BIPL
+    - HMB
+    - FABL
+    - SBL
+    - ASTL
+    - EFERT
+    - DGKC
+    - LUCK
+    - TBL
+    - STL
+    - STLR
+    - MLCF
+    - CHCC
+    - WTL
+    - PTC
+    - QTECH
+    - ITANZ
 
 exclusion:
   enabled: true

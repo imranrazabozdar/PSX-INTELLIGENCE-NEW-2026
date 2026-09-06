@@ -10,12 +10,15 @@ NOTE below).
 Header claim vs. actual data (reported, not silently reconciled): the
 source material's own docstring/print statement claims "Total: 519
 stocks across 14 excluded sectors," but the 14 per-sector symbol lists
-supplied sum to exactly 244 symbols (each sector's own declared `count`
-matches its own list length -- no per-sector error), not 519. Whatever
-the remaining ~275 symbols are, they were not included in what was
-supplied to this project. EXCLUDED_SYMBOLS_FLAT below reflects the real
-244, not the claimed 519 -- treat this exclusion list as INCOMPLETE
-until the missing symbols are supplied or the 519 total is corrected.
+as originally supplied summed to exactly 244 symbols (each sector's own
+declared `count` matched its own list length -- no per-sector error),
+not 519. Whatever the remaining ~275 symbols are, they were not
+included in what was supplied to this project. One further symbol
+(YOUW) was then removed by explicit user instruction -- see
+TEXTILE_WEAVING's own comment -- so EXCLUDED_SYMBOLS_FLAT below now
+totals 243, not 244 and not the claimed 519. Treat this exclusion list
+as INCOMPLETE until the remaining missing symbols are supplied or the
+519 total is corrected.
 
 Supplied: 2026-09-06
 
@@ -164,10 +167,15 @@ EXCLUDED_SECTORS_CONFIG = {
 
     "TEXTILE_WEAVING": {
         "sector_name": "Textile Weaving",
+        # count intentionally left at the source material's original 14
+        # even though the symbols list below has 13 -- YOUW was removed
+        # from this sector's exclusion list per explicit user instruction
+        # (it's also in this project's own WATCHLIST_SYMBOLS and the user
+        # wants it tracked, not filtered out). Do not silently re-add it.
         "count": 14,
         "symbols": [
             "ASHT", "FML", "HKKT", "ICCT", "MOHE", "PRWM", "PCML", "SDOT",
-            "SDIL", "SMTM", "SERF", "STJT", "YOUW", "ZTL"
+            "SDIL", "SMTM", "SERF", "STJT", "ZTL"
         ]
     }
 }
