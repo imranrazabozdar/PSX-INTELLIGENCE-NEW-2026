@@ -1,0 +1,1943 @@
+{
+  "sample_seed": 42,
+  "sample_size_requested": 50,
+  "lookback_days": 126,
+  "stocks": {
+    "ABL": {
+      "num_bars_available": 1202,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 39.98,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-07",
+          "base_start_date": "2026-05-06",
+          "num_contractions": 2,
+          "tightness_score": 40.76,
+          "volume_dry_up_score": 32.13,
+          "breakout_date": "2026-05-19",
+          "breakout_volume_ratio": 1.588,
+          "breakout_price_move": 1.279,
+          "overall_vcp_quality_score": 35.47,
+          "is_textbook_vcp": false,
+          "ticker": "ABL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-31",
+          "base_start_date": "2026-07-30",
+          "num_contractions": 2,
+          "tightness_score": 37.86,
+          "volume_dry_up_score": 54.93,
+          "breakout_date": "2026-08-10",
+          "breakout_volume_ratio": 2.144,
+          "breakout_price_move": -1.067,
+          "overall_vcp_quality_score": 44.49,
+          "is_textbook_vcp": false,
+          "ticker": "ABL"
+        }
+      ]
+    },
+    "AGP": {
+      "num_bars_available": 1243,
+      "num_vcp_found": 5,
+      "avg_vcp_quality_score": 52.42,
+      "pct_textbook_vcps": 20.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-20",
+          "base_start_date": "2026-04-17",
+          "num_contractions": 2,
+          "tightness_score": 48.65,
+          "volume_dry_up_score": 56.18,
+          "breakout_date": "2026-04-30",
+          "breakout_volume_ratio": 2.227,
+          "breakout_price_move": -0.291,
+          "overall_vcp_quality_score": 49.68,
+          "is_textbook_vcp": false,
+          "ticker": "AGP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-04",
+          "base_start_date": "2026-04-30",
+          "num_contractions": 2,
+          "tightness_score": 67.95,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-05-06",
+          "breakout_volume_ratio": 1.513,
+          "breakout_price_move": 0.804,
+          "overall_vcp_quality_score": 36.26,
+          "is_textbook_vcp": false,
+          "ticker": "AGP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-25",
+          "base_start_date": "2026-05-22",
+          "num_contractions": 2,
+          "tightness_score": 73.36,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-06-15",
+          "breakout_volume_ratio": 4.973,
+          "breakout_price_move": 4.43,
+          "overall_vcp_quality_score": 59.18,
+          "is_textbook_vcp": false,
+          "ticker": "AGP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-10",
+          "base_start_date": "2026-06-09",
+          "num_contractions": 2,
+          "tightness_score": 64.77,
+          "volume_dry_up_score": 76.76,
+          "breakout_date": "2026-06-15",
+          "breakout_volume_ratio": 4.973,
+          "breakout_price_move": 4.43,
+          "overall_vcp_quality_score": 78.78,
+          "is_textbook_vcp": true,
+          "ticker": "AGP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-09-03",
+          "base_start_date": "2026-09-02",
+          "num_contractions": 2,
+          "tightness_score": 52.62,
+          "volume_dry_up_score": 57.23,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 38.22,
+          "is_textbook_vcp": false,
+          "ticker": "AGP"
+        }
+      ]
+    },
+    "ASTL": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 4,
+      "avg_vcp_quality_score": 54.92,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-21",
+          "base_start_date": "2026-04-20",
+          "num_contractions": 2,
+          "tightness_score": 63.21,
+          "volume_dry_up_score": 57.43,
+          "breakout_date": "2026-04-27",
+          "breakout_volume_ratio": 2.622,
+          "breakout_price_move": 1.375,
+          "overall_vcp_quality_score": 58.24,
+          "is_textbook_vcp": false,
+          "ticker": "ASTL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-11",
+          "base_start_date": "2026-06-10",
+          "num_contractions": 2,
+          "tightness_score": 74.56,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-06-23",
+          "breakout_volume_ratio": 2.611,
+          "breakout_price_move": 2.686,
+          "overall_vcp_quality_score": 45.49,
+          "is_textbook_vcp": false,
+          "ticker": "ASTL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-16",
+          "base_start_date": "2026-06-15",
+          "num_contractions": 3,
+          "tightness_score": 56.9,
+          "volume_dry_up_score": 72.73,
+          "breakout_date": "2026-06-23",
+          "breakout_volume_ratio": 2.611,
+          "breakout_price_move": 2.686,
+          "overall_vcp_quality_score": 60.24,
+          "is_textbook_vcp": false,
+          "ticker": "ASTL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-07",
+          "base_start_date": "2026-08-06",
+          "num_contractions": 2,
+          "tightness_score": 68.67,
+          "volume_dry_up_score": 53.25,
+          "breakout_date": "2026-08-19",
+          "breakout_volume_ratio": 2.046,
+          "breakout_price_move": 2.781,
+          "overall_vcp_quality_score": 55.72,
+          "is_textbook_vcp": false,
+          "ticker": "ASTL"
+        }
+      ]
+    },
+    "AVN": {
+      "num_bars_available": 1243,
+      "num_vcp_found": 5,
+      "avg_vcp_quality_score": 49.31,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-05",
+          "base_start_date": "2026-03-04",
+          "num_contractions": 2,
+          "tightness_score": 77.4,
+          "volume_dry_up_score": 66.39,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 50.88,
+          "is_textbook_vcp": false,
+          "ticker": "AVN"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-17",
+          "base_start_date": "2026-03-16",
+          "num_contractions": 2,
+          "tightness_score": 61.39,
+          "volume_dry_up_score": 65.52,
+          "breakout_date": "2026-04-08",
+          "breakout_volume_ratio": 1.995,
+          "breakout_price_move": 9.57,
+          "overall_vcp_quality_score": 56.18,
+          "is_textbook_vcp": false,
+          "ticker": "AVN"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-12",
+          "base_start_date": "2026-06-11",
+          "num_contractions": 3,
+          "tightness_score": 84.69,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-06-18",
+          "breakout_volume_ratio": 2.156,
+          "breakout_price_move": 2.316,
+          "overall_vcp_quality_score": 46.81,
+          "is_textbook_vcp": false,
+          "ticker": "AVN"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-15",
+          "base_start_date": "2026-07-14",
+          "num_contractions": 2,
+          "tightness_score": 59.46,
+          "volume_dry_up_score": 50.73,
+          "breakout_date": "2026-08-05",
+          "breakout_volume_ratio": 2.262,
+          "breakout_price_move": 3.34,
+          "overall_vcp_quality_score": 52.57,
+          "is_textbook_vcp": false,
+          "ticker": "AVN"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-31",
+          "base_start_date": "2026-07-30",
+          "num_contractions": 2,
+          "tightness_score": 59.17,
+          "volume_dry_up_score": 9.55,
+          "breakout_date": "2026-08-05",
+          "breakout_volume_ratio": 2.262,
+          "breakout_price_move": 3.34,
+          "overall_vcp_quality_score": 40.1,
+          "is_textbook_vcp": false,
+          "ticker": "AVN"
+        }
+      ]
+    },
+    "BAFL": {
+      "num_bars_available": 1243,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 51.0,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-17",
+          "base_start_date": "2026-03-16",
+          "num_contractions": 2,
+          "tightness_score": 49.79,
+          "volume_dry_up_score": 68.61,
+          "breakout_date": "2026-03-30",
+          "breakout_volume_ratio": 2.079,
+          "breakout_price_move": -1.566,
+          "overall_vcp_quality_score": 52.97,
+          "is_textbook_vcp": false,
+          "ticker": "BAFL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-29",
+          "base_start_date": "2026-05-25",
+          "num_contractions": 3,
+          "tightness_score": 85.71,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-06-16",
+          "breakout_volume_ratio": 2.458,
+          "breakout_price_move": 1.397,
+          "overall_vcp_quality_score": 49.03,
+          "is_textbook_vcp": false,
+          "ticker": "BAFL"
+        }
+      ]
+    },
+    "BAHL": {
+      "num_bars_available": 1243,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 41.22,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-24",
+          "base_start_date": "2026-06-23",
+          "num_contractions": 2,
+          "tightness_score": 58.76,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-07-01",
+          "breakout_volume_ratio": 8.077,
+          "breakout_price_move": 4.922,
+          "overall_vcp_quality_score": 53.51,
+          "is_textbook_vcp": false,
+          "ticker": "BAHL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-20",
+          "base_start_date": "2026-07-17",
+          "num_contractions": 2,
+          "tightness_score": 44.79,
+          "volume_dry_up_score": 5.3,
+          "breakout_date": "2026-08-06",
+          "breakout_volume_ratio": 1.57,
+          "breakout_price_move": 1.92,
+          "overall_vcp_quality_score": 28.93,
+          "is_textbook_vcp": false,
+          "ticker": "BAHL"
+        }
+      ]
+    },
+    "BECO": {
+      "num_bars_available": 1212,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 49.85,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-20",
+          "base_start_date": "2026-04-17",
+          "num_contractions": 2,
+          "tightness_score": 62.5,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-04-22",
+          "breakout_volume_ratio": 6.1,
+          "breakout_price_move": 12.176,
+          "overall_vcp_quality_score": 55.0,
+          "is_textbook_vcp": false,
+          "ticker": "BECO"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-30",
+          "base_start_date": "2026-06-29",
+          "num_contractions": 2,
+          "tightness_score": 37.5,
+          "volume_dry_up_score": 33.57,
+          "breakout_date": "2026-07-02",
+          "breakout_volume_ratio": 1.739,
+          "breakout_price_move": 6.308,
+          "overall_vcp_quality_score": 35.51,
+          "is_textbook_vcp": false,
+          "ticker": "BECO"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-15",
+          "base_start_date": "2026-07-14",
+          "num_contractions": 2,
+          "tightness_score": 64.0,
+          "volume_dry_up_score": 59.39,
+          "breakout_date": "2026-07-31",
+          "breakout_volume_ratio": 2.605,
+          "breakout_price_move": 4.331,
+          "overall_vcp_quality_score": 59.05,
+          "is_textbook_vcp": false,
+          "ticker": "BECO"
+        }
+      ]
+    },
+    "BLUEX": {
+      "num_bars_available": 169,
+      "num_vcp_found": 6,
+      "avg_vcp_quality_score": 61.54,
+      "pct_textbook_vcps": 33.3,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-16",
+          "base_start_date": "2026-03-13",
+          "num_contractions": 2,
+          "tightness_score": 49.28,
+          "volume_dry_up_score": 79.76,
+          "breakout_date": "2026-04-14",
+          "breakout_volume_ratio": 2.75,
+          "breakout_price_move": 3.729,
+          "overall_vcp_quality_score": 60.14,
+          "is_textbook_vcp": false,
+          "ticker": "BLUEX"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-15",
+          "base_start_date": "2026-04-14",
+          "num_contractions": 2,
+          "tightness_score": 77.27,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-04-17",
+          "breakout_volume_ratio": 2.35,
+          "breakout_price_move": 1.618,
+          "overall_vcp_quality_score": 45.01,
+          "is_textbook_vcp": false,
+          "ticker": "BLUEX"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-22",
+          "base_start_date": "2026-05-21",
+          "num_contractions": 2,
+          "tightness_score": 63.54,
+          "volume_dry_up_score": 60.06,
+          "breakout_date": "2026-06-29",
+          "breakout_volume_ratio": 13.724,
+          "breakout_price_move": 16.234,
+          "overall_vcp_quality_score": 73.44,
+          "is_textbook_vcp": true,
+          "ticker": "BLUEX"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-19",
+          "base_start_date": "2026-06-18",
+          "num_contractions": 2,
+          "tightness_score": 56.0,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-06-29",
+          "breakout_volume_ratio": 13.724,
+          "breakout_price_move": 16.234,
+          "overall_vcp_quality_score": 52.4,
+          "is_textbook_vcp": false,
+          "ticker": "BLUEX"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-08",
+          "base_start_date": "2026-07-07",
+          "num_contractions": 2,
+          "tightness_score": 70.18,
+          "volume_dry_up_score": 50.62,
+          "breakout_date": "2026-07-10",
+          "breakout_volume_ratio": 5.363,
+          "breakout_price_move": 6.367,
+          "overall_vcp_quality_score": 73.26,
+          "is_textbook_vcp": true,
+          "ticker": "BLUEX"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-29",
+          "base_start_date": "2026-07-28",
+          "num_contractions": 2,
+          "tightness_score": 62.5,
+          "volume_dry_up_score": 65.52,
+          "breakout_date": "2026-08-12",
+          "breakout_volume_ratio": 3.389,
+          "breakout_price_move": 4.154,
+          "overall_vcp_quality_score": 64.99,
+          "is_textbook_vcp": false,
+          "ticker": "BLUEX"
+        }
+      ]
+    },
+    "BML": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 5,
+      "avg_vcp_quality_score": 47.81,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-18",
+          "base_start_date": "2026-03-17",
+          "num_contractions": 2,
+          "tightness_score": 36.43,
+          "volume_dry_up_score": 7.43,
+          "breakout_date": "2026-03-30",
+          "breakout_volume_ratio": 1.778,
+          "breakout_price_move": -7.764,
+          "overall_vcp_quality_score": 27.47,
+          "is_textbook_vcp": false,
+          "ticker": "BML"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-27",
+          "base_start_date": "2026-04-24",
+          "num_contractions": 2,
+          "tightness_score": 73.46,
+          "volume_dry_up_score": 45.99,
+          "breakout_date": "2026-04-29",
+          "breakout_volume_ratio": 1.518,
+          "breakout_price_move": -3.176,
+          "overall_vcp_quality_score": 52.29,
+          "is_textbook_vcp": false,
+          "ticker": "BML"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-20",
+          "base_start_date": "2026-05-19",
+          "num_contractions": 2,
+          "tightness_score": 71.63,
+          "volume_dry_up_score": 56.21,
+          "breakout_date": "2026-06-03",
+          "breakout_volume_ratio": 1.891,
+          "breakout_price_move": 2.753,
+          "overall_vcp_quality_score": 56.86,
+          "is_textbook_vcp": false,
+          "ticker": "BML"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-20",
+          "base_start_date": "2026-07-17",
+          "num_contractions": 2,
+          "tightness_score": 21.89,
+          "volume_dry_up_score": 76.92,
+          "breakout_date": "2026-08-06",
+          "breakout_volume_ratio": 3.447,
+          "breakout_price_move": 6.933,
+          "overall_vcp_quality_score": 52.52,
+          "is_textbook_vcp": false,
+          "ticker": "BML"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-07",
+          "base_start_date": "2026-08-06",
+          "num_contractions": 2,
+          "tightness_score": 73.04,
+          "volume_dry_up_score": 12.25,
+          "breakout_date": "2026-08-11",
+          "breakout_volume_ratio": 2.834,
+          "breakout_price_move": -1.893,
+          "overall_vcp_quality_score": 49.89,
+          "is_textbook_vcp": false,
+          "ticker": "BML"
+        }
+      ]
+    },
+    "BOP": {
+      "num_bars_available": 1243,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 71.81,
+      "pct_textbook_vcps": 100.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-24",
+          "base_start_date": "2026-08-21",
+          "num_contractions": 2,
+          "tightness_score": 73.45,
+          "volume_dry_up_score": 67.71,
+          "breakout_date": "2026-08-28",
+          "breakout_volume_ratio": 3.687,
+          "breakout_price_move": 7.435,
+          "overall_vcp_quality_score": 71.81,
+          "is_textbook_vcp": true,
+          "ticker": "BOP"
+        }
+      ]
+    },
+    "CLOV": {
+      "num_bars_available": 1234,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 39.11,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-19",
+          "base_start_date": "2026-05-18",
+          "num_contractions": 2,
+          "tightness_score": 56.0,
+          "volume_dry_up_score": 55.71,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 39.11,
+          "is_textbook_vcp": false,
+          "ticker": "CLOV"
+        }
+      ]
+    },
+    "CNERGY": {
+      "num_bars_available": 1243,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "CPHL": {
+      "num_bars_available": 1242,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 53.47,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-04",
+          "base_start_date": "2026-06-03",
+          "num_contractions": 2,
+          "tightness_score": 44.44,
+          "volume_dry_up_score": 22.95,
+          "breakout_date": "2026-06-15",
+          "breakout_volume_ratio": 2.425,
+          "breakout_price_move": 4.245,
+          "overall_vcp_quality_score": 39.21,
+          "is_textbook_vcp": false,
+          "ticker": "CPHL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-09",
+          "base_start_date": "2026-07-08",
+          "num_contractions": 2,
+          "tightness_score": 62.81,
+          "volume_dry_up_score": 41.28,
+          "breakout_date": "2026-08-05",
+          "breakout_volume_ratio": 3.87,
+          "breakout_price_move": 0.688,
+          "overall_vcp_quality_score": 60.73,
+          "is_textbook_vcp": false,
+          "ticker": "CPHL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-16",
+          "base_start_date": "2026-07-15",
+          "num_contractions": 2,
+          "tightness_score": 54.47,
+          "volume_dry_up_score": 51.53,
+          "breakout_date": "2026-08-05",
+          "breakout_volume_ratio": 3.87,
+          "breakout_price_move": 0.688,
+          "overall_vcp_quality_score": 60.47,
+          "is_textbook_vcp": false,
+          "ticker": "CPHL"
+        }
+      ]
+    },
+    "DGKC": {
+      "num_bars_available": 1242,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "ECPL": {
+      "error": "zero rows returned"
+    },
+    "FABL": {
+      "num_bars_available": 1240,
+      "num_vcp_found": 6,
+      "avg_vcp_quality_score": 50.16,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-04",
+          "base_start_date": "2026-03-03",
+          "num_contractions": 2,
+          "tightness_score": 83.1,
+          "volume_dry_up_score": 57.2,
+          "breakout_date": "2026-04-01",
+          "breakout_volume_ratio": 1.619,
+          "breakout_price_move": 4.869,
+          "overall_vcp_quality_score": 60.11,
+          "is_textbook_vcp": false,
+          "ticker": "FABL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-02",
+          "base_start_date": "2026-04-01",
+          "num_contractions": 2,
+          "tightness_score": 52.68,
+          "volume_dry_up_score": 4.37,
+          "breakout_date": "2026-04-08",
+          "breakout_volume_ratio": 1.831,
+          "breakout_price_move": 9.999,
+          "overall_vcp_quality_score": 33.37,
+          "is_textbook_vcp": false,
+          "ticker": "FABL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-11",
+          "base_start_date": "2026-05-08",
+          "num_contractions": 2,
+          "tightness_score": 74.33,
+          "volume_dry_up_score": 70.8,
+          "breakout_date": "2026-05-29",
+          "breakout_volume_ratio": 2.119,
+          "breakout_price_move": 2.245,
+          "overall_vcp_quality_score": 63.69,
+          "is_textbook_vcp": false,
+          "ticker": "FABL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-19",
+          "base_start_date": "2026-05-18",
+          "num_contractions": 2,
+          "tightness_score": 28.3,
+          "volume_dry_up_score": 37.77,
+          "breakout_date": "2026-05-29",
+          "breakout_volume_ratio": 2.119,
+          "breakout_price_move": 2.245,
+          "overall_vcp_quality_score": 35.37,
+          "is_textbook_vcp": false,
+          "ticker": "FABL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-22",
+          "base_start_date": "2026-06-19",
+          "num_contractions": 3,
+          "tightness_score": 93.23,
+          "volume_dry_up_score": 49.21,
+          "breakout_date": "2026-06-30",
+          "breakout_volume_ratio": 1.873,
+          "breakout_price_move": 1.296,
+          "overall_vcp_quality_score": 63.3,
+          "is_textbook_vcp": false,
+          "ticker": "FABL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-09-03",
+          "base_start_date": "2026-09-02",
+          "num_contractions": 2,
+          "tightness_score": 84.3,
+          "volume_dry_up_score": 37.94,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 45.1,
+          "is_textbook_vcp": false,
+          "ticker": "FABL"
+        }
+      ]
+    },
+    "FCL": {
+      "num_bars_available": 555,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "GAL": {
+      "num_bars_available": 1240,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "GDL": {
+      "num_bars_available": 130,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 56.65,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-10",
+          "base_start_date": "2026-03-09",
+          "num_contractions": 2,
+          "tightness_score": 74.14,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-04-08",
+          "breakout_volume_ratio": 4.498,
+          "breakout_price_move": 7.785,
+          "overall_vcp_quality_score": 56.65,
+          "is_textbook_vcp": false,
+          "ticker": "GDL"
+        }
+      ]
+    },
+    "HMB": {
+      "num_bars_available": 1229,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 52.27,
+      "pct_textbook_vcps": 33.3,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-06",
+          "base_start_date": "2026-04-03",
+          "num_contractions": 2,
+          "tightness_score": 64.06,
+          "volume_dry_up_score": 75.77,
+          "breakout_date": "2026-04-08",
+          "breakout_volume_ratio": 4.617,
+          "breakout_price_move": 8.407,
+          "overall_vcp_quality_score": 76.06,
+          "is_textbook_vcp": true,
+          "ticker": "HMB"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-09",
+          "base_start_date": "2026-04-08",
+          "num_contractions": 2,
+          "tightness_score": 46.0,
+          "volume_dry_up_score": 22.69,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 25.21,
+          "is_textbook_vcp": false,
+          "ticker": "HMB"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-27",
+          "base_start_date": "2026-04-24",
+          "num_contractions": 2,
+          "tightness_score": 72.68,
+          "volume_dry_up_score": 52.42,
+          "breakout_date": "2026-05-14",
+          "breakout_volume_ratio": 1.792,
+          "breakout_price_move": -0.838,
+          "overall_vcp_quality_score": 55.55,
+          "is_textbook_vcp": false,
+          "ticker": "HMB"
+        }
+      ]
+    },
+    "IMAGE": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 56.32,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-13",
+          "base_start_date": "2026-03-12",
+          "num_contractions": 2,
+          "tightness_score": 65.12,
+          "volume_dry_up_score": 76.31,
+          "breakout_date": "2026-04-06",
+          "breakout_volume_ratio": 2.256,
+          "breakout_price_move": 1.249,
+          "overall_vcp_quality_score": 62.47,
+          "is_textbook_vcp": false,
+          "ticker": "IMAGE"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-16",
+          "base_start_date": "2026-04-15",
+          "num_contractions": 2,
+          "tightness_score": 67.26,
+          "volume_dry_up_score": 12.35,
+          "breakout_date": "2026-04-21",
+          "breakout_volume_ratio": 1.778,
+          "breakout_price_move": 1.997,
+          "overall_vcp_quality_score": 41.28,
+          "is_textbook_vcp": false,
+          "ticker": "IMAGE"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-22",
+          "base_start_date": "2026-04-21",
+          "num_contractions": 2,
+          "tightness_score": 74.22,
+          "volume_dry_up_score": 59.33,
+          "breakout_date": "2026-04-24",
+          "breakout_volume_ratio": 2.952,
+          "breakout_price_move": 1.242,
+          "overall_vcp_quality_score": 65.2,
+          "is_textbook_vcp": false,
+          "ticker": "IMAGE"
+        }
+      ]
+    },
+    "ITANZ": {
+      "num_bars_available": 131,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 52.61,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-19",
+          "base_start_date": "2026-05-18",
+          "num_contractions": 2,
+          "tightness_score": 48.84,
+          "volume_dry_up_score": 50.41,
+          "breakout_date": "2026-05-22",
+          "breakout_volume_ratio": 2.128,
+          "breakout_price_move": 5.273,
+          "overall_vcp_quality_score": 47.43,
+          "is_textbook_vcp": false,
+          "ticker": "ITANZ"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-15",
+          "base_start_date": "2026-06-12",
+          "num_contractions": 2,
+          "tightness_score": 75.97,
+          "volume_dry_up_score": 70.91,
+          "breakout_date": "2026-07-10",
+          "breakout_volume_ratio": 1.681,
+          "breakout_price_move": 7.762,
+          "overall_vcp_quality_score": 61.75,
+          "is_textbook_vcp": false,
+          "ticker": "ITANZ"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-01",
+          "base_start_date": "2026-06-30",
+          "num_contractions": 2,
+          "tightness_score": 61.54,
+          "volume_dry_up_score": 46.47,
+          "breakout_date": "2026-07-10",
+          "breakout_volume_ratio": 1.681,
+          "breakout_price_move": 7.762,
+          "overall_vcp_quality_score": 48.64,
+          "is_textbook_vcp": false,
+          "ticker": "ITANZ"
+        }
+      ]
+    },
+    "KEL": {
+      "num_bars_available": 1239,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 56.34,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-19",
+          "base_start_date": "2026-05-18",
+          "num_contractions": 2,
+          "tightness_score": 61.7,
+          "volume_dry_up_score": 83.88,
+          "breakout_date": "2026-06-15",
+          "breakout_volume_ratio": 1.509,
+          "breakout_price_move": 0.248,
+          "overall_vcp_quality_score": 58.9,
+          "is_textbook_vcp": false,
+          "ticker": "KEL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-24",
+          "base_start_date": "2026-08-21",
+          "num_contractions": 2,
+          "tightness_score": 57.89,
+          "volume_dry_up_score": 67.61,
+          "breakout_date": "2026-08-31",
+          "breakout_volume_ratio": 1.722,
+          "breakout_price_move": 1.259,
+          "overall_vcp_quality_score": 53.77,
+          "is_textbook_vcp": false,
+          "ticker": "KEL"
+        }
+      ]
+    },
+    "LUCK": {
+      "num_bars_available": 1236,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 41.52,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-03",
+          "base_start_date": "2026-03-02",
+          "num_contractions": 2,
+          "tightness_score": 70.24,
+          "volume_dry_up_score": 2.08,
+          "breakout_date": "2026-04-01",
+          "breakout_volume_ratio": 2.133,
+          "breakout_price_move": 9.169,
+          "overall_vcp_quality_score": 41.52,
+          "is_textbook_vcp": false,
+          "ticker": "LUCK"
+        }
+      ]
+    },
+    "MARI": {
+      "num_bars_available": 1240,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 40.47,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-09",
+          "base_start_date": "2026-04-08",
+          "num_contractions": 2,
+          "tightness_score": 72.76,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-05-07",
+          "breakout_volume_ratio": 1.8,
+          "breakout_price_move": 1.857,
+          "overall_vcp_quality_score": 39.9,
+          "is_textbook_vcp": false,
+          "ticker": "MARI"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-16",
+          "base_start_date": "2026-06-15",
+          "num_contractions": 2,
+          "tightness_score": 54.55,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-06-30",
+          "breakout_volume_ratio": 3.205,
+          "breakout_price_move": 2.247,
+          "overall_vcp_quality_score": 41.05,
+          "is_textbook_vcp": false,
+          "ticker": "MARI"
+        }
+      ]
+    },
+    "MLCF": {
+      "num_bars_available": 1240,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 43.68,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-13",
+          "base_start_date": "2026-08-12",
+          "num_contractions": 2,
+          "tightness_score": 70.67,
+          "volume_dry_up_score": 51.37,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 43.68,
+          "is_textbook_vcp": false,
+          "ticker": "MLCF"
+        }
+      ]
+    },
+    "MUGHAL": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 36.0,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-19",
+          "base_start_date": "2026-05-18",
+          "num_contractions": 2,
+          "tightness_score": 7.92,
+          "volume_dry_up_score": 73.32,
+          "breakout_date": "2026-05-25",
+          "breakout_volume_ratio": 1.801,
+          "breakout_price_move": 3.6,
+          "overall_vcp_quality_score": 35.97,
+          "is_textbook_vcp": false,
+          "ticker": "MUGHAL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-15",
+          "base_start_date": "2026-07-14",
+          "num_contractions": 2,
+          "tightness_score": 40.9,
+          "volume_dry_up_score": 65.53,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 36.02,
+          "is_textbook_vcp": false,
+          "ticker": "MUGHAL"
+        }
+      ]
+    },
+    "NBP": {
+      "num_bars_available": 1240,
+      "num_vcp_found": 4,
+      "avg_vcp_quality_score": 47.08,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-04",
+          "base_start_date": "2026-03-03",
+          "num_contractions": 3,
+          "tightness_score": 68.52,
+          "volume_dry_up_score": 58.69,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 45.01,
+          "is_textbook_vcp": false,
+          "ticker": "NBP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-23",
+          "base_start_date": "2026-06-22",
+          "num_contractions": 2,
+          "tightness_score": 64.42,
+          "volume_dry_up_score": 11.44,
+          "breakout_date": "2026-06-29",
+          "breakout_volume_ratio": 2.397,
+          "breakout_price_move": -0.977,
+          "overall_vcp_quality_score": 43.58,
+          "is_textbook_vcp": false,
+          "ticker": "NBP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-09",
+          "base_start_date": "2026-07-08",
+          "num_contractions": 2,
+          "tightness_score": 70.82,
+          "volume_dry_up_score": 41.1,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 40.66,
+          "is_textbook_vcp": false,
+          "ticker": "NBP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-19",
+          "base_start_date": "2026-08-18",
+          "num_contractions": 2,
+          "tightness_score": 62.11,
+          "volume_dry_up_score": 26.49,
+          "breakout_date": "2026-08-27",
+          "breakout_volume_ratio": 4.381,
+          "breakout_price_move": -6.562,
+          "overall_vcp_quality_score": 59.08,
+          "is_textbook_vcp": false,
+          "ticker": "NBP"
+        }
+      ]
+    },
+    "NRL": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 4,
+      "avg_vcp_quality_score": 47.77,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-12",
+          "base_start_date": "2026-03-11",
+          "num_contractions": 2,
+          "tightness_score": 55.44,
+          "volume_dry_up_score": 48.9,
+          "breakout_date": "2026-04-02",
+          "breakout_volume_ratio": 2.104,
+          "breakout_price_move": 0.549,
+          "overall_vcp_quality_score": 49.47,
+          "is_textbook_vcp": false,
+          "ticker": "NRL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-09",
+          "base_start_date": "2026-04-08",
+          "num_contractions": 2,
+          "tightness_score": 62.96,
+          "volume_dry_up_score": 15.51,
+          "breakout_date": "2026-04-17",
+          "breakout_volume_ratio": 1.589,
+          "breakout_price_move": 3.372,
+          "overall_vcp_quality_score": 39.37,
+          "is_textbook_vcp": false,
+          "ticker": "NRL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-22",
+          "base_start_date": "2026-04-21",
+          "num_contractions": 3,
+          "tightness_score": 59.61,
+          "volume_dry_up_score": 7.19,
+          "breakout_date": "2026-04-29",
+          "breakout_volume_ratio": 2.283,
+          "breakout_price_move": -5.191,
+          "overall_vcp_quality_score": 39.7,
+          "is_textbook_vcp": false,
+          "ticker": "NRL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-29",
+          "base_start_date": "2026-07-28",
+          "num_contractions": 2,
+          "tightness_score": 73.06,
+          "volume_dry_up_score": 70.4,
+          "breakout_date": "2026-08-10",
+          "breakout_volume_ratio": 2.036,
+          "breakout_price_move": 9.943,
+          "overall_vcp_quality_score": 62.56,
+          "is_textbook_vcp": false,
+          "ticker": "NRL"
+        }
+      ]
+    },
+    "OGDC": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "PACE": {
+      "num_bars_available": 1236,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 53.68,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-18",
+          "base_start_date": "2026-05-15",
+          "num_contractions": 2,
+          "tightness_score": 33.33,
+          "volume_dry_up_score": 74.56,
+          "breakout_date": "2026-06-05",
+          "breakout_volume_ratio": 5.819,
+          "breakout_price_move": 8.396,
+          "overall_vcp_quality_score": 65.7,
+          "is_textbook_vcp": false,
+          "ticker": "PACE"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-25",
+          "base_start_date": "2026-05-22",
+          "num_contractions": 2,
+          "tightness_score": 26.32,
+          "volume_dry_up_score": 28.05,
+          "breakout_date": "2026-06-05",
+          "breakout_volume_ratio": 5.819,
+          "breakout_price_move": 8.396,
+          "overall_vcp_quality_score": 48.94,
+          "is_textbook_vcp": false,
+          "ticker": "PACE"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-31",
+          "base_start_date": "2026-08-28",
+          "num_contractions": 2,
+          "tightness_score": 73.68,
+          "volume_dry_up_score": 56.4,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 46.4,
+          "is_textbook_vcp": false,
+          "ticker": "PACE"
+        }
+      ]
+    },
+    "POWER": {
+      "num_bars_available": 1240,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 36.62,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-19",
+          "base_start_date": "2026-06-18",
+          "num_contractions": 2,
+          "tightness_score": 63.89,
+          "volume_dry_up_score": 14.36,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 29.86,
+          "is_textbook_vcp": false,
+          "ticker": "POWER"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-30",
+          "base_start_date": "2026-07-29",
+          "num_contractions": 2,
+          "tightness_score": 67.33,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-08-04",
+          "breakout_volume_ratio": 2.743,
+          "breakout_price_move": 4.469,
+          "overall_vcp_quality_score": 43.39,
+          "is_textbook_vcp": false,
+          "ticker": "POWER"
+        }
+      ]
+    },
+    "PPL": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 47.73,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-15",
+          "base_start_date": "2026-07-14",
+          "num_contractions": 2,
+          "tightness_score": 54.27,
+          "volume_dry_up_score": 34.89,
+          "breakout_date": "2026-08-10",
+          "breakout_volume_ratio": 2.593,
+          "breakout_price_move": 3.575,
+          "overall_vcp_quality_score": 47.73,
+          "is_textbook_vcp": false,
+          "ticker": "PPL"
+        }
+      ]
+    },
+    "PSO": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 51.57,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-06",
+          "base_start_date": "2026-04-03",
+          "num_contractions": 2,
+          "tightness_score": 69.83,
+          "volume_dry_up_score": 27.26,
+          "breakout_date": "2026-04-08",
+          "breakout_volume_ratio": 2.576,
+          "breakout_price_move": 9.999,
+          "overall_vcp_quality_score": 51.57,
+          "is_textbook_vcp": false,
+          "ticker": "PSO"
+        }
+      ]
+    },
+    "PTC": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 57.16,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-18",
+          "base_start_date": "2026-05-15",
+          "num_contractions": 2,
+          "tightness_score": 67.22,
+          "volume_dry_up_score": 37.69,
+          "breakout_date": "2026-05-21",
+          "breakout_volume_ratio": 3.161,
+          "breakout_price_move": 6.141,
+          "overall_vcp_quality_score": 57.16,
+          "is_textbook_vcp": false,
+          "ticker": "PTC"
+        }
+      ]
+    },
+    "QTECH": {
+      "num_bars_available": 1182,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 60.08,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-09",
+          "base_start_date": "2026-07-08",
+          "num_contractions": 2,
+          "tightness_score": 60.0,
+          "volume_dry_up_score": 68.11,
+          "breakout_date": "2026-07-15",
+          "breakout_volume_ratio": 2.608,
+          "breakout_price_move": 9.958,
+          "overall_vcp_quality_score": 60.08,
+          "is_textbook_vcp": false,
+          "ticker": "QTECH"
+        }
+      ]
+    },
+    "SAZEW": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 58.53,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-18",
+          "base_start_date": "2026-05-15",
+          "num_contractions": 2,
+          "tightness_score": 70.99,
+          "volume_dry_up_score": 61.79,
+          "breakout_date": "2026-06-15",
+          "breakout_volume_ratio": 2.067,
+          "breakout_price_move": 2.835,
+          "overall_vcp_quality_score": 59.33,
+          "is_textbook_vcp": false,
+          "ticker": "SAZEW"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-03",
+          "base_start_date": "2026-06-02",
+          "num_contractions": 2,
+          "tightness_score": 74.98,
+          "volume_dry_up_score": 58.61,
+          "breakout_date": "2026-06-15",
+          "breakout_volume_ratio": 2.067,
+          "breakout_price_move": 2.835,
+          "overall_vcp_quality_score": 59.98,
+          "is_textbook_vcp": false,
+          "ticker": "SAZEW"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-17",
+          "base_start_date": "2026-06-16",
+          "num_contractions": 2,
+          "tightness_score": 71.18,
+          "volume_dry_up_score": 36.63,
+          "breakout_date": "2026-07-09",
+          "breakout_volume_ratio": 2.806,
+          "breakout_price_move": -0.356,
+          "overall_vcp_quality_score": 56.29,
+          "is_textbook_vcp": false,
+          "ticker": "SAZEW"
+        }
+      ]
+    },
+    "SEARL": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "SLGL": {
+      "num_bars_available": 586,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 50.96,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-24",
+          "base_start_date": "2026-08-21",
+          "num_contractions": 2,
+          "tightness_score": 65.22,
+          "volume_dry_up_score": 82.92,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 50.96,
+          "is_textbook_vcp": false,
+          "ticker": "SLGL"
+        }
+      ]
+    },
+    "SNGP": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 2,
+      "avg_vcp_quality_score": 41.01,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-06",
+          "base_start_date": "2026-04-03",
+          "num_contractions": 2,
+          "tightness_score": 41.1,
+          "volume_dry_up_score": 20.17,
+          "breakout_date": "2026-04-08",
+          "breakout_volume_ratio": 1.565,
+          "breakout_price_move": 9.998,
+          "overall_vcp_quality_score": 31.88,
+          "is_textbook_vcp": false,
+          "ticker": "SNGP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-09",
+          "base_start_date": "2026-07-08",
+          "num_contractions": 2,
+          "tightness_score": 58.84,
+          "volume_dry_up_score": 51.6,
+          "breakout_date": "2026-08-04",
+          "breakout_volume_ratio": 1.852,
+          "breakout_price_move": 0.869,
+          "overall_vcp_quality_score": 50.13,
+          "is_textbook_vcp": false,
+          "ticker": "SNGP"
+        }
+      ]
+    },
+    "SPSL": {
+      "num_bars_available": 68,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "SSGC": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 45.84,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-12",
+          "base_start_date": "2026-03-11",
+          "num_contractions": 2,
+          "tightness_score": 43.75,
+          "volume_dry_up_score": 14.55,
+          "breakout_date": "2026-03-27",
+          "breakout_volume_ratio": 1.578,
+          "breakout_price_move": -4.746,
+          "overall_vcp_quality_score": 31.34,
+          "is_textbook_vcp": false,
+          "ticker": "SSGC"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-18",
+          "base_start_date": "2026-03-17",
+          "num_contractions": 2,
+          "tightness_score": 50.0,
+          "volume_dry_up_score": 40.76,
+          "breakout_date": "2026-03-27",
+          "breakout_volume_ratio": 1.578,
+          "breakout_price_move": -4.746,
+          "overall_vcp_quality_score": 41.7,
+          "is_textbook_vcp": false,
+          "ticker": "SSGC"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-14",
+          "base_start_date": "2026-05-13",
+          "num_contractions": 2,
+          "tightness_score": 72.47,
+          "volume_dry_up_score": 78.65,
+          "breakout_date": "2026-05-20",
+          "breakout_volume_ratio": 1.981,
+          "breakout_price_move": 2.815,
+          "overall_vcp_quality_score": 64.47,
+          "is_textbook_vcp": false,
+          "ticker": "SSGC"
+        }
+      ]
+    },
+    "STL": {
+      "error": "zero rows returned"
+    },
+    "STLR": {
+      "num_bars_available": 10,
+      "num_vcp_found": 0,
+      "avg_vcp_quality_score": null,
+      "pct_textbook_vcps": null,
+      "vcps": []
+    },
+    "SYS": {
+      "num_bars_available": 1238,
+      "num_vcp_found": 5,
+      "avg_vcp_quality_score": 36.16,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-04",
+          "base_start_date": "2026-03-03",
+          "num_contractions": 2,
+          "tightness_score": 40.79,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 16.32,
+          "is_textbook_vcp": false,
+          "ticker": "SYS"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-02",
+          "base_start_date": "2026-06-01",
+          "num_contractions": 2,
+          "tightness_score": 59.61,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-06-04",
+          "breakout_volume_ratio": 2.221,
+          "breakout_price_move": 0.02,
+          "overall_vcp_quality_score": 37.17,
+          "is_textbook_vcp": false,
+          "ticker": "SYS"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-01",
+          "base_start_date": "2026-06-30",
+          "num_contractions": 4,
+          "tightness_score": 92.31,
+          "volume_dry_up_score": 25.18,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 44.48,
+          "is_textbook_vcp": false,
+          "ticker": "SYS"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-20",
+          "base_start_date": "2026-08-19",
+          "num_contractions": 2,
+          "tightness_score": 63.39,
+          "volume_dry_up_score": 40.58,
+          "breakout_date": "2026-08-25",
+          "breakout_volume_ratio": 1.648,
+          "breakout_price_move": -1.241,
+          "overall_vcp_quality_score": 47.42,
+          "is_textbook_vcp": false,
+          "ticker": "SYS"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-09-01",
+          "base_start_date": "2026-08-31",
+          "num_contractions": 2,
+          "tightness_score": 83.44,
+          "volume_dry_up_score": 6.72,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 35.39,
+          "is_textbook_vcp": false,
+          "ticker": "SYS"
+        }
+      ]
+    },
+    "TBL": {
+      "num_bars_available": 670,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 41.79,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-16",
+          "base_start_date": "2026-04-15",
+          "num_contractions": 2,
+          "tightness_score": 44.44,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-04-20",
+          "breakout_volume_ratio": 1.849,
+          "breakout_price_move": -4.628,
+          "overall_vcp_quality_score": 28.87,
+          "is_textbook_vcp": false,
+          "ticker": "TBL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-03",
+          "base_start_date": "2026-07-02",
+          "num_contractions": 2,
+          "tightness_score": 60.53,
+          "volume_dry_up_score": 48.02,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 38.62,
+          "is_textbook_vcp": false,
+          "ticker": "TBL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-30",
+          "base_start_date": "2026-07-29",
+          "num_contractions": 2,
+          "tightness_score": 41.38,
+          "volume_dry_up_score": 55.71,
+          "breakout_date": "2026-08-06",
+          "breakout_volume_ratio": 4.105,
+          "breakout_price_move": 1.646,
+          "overall_vcp_quality_score": 57.89,
+          "is_textbook_vcp": false,
+          "ticker": "TBL"
+        }
+      ]
+    },
+    "TOMCL": {
+      "num_bars_available": 1240,
+      "num_vcp_found": 1,
+      "avg_vcp_quality_score": 56.93,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-12",
+          "base_start_date": "2026-03-11",
+          "num_contractions": 2,
+          "tightness_score": 55.56,
+          "volume_dry_up_score": 72.17,
+          "breakout_date": "2026-04-01",
+          "breakout_volume_ratio": 2.176,
+          "breakout_price_move": 8.832,
+          "overall_vcp_quality_score": 56.93,
+          "is_textbook_vcp": false,
+          "ticker": "TOMCL"
+        }
+      ]
+    },
+    "UBL": {
+      "num_bars_available": 1241,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 51.24,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-24",
+          "base_start_date": "2026-04-23",
+          "num_contractions": 2,
+          "tightness_score": 56.82,
+          "volume_dry_up_score": 59.04,
+          "breakout_date": "2026-05-21",
+          "breakout_volume_ratio": 1.97,
+          "breakout_price_move": 4.708,
+          "overall_vcp_quality_score": 52.26,
+          "is_textbook_vcp": false,
+          "ticker": "UBL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-03",
+          "base_start_date": "2026-06-02",
+          "num_contractions": 2,
+          "tightness_score": 59.24,
+          "volume_dry_up_score": 70.49,
+          "breakout_date": "2026-06-15",
+          "breakout_volume_ratio": 2.427,
+          "breakout_price_move": 5.704,
+          "overall_vcp_quality_score": 59.4,
+          "is_textbook_vcp": false,
+          "ticker": "UBL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-12",
+          "base_start_date": "2026-08-11",
+          "num_contractions": 2,
+          "tightness_score": 49.17,
+          "volume_dry_up_score": 74.64,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 42.06,
+          "is_textbook_vcp": false,
+          "ticker": "UBL"
+        }
+      ]
+    },
+    "WASL": {
+      "num_bars_available": 1200,
+      "num_vcp_found": 7,
+      "avg_vcp_quality_score": 46.53,
+      "pct_textbook_vcps": 14.3,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-03-05",
+          "base_start_date": "2026-03-04",
+          "num_contractions": 2,
+          "tightness_score": 65.81,
+          "volume_dry_up_score": 11.7,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 29.83,
+          "is_textbook_vcp": false,
+          "ticker": "WASL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-09",
+          "base_start_date": "2026-04-08",
+          "num_contractions": 2,
+          "tightness_score": 68.57,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-04-16",
+          "breakout_volume_ratio": 2.665,
+          "breakout_price_move": 3.77,
+          "overall_vcp_quality_score": 43.42,
+          "is_textbook_vcp": false,
+          "ticker": "WASL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-04-21",
+          "base_start_date": "2026-04-20",
+          "num_contractions": 2,
+          "tightness_score": 76.06,
+          "volume_dry_up_score": 11.12,
+          "breakout_date": "2026-04-23",
+          "breakout_volume_ratio": 2.02,
+          "breakout_price_move": 4.688,
+          "overall_vcp_quality_score": 45.88,
+          "is_textbook_vcp": false,
+          "ticker": "WASL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-20",
+          "base_start_date": "2026-05-19",
+          "num_contractions": 2,
+          "tightness_score": 61.76,
+          "volume_dry_up_score": 62.95,
+          "breakout_date": "2026-06-03",
+          "breakout_volume_ratio": 10.895,
+          "breakout_price_move": 20.367,
+          "overall_vcp_quality_score": 73.59,
+          "is_textbook_vcp": true,
+          "ticker": "WASL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-03",
+          "base_start_date": "2026-07-02",
+          "num_contractions": 2,
+          "tightness_score": 29.17,
+          "volume_dry_up_score": 50.13,
+          "breakout_date": "2026-07-10",
+          "breakout_volume_ratio": 3.701,
+          "breakout_price_move": 5.243,
+          "overall_vcp_quality_score": 48.91,
+          "is_textbook_vcp": false,
+          "ticker": "WASL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-07-14",
+          "base_start_date": "2026-07-13",
+          "num_contractions": 2,
+          "tightness_score": 69.49,
+          "volume_dry_up_score": 0.0,
+          "breakout_date": "2026-07-16",
+          "breakout_volume_ratio": 3.233,
+          "breakout_price_move": 2.055,
+          "overall_vcp_quality_score": 47.2,
+          "is_textbook_vcp": false,
+          "ticker": "WASL"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-12",
+          "base_start_date": "2026-08-11",
+          "num_contractions": 2,
+          "tightness_score": 36.51,
+          "volume_dry_up_score": 74.35,
+          "breakout_date": null,
+          "breakout_volume_ratio": null,
+          "breakout_price_move": null,
+          "overall_vcp_quality_score": 36.91,
+          "is_textbook_vcp": false,
+          "ticker": "WASL"
+        }
+      ]
+    },
+    "WAVESAPP": {
+      "num_bars_available": 1206,
+      "num_vcp_found": 3,
+      "avg_vcp_quality_score": 49.59,
+      "pct_textbook_vcps": 0.0,
+      "vcps": [
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-05-19",
+          "base_start_date": "2026-05-18",
+          "num_contractions": 3,
+          "tightness_score": 48.65,
+          "volume_dry_up_score": 54.37,
+          "breakout_date": "2026-05-25",
+          "breakout_volume_ratio": 1.834,
+          "breakout_price_move": 5.072,
+          "overall_vcp_quality_score": 46.77,
+          "is_textbook_vcp": false,
+          "ticker": "WAVESAPP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-06-01",
+          "base_start_date": "2026-05-29",
+          "num_contractions": 2,
+          "tightness_score": 51.43,
+          "volume_dry_up_score": 52.97,
+          "breakout_date": "2026-06-05",
+          "breakout_volume_ratio": 8.242,
+          "breakout_price_move": 12.531,
+          "overall_vcp_quality_score": 66.46,
+          "is_textbook_vcp": false,
+          "ticker": "WAVESAPP"
+        },
+        {
+          "pattern_type": "VCP",
+          "start_date": "2026-08-17",
+          "base_start_date": "2026-08-13",
+          "num_contractions": 2,
+          "tightness_score": 27.59,
+          "volume_dry_up_score": 18.99,
+          "breakout_date": "2026-08-24",
+          "breakout_volume_ratio": 3.133,
+          "breakout_price_move": 3.978,
+          "overall_vcp_quality_score": 35.53,
+          "is_textbook_vcp": false,
+          "ticker": "WAVESAPP"
+        }
+      ]
+    }
+  }
+}

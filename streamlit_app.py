@@ -12,6 +12,7 @@ Run:
     streamlit run streamlit_app.py
 """
 
+import json
 import os
 import sys
 import threading
@@ -3284,6 +3285,132 @@ with tab_patterns:
                            f"({_gp_evolved_ranking.get('symbols_skipped', 0)} skipped — insufficient "
                            "history/overlap, or no evolved formula cleared the minimum-trade-count "
                            "guard on validation).")
+
+    # ---------------------------------------------- PSX FIRE Engine block ----
+    # 1-minute MFI + time-of-day relative volume + compression/absorption ->
+    # PRE-FIRE/FIRE, scored 0-100. Reads the last completed daily batch
+    # (fire_engine/run_daily_batch.py, its own scheduled job) via
+    # /patterns/fire-scan -- NOT computed live here, same cached-scan
+    # convention as every other block on this tab. Shown above the Long/
+    # Short/Structural sub-tabs since it isn't inherently directional the
+    # same way those are, and priority ranking (highest fire_score first)
+    # is the point: which stocks are exhibiting the behaviour right now.
+    st.markdown('<div class="psx-section-eyebrow">MARKET BEHAVIOUR</div>'
+                '<div class="psx-section-title">🔥 PSX FIRE Engine — Priority Setups</div>', unsafe_allow_html=True)
+    _fire_scan = _get("/patterns/fire-scan", **_pat_refresh_params)
+    if _scan_status_banner(_fire_scan, "PSX FIRE Engine"):
+        _fire_hits = _fire_scan.get("hits") or []
+        _fire_date = _fire_scan.get("date")
+        if not _fire_hits:
+            st.info(_fire_scan.get("reason") or
+                    "No PRE-FIRE/FIRE setups in the most recent completed daily batch.")
+        else:
+            st.caption(f"Last completed scan: {_fire_date or '—'} · {_fire_scan.get('scanned', 0)} "
+                       "symbol(s) with an active setup, ranked by FIRE score (highest priority first). "
+                       "A strength score, not a probability or profitability claim.")
+            names_fire = _company_names()
+            _fire_rows = [{
+                "symbol": h["symbol"], "company": names_fire.get(h["symbol"], ""),
+                "status": "🔴 FIRE" if h["classification"] == "FIRE" else "🟡 PRE-FIRE",
+                "fire score": h.get("fire_score"),
+                "mfi": h.get("mfi_value"),
+                "relative volume": h.get("relative_volume"),
+                "volume condition": h.get("volume_condition"),
+                "time": str(h.get("event_time") or "")[-8:],
+                "notes": h.get("notes"),
+            } for h in _fire_hits]
+            _firedf = pd.DataFrame(_fire_rows)
+
+            def _fire_row_color(row):
+                color = "rgba(220, 53, 69, 0.22)" if row["status"] == "🔴 FIRE" else "rgba(255, 193, 7, 0.18)"
+                return [f"background-color: {color}"] * len(row)
+
+            _render_pattern_table(_firedf, _fire_row_color, "fire_scan_table", {
+                "symbol": "Symbol", "company": "Company", "status": "Status",
+                "fire score": st.column_config.NumberColumn("FIRE Score", format="%d"),
+                "mfi": st.column_config.NumberColumn("MFI(14)", format="%.1f"),
+                "relative volume": st.column_config.NumberColumn("Rel. Volume", format="%.2fx"),
+                "volume condition": "Volume", "time": "Time", "notes": "Notes",
+            })
+        with st.expander("📖 View Rules & Metrics for the FIRE Engine"):
+            st.caption("Detects MFI acceleration + time-of-day relative volume (median-based, not "
+                       "global) + price compression preceding a volume-confirmed breakout, on real "
+                       "1-minute PSX data from SCS (Standard Capital Securities). PRE-FIRE = setup "
+                       "forming (score 60-74); FIRE = breakout confirmed (score >=75). Runs once "
+                       "per day after market close, not live intraday yet -- see "
+                       "fire_engine/run_daily_batch.py.")
+
+    # ---------------------------------- Wyckoff Institutional Accumulation ----
+    # Daily consolidation/supply-exhaustion/absorption/OBV-divergence +
+    # 4-hour BB compression -> WATCH/READY/EXTREME, scored 0-100. Reads the
+    # last completed daily batch (fire_engine/run_wyckoff_batch.py, runs
+    # right after the FIRE Engine batch in the same job) via
+    # /patterns/wyckoff-scan -- same cached-scan convention as every other
+    # block on this tab, ranked by accumulation_score (highest priority
+    # first). Once a signal fires, entry timing is a manual 1-hour-chart
+    # step -- this scanner never fetches or computes on 1-hour data.
+    st.markdown('<div class="psx-section-eyebrow">MARKET BEHAVIOUR</div>'
+                '<div class="psx-section-title">📊 Wyckoff Institutional Accumulation</div>',
+                unsafe_allow_html=True)
+    st.info("💡 This scanner flags WATCH/READY/EXTREME setups using Daily + 4-Hour data. Once "
+            "flagged, open the 1-Hour chart manually to find the exact entry (Spring, absorption "
+            "spikes, etc.) -- this scanner intentionally never fetches or computes on 1-hour data.")
+    _wyckoff_scan = _get("/patterns/wyckoff-scan", **_pat_refresh_params)
+    if _scan_status_banner(_wyckoff_scan, "Wyckoff Accumulation"):
+        _wyckoff_hits = _wyckoff_scan.get("hits") or []
+        _wyckoff_date = _wyckoff_scan.get("date")
+        if not _wyckoff_hits:
+            st.info(_wyckoff_scan.get("reason") or "No WATCH/READY/EXTREME setups in the most "
+                    "recent completed daily batch.")
+        else:
+            st.caption(f"Last completed scan: {_wyckoff_date or '—'} · {_wyckoff_scan.get('scanned', 0)} "
+                       "symbol(s) scanned, ranked by accumulation score (highest priority first). "
+                       "A strength score, not a probability or profitability claim.")
+            names_wyckoff = _company_names()
+            _signal_badge = {"EXTREME": "🔴 EXTREME", "READY": "🟡 READY", "WATCH": "🟢 WATCH"}
+            _wyckoff_rows = [{
+                "symbol": h["symbol"], "company": names_wyckoff.get(h["symbol"], ""),
+                "signal": _signal_badge.get(h.get("signal_type"), h.get("signal_type")),
+                "score": h.get("accumulation_score"),
+                "bb": h.get("bb_width_score"), "supply": h.get("dry_supply_score"),
+                "absorb": h.get("absorption_score"), "obv": h.get("obv_divergence_score"),
+                "price": h.get("current_price"),
+            } for h in _wyckoff_hits]
+            _wyckoffdf = pd.DataFrame(_wyckoff_rows)
+
+            def _wyckoff_row_color(row):
+                color = {"🔴 EXTREME": "rgba(220, 53, 69, 0.22)", "🟡 READY": "rgba(255, 193, 7, 0.18)",
+                         "🟢 WATCH": "rgba(40, 167, 69, 0.15)"}.get(row["signal"], "")
+                return [f"background-color: {color}"] * len(row) if color else [""] * len(row)
+
+            _render_pattern_table(_wyckoffdf, _wyckoff_row_color, "wyckoff_scan_table", {
+                "symbol": "Symbol", "company": "Company", "signal": "Signal",
+                "score": st.column_config.NumberColumn("Score", format="%d"),
+                "bb": st.column_config.NumberColumn("BB", format="%d"),
+                "supply": st.column_config.NumberColumn("Supply", format="%d"),
+                "absorb": st.column_config.NumberColumn("Absorb", format="%d"),
+                "obv": st.column_config.NumberColumn("OBV", format="%d"),
+                "price": st.column_config.NumberColumn("Price", format="%.2f"),
+            })
+            with st.expander("Component Details"):
+                for h in _wyckoff_hits:
+                    try:
+                        components = json.loads(h.get("components") or "{}")
+                    except (TypeError, ValueError):
+                        components = {}
+                    st.write(f"**{h['symbol']}** | Score: {h.get('accumulation_score')} | "
+                             f"Signal: {h.get('signal_type')}")
+                    st.json(components)
+        with st.expander("📖 View Rules & Metrics for Wyckoff Accumulation"):
+            st.caption("Detects consolidation (tight 20-day range, by % or ATR) + supply exhaustion "
+                       "(volume drying up) + absorption (high volume, tight spread) + OBV/price "
+                       "divergence on daily bars, plus Bollinger Band compression on 4-hour bars "
+                       "resampled into the daily score, gated by a daily MACD confirmation. "
+                       "WATCH = score 60-69, READY = 70-84, EXTREME = 85+. Runs once per day after "
+                       "market close, right after the FIRE Engine batch -- see "
+                       "fire_engine/run_wyckoff_batch.py.")
+
+    st.divider()
 
     tab_long, tab_short, tab_structural = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])

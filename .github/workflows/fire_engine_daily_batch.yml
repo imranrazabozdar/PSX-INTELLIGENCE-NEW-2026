@@ -16,14 +16,33 @@ on:
         description: 'YYYY-MM-DD to process (default: yesterday)'
         required: false
         default: ''
+      backfill_4h_only:
+        description: 'true = run ONLY the ohlcv_4h pre-warm job below (skips FIRE+Wyckoff this dispatch)'
+        required: false
+        default: 'false'
+      backfill_start_date:
+        description: 'backfill_4h_only: YYYY-MM-DD, oldest date to cover'
+        required: false
+        default: ''
+      backfill_end_date:
+        description: 'backfill_4h_only: YYYY-MM-DD, most recent date to cover'
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   fire_batch:
+    if: ${{ github.event.inputs.backfill_4h_only != 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60, not 30: this job now runs FIRE then Wyckoff back to back, sharing
+    # one job-level timeout. The FIRE step alone measured ~21 minutes on
+    # its own real production run (2026-09-04, run 34031050189) after its
+    # Turso round-trip fixes; the Wyckoff step adds its own daily+4h fetch
+    # and detection pass on top of that in the same job, so 30 was already
+    # too tight for both steps combined.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
@@ -43,9 +62,76 @@ jobs:
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        # Must run as `-m fire_engine.run_daily_batch` (a package submodule),
+        # not `python fire_engine/run_daily_batch.py` -- the latter only
+        # puts fire_engine/ itself on sys.path, not the repo root, so
+        # `import fire_engine.config` (an absolute intra-package import)
+        # fails with ModuleNotFoundError. -m runs with the repo root (cwd)
+        # on sys.path, which is what every fire_engine module assumes.
         run: |
           if [ -n "${{ github.event.inputs.date }}" ]; then
-            python fire_engine/run_daily_batch.py --date "${{ github.event.inputs.date }}"
+            python -m fire_engine.run_daily_batch --date "${{ github.event.inputs.date }}"
           else
-            python fire_engine/run_daily_batch.py
+            python -m fire_engine.run_daily_batch
           fi
+
+      - name: 📊 Run Wyckoff Institutional Accumulation scan
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        # Runs after the FIRE Engine batch above, against the same
+        # universe/exclusion filter and the same shared Turso DB.
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python -m fire_engine.run_wyckoff_batch --date "${{ github.event.inputs.date }}"
+          else
+            python -m fire_engine.run_wyckoff_batch
+          fi
+
+      - name: 🧹 Prune ohlcv_4h cache (keep last 35 days)
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        # Housekeeping only -- never fails the job. store_4h_data()/
+        # backfill_4h.py only ever INSERT/UPSERT into ohlcv_4h, so without
+        # this it grows unbounded; daily_ohlc is untouched on purpose (see
+        # db_prune_cache.py's module docstring).
+        continue-on-error: true
+        run: |
+          python -m fire_engine.db_prune_cache --retention-days 35
+
+  backfill_4h:
+    # Runs standalone, in parallel with fire_batch above -- pre-warms
+    # ohlcv_4h for the whole universe over an explicit date range in one
+    # dispatch, independent of any in-flight FIRE/Wyckoff run (they don't
+    # share a job, so neither blocks or waits on the other).
+    if: ${{ github.event.inputs.backfill_4h_only == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r fire_engine/requirements.txt
+
+      - name: 📦 Pre-warm ohlcv_4h cache
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -m fire_engine.backfill_4h \
+            --start-date "${{ github.event.inputs.backfill_start_date }}" \
+            --end-date "${{ github.event.inputs.backfill_end_date }}"

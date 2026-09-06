@@ -1,0 +1,263 @@
+# ============================================================================
+# PSX FIRE ENGINE - CONFIGURATION
+# ============================================================================
+# All thresholds live here, not hard-coded in the engine modules. Loaded by
+# fire_engine/config.py's load_config().
+
+system:
+  version: "1.0"
+  environment: "development"
+  log_level: "INFO"
+
+database:
+  type: "sqlite"
+  path: "./fire_engine/psx_fire.db"
+
+mfi:
+  length: 14
+  acceleration_threshold_5m: 15     # points, over 5 candles
+  acceleration_threshold_15m: 20    # points, over 15 candles
+  min_mfi_for_fire: 50              # MFI level FIRE requires
+
+volume:
+  lookback_sessions: 30
+  min_lookback_required: 5          # below this, use progressive average instead
+  elevated_rv: 1.5
+  abnormal_rv: 2.0
+  extreme_rv: 3.0
+
+compression:
+  price_change_pct: 0.10            # 0.1%, method 1 (simple) threshold
+  lookback_minutes: 15
+  adaptive_atr_ratio: 0.5           # method 2: current ATR <= this x 30-day ATR
+  severity_thresholds:
+    mild: 0.05
+    moderate: 0.03
+    severe: 0.01
+
+absorption:
+  min_relative_volume: 1.5
+  max_price_displacement_pct: 0.05
+  lookback_minutes: 15
+
+support_resistance:
+  lookback_candles: 20
+
+pre_fire:
+  mfi_acceleration_threshold: 20
+  compression_required: true
+  support_required: true
+  max_relative_volume: 1.5          # RV must stay below this (thin/normal volume)
+
+fire:
+  min_fire_score: 75
+  min_relative_volume_expansion: 2.0
+  min_mfi_for_confirmation: 50
+  rejection_check_minutes: 5        # breakout must hold this long to not be "rejected"
+
+fire_scoring:
+  weights:
+    mfi_acceleration: 20
+    mfi_persistence: 10
+    price_compression: 15
+    volume_absorption: 20
+    support_structure: 10
+    volume_expansion: 10
+    breakout_confirmation: 15
+  thresholds:
+    watch: 40
+    prefire: 60
+    strong_fire: 75
+    extreme_fire: 90
+
+session:
+  market_open: "09:00"
+  market_close: "16:30"
+  near_close_minutes: 30
+  expected_candles_per_day: 480
+
+stocks:
+  # Full watchlist (backend/app.py's WATCHLIST_SYMBOLS, 89 symbols) --
+  # not a hand-picked subset. exclusion.enabled below still removes any
+  # of these that also appear in the excluded-sectors list (currently
+  # just YOUW, per that list's own 244-of-519 gap -- see
+  # fire_engine/excluded_sectors_config.py's docstring) at batch-run time,
+  # so this list intentionally is NOT pre-filtered here.
+  universe:
+    - CNERGY
+    - PRL
+    - BOP
+    - FNEL
+    - KEL
+    - SSGC
+    - PACE
+    - WAVESAPP
+    - NBP
+    - PIBTL
+    - FCL
+    - PPL
+    - BLUEX
+    - AKBL
+    - PREMA
+    - BECO
+    - BAFL
+    - LOTCHEM
+    - NRL
+    - SYS
+    - HUBC
+    - AICL
+    - THCCL
+    - FCCL
+    - HASCOL
+    - ABL
+    - PSO
+    - HBL
+    - OGDC
+    - AVN
+    - SLGL
+    - SPSL
+    - POWER
+    - UBL
+    - TRG
+    - TOMCL
+    - AIRLINK
+    - FFL
+    - SEARL
+    - CLOV
+    - SNBL
+    - SNGP
+    - MDTL
+    - BML
+    - BNL
+    - BAHL
+    - SYM
+    - WASL
+    - CPHL
+    - FFC
+    - MARI
+    - MUGHAL
+    - BGL
+    - GAL
+    - GDL
+    - YOUW
+    - ZAL
+    - AGP
+    - LOADS
+    - KOHC
+    - SAZEW
+    - WAHDAT
+    - STCL
+    - GLAXO
+    - TGL
+    - MCB
+    - JSBL
+    - IMAGE
+    - SCBPL
+    - BOK
+    - AGTL
+    - ECPL
+    - BIPL
+    - HMB
+    - FABL
+    - SBL
+    - ASTL
+    - EFERT
+    - DGKC
+    - LUCK
+    - TBL
+    - STL
+    - STLR
+    - MLCF
+    - CHCC
+    - WTL
+    - PTC
+    - QTECH
+    - ITANZ
+
+exclusion:
+  enabled: true
+  config_module: "fire_engine.excluded_sectors_config"
+
+data_source:
+  type: "SCSTrade"
+  url: "https://www.scstrade.com/"
+  retry_attempts: 3
+  retry_delay_seconds: 60
+  timeout_seconds: 300
+  playwright:
+    headless: true
+    timeout_ms: 30000
+
+scheduling:
+  enabled: true
+  daily_collection_time: "16:30"
+  daily_report_time: "17:00"
+  timezone: "Asia/Karachi"
+
+dashboard:
+  enabled: true
+  type: "streamlit"
+  port: 8501
+  auto_refresh_minutes: 5
+
+# Wyckoff Institutional Stealth Accumulation Detector (Phases 18-22).
+# Reuses stocks.universe and exclusion.* above rather than a second,
+# parallel stock list -- there's no "stocks_universe" key here, on
+# purpose, so the FIRE and Wyckoff scanners can't drift out of sync
+# with each other.
+wyckoff:
+  enabled: true
+
+  # Consolidation bounds -- Method A (pct) or Method B (ATR-normalized),
+  # either passing marks the session as consolidating.
+  consolidation_pct_threshold: 0.08
+  consolidation_atr_multiplier: 4.5      # NOT 1.5 -- mathematically impossible over a 20-bar window
+
+  # Supply exhaustion (10-day lookback, 10-day memory)
+  supply_exhaustion_volume_pct: 0.50
+  supply_exhaustion_count_threshold: 2   # >= 2 dry days (not 3) is enough on PSX
+  supply_exhaustion_lookback: 10
+  supply_exhaustion_memory: 10
+
+  # Absorption (8-day memory, not 5) -- PSX-calibrated against the real
+  # FCL 2026-08-07 absorption day, which a 1.00 ATR spread cap would miss.
+  absorption_spread_atr_threshold: 1.45
+  absorption_co_atr_threshold: 0.85
+  absorption_volume_multiplier: 2.0
+  absorption_memory: 8
+
+  # OBV divergence (both slopes z-normalized within their own window)
+  obv_slope_threshold: 0.05
+  price_slope_threshold: 0.02
+  slope_lookback: 15
+
+  # BB compression -- calculated on 4-hour bars only, then resampled to
+  # daily via last() before being merged into the daily score (Data
+  # Alignment Rule). No other metric here touches the 4-hour timeframe,
+  # and nothing anywhere in this section touches 1-hour data at all --
+  # that timeframe is a manual step once a signal fires.
+  bb_width_threshold: 0.10
+  bb_period: 20
+  bb_std: 2.0
+
+  # Scoring -- must sum to 100 (validated at config-load time, same as
+  # fire_scoring.weights above)
+  bb_width_points: 20
+  supply_exhaustion_points: 20
+  absorption_points: 30
+  obv_divergence_points: 30
+
+  # Signal thresholds
+  watch_threshold: 60
+  ready_threshold: 70
+  extreme_threshold: 85
+
+  # MACD confirmation gate (daily)
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+
+  # Data fetch
+  daily_lookback_days: 90
+  h4_lookback_days: 30
+  h4_cache_hours: 4
