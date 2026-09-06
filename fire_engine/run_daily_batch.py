@@ -22,6 +22,7 @@ if _BACKEND_DIR not in sys.path:
 
 from fire_engine.config import load_config
 from fire_engine.database import DatabaseManager
+from fire_engine.market_hours import get_market_status, is_trading_day
 from fire_engine.scheduler import run_daily_batch
 
 
@@ -32,7 +33,15 @@ def main():
                          help="Path to a standalone sqlite file instead of the shared Turso DB "
                               "(development/testing only)")
     parser.add_argument("--config", default=None, help="Path to fire_config.yaml (default: bundled)")
+    parser.add_argument("--skip-market-check", action="store_true",
+                         help="Run even if today (the invocation day, not --date) is a weekend -- "
+                              "for a deliberate manual/backfill run; the scheduled cron never needs this.")
     args = parser.parse_args()
+
+    print(f"Market status: {get_market_status()}")
+    if not args.skip_market_check and not is_trading_day():
+        print("PSX is closed today (weekend) -- exiting without running the batch.")
+        sys.exit(0)
 
     cfg = load_config(args.config)
 
