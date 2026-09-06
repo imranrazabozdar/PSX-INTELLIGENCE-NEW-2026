@@ -32,7 +32,17 @@ def calculate_time_of_day_baseline(db, symbol: str, lookback_sessions: int = 30)
     for row in cur.fetchall():
         by_time.setdefault(row["time_of_day"], []).append(row["volume"])
 
+    upsert_sql = (
+        """INSERT INTO volume_baseline
+           (symbol, time_of_day, median_volume, mean_volume, lookback_sessions)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(symbol, time_of_day) DO UPDATE SET
+             median_volume=excluded.median_volume, mean_volume=excluded.mean_volume,
+             lookback_sessions=excluded.lookback_sessions,
+             last_updated=CURRENT_TIMESTAMP"""
+    )
     result = {}
+    writes = []
     for time_of_day, volumes in by_time.items():
         median_volume = int(statistics.median(volumes))
         mean_volume = int(statistics.mean(volumes))
@@ -40,17 +50,23 @@ def calculate_time_of_day_baseline(db, symbol: str, lookback_sessions: int = 30)
             "median_volume": median_volume, "mean_volume": mean_volume,
             "session_count": len(volumes),
         }
-        db.conn.execute(
-            """INSERT INTO volume_baseline
-               (symbol, time_of_day, median_volume, mean_volume, lookback_sessions)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(symbol, time_of_day) DO UPDATE SET
-                 median_volume=excluded.median_volume, mean_volume=excluded.mean_volume,
-                 lookback_sessions=excluded.lookback_sessions,
-                 last_updated=CURRENT_TIMESTAMP""",
-            (symbol, time_of_day, median_volume, mean_volume, len(volumes)),
-        )
-    db.conn.commit()
+        writes.append((upsert_sql, (symbol, time_of_day, median_volume, mean_volume, len(volumes))))
+
+    # One time_of_day can be up to ~480 per symbol, so a plain per-row
+    # execute() loop here is the same per-bar-round-trip problem that made
+    # calculate_relative_volume() (see load_baseline_cache() below) hang the
+    # remote-Turso batch run -- batch_query() sends the whole list as ONE
+    # HTTP request (same convention backend/app.py already uses for bulk
+    # inserts). Falls back to a plain loop for a local sqlite3 connection,
+    # which has no batch_query and doesn't need one (same-process, no
+    # network round trip per statement).
+    if hasattr(db.conn, "batch_query"):
+        if writes:
+            db.conn.batch_query(writes)
+    else:
+        for sql, params in writes:
+            db.conn.execute(sql, params)
+        db.conn.commit()
     return result
 
 
@@ -68,17 +84,36 @@ def classify_volume(relative_volume: float, cfg: dict) -> str:
     return "BELOW_AVERAGE"
 
 
-def calculate_relative_volume(db, symbol: str, time_of_day: str, current_volume: int,
-                              cfg: dict) -> dict:
-    """cfg is the `volume` section of fire_config.yaml. Uses MEDIAN volume
-    at this time_of_day (robust to one outlier session), with a
-    progressive-average fallback when fewer than
-    cfg['min_lookback_required'] sessions of history exist yet."""
-    row = db.conn.execute(
-        "SELECT median_volume, mean_volume, lookback_sessions FROM volume_baseline "
-        "WHERE symbol = ? AND time_of_day = ?",
-        (symbol, time_of_day),
-    ).fetchone()
+def load_baseline_cache(db, symbol: str) -> dict:
+    """ONE query for every time_of_day this symbol has a baseline for,
+    returned as {time_of_day: {median_volume, mean_volume, lookback_sessions}}.
+    Load this ONCE per symbol before a bar-by-bar loop and pass it to
+    relative_volume_from_cache() -- calling calculate_relative_volume()
+    (one query per bar) inside a ~480-bar loop is fine against a local
+    sqlite file but was measured to make the daily batch's remote-Turso
+    run effectively hang (tens of thousands of per-bar HTTP round trips
+    across the full symbol universe); this is the fix."""
+    cur = db.conn.execute(
+        "SELECT time_of_day, median_volume, mean_volume, lookback_sessions "
+        "FROM volume_baseline WHERE symbol = ?",
+        (symbol,),
+    )
+    return {
+        r["time_of_day"]: {
+            "median_volume": r["median_volume"], "mean_volume": r["mean_volume"],
+            "lookback_sessions": r["lookback_sessions"],
+        }
+        for r in cur.fetchall()
+    }
+
+
+def relative_volume_from_cache(cache: dict, time_of_day: str, current_volume: int,
+                                cfg: dict) -> dict:
+    """Same computation and return shape as calculate_relative_volume(),
+    but against an in-memory cache (see load_baseline_cache()) instead of
+    a fresh DB query -- the actual hot-path version, used inside a
+    per-bar loop."""
+    row = cache.get(time_of_day)
 
     if row is None or row["median_volume"] in (None, 0):
         return {
@@ -103,3 +138,18 @@ def calculate_relative_volume(db, symbol: str, time_of_day: str, current_volume:
         "median_volume": median_volume, "current_volume": current_volume,
         "lookback_count": lookback_count, "confidence": round(confidence, 3),
     }
+
+
+def calculate_relative_volume(db, symbol: str, time_of_day: str, current_volume: int,
+                              cfg: dict) -> dict:
+    """Single-lookup convenience wrapper (one DB query) -- fine for a
+    one-off call, but NOT for a per-bar loop over a session; see
+    load_baseline_cache()/relative_volume_from_cache() for that case,
+    which is what fire_engine/scheduler.py now actually uses."""
+    return relative_volume_from_cache(
+        {time_of_day: row for row in [db.conn.execute(
+            "SELECT median_volume, mean_volume, lookback_sessions FROM volume_baseline "
+            "WHERE symbol = ? AND time_of_day = ?", (symbol, time_of_day),
+        ).fetchone()] if row is not None},
+        time_of_day, current_volume, cfg,
+    )

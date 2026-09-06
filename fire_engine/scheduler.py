@@ -30,7 +30,9 @@ from datetime import datetime, timedelta
 from fire_engine.scraper import fetch_daily_ohlcv
 from fire_engine.validators import validate_trading_session
 from fire_engine.mfi_engine import calculate_mfi, calculate_mfi_derivatives
-from fire_engine.volume_engine import calculate_time_of_day_baseline, calculate_relative_volume
+from fire_engine.volume_engine import (
+    calculate_time_of_day_baseline, load_baseline_cache, relative_volume_from_cache,
+)
 from fire_engine.compression import is_compression_active
 from fire_engine.absorption import detect_bullish_absorption, detect_bearish_absorption
 from fire_engine.pre_fire import detect_pre_fire
@@ -66,6 +68,12 @@ def run_symbol_for_date(db, symbol: str, date: str, cfg: dict) -> dict:
                 "events_logged": 0, "issues": validation["issues"][:10]}
 
     calculate_time_of_day_baseline(db, symbol, cfg["volume"]["lookback_sessions"])
+    # Loaded ONCE per symbol and read in-memory inside the bar loop below --
+    # calling calculate_relative_volume() (one DB query) per candle was
+    # ~480 remote round trips per symbol (~43,000 across the full universe)
+    # and was the confirmed cause of the batch hanging past its 30-minute
+    # timeout against the shared Turso connection.
+    baseline_cache = load_baseline_cache(db, symbol)
 
     mfi_series = calculate_mfi(candles, length=cfg["mfi"]["length"])
     sr_cfg = cfg["support_resistance"]
@@ -78,7 +86,7 @@ def run_symbol_for_date(db, symbol: str, date: str, cfg: dict) -> dict:
         mfi_window = mfi_series[: i + 1]
         deriv = calculate_mfi_derivatives(mfi_window)
 
-        rv_result = calculate_relative_volume(db, symbol, candles[i]["time_of_day"], candles[i]["volume"], cfg["volume"])
+        rv_result = relative_volume_from_cache(baseline_cache, candles[i]["time_of_day"], candles[i]["volume"], cfg["volume"])
         rv = rv_result["relative_volume"]
 
         pf = detect_pre_fire(window, mfi_window, deriv, rv, cfg)
