@@ -9,9 +9,20 @@ def log_fire_event(db, symbol: str, event_type: str, event_datetime: str,
                     near_close: bool = False, notes: str = None) -> int:
     """Insert into fire_events (UPSERT on the symbol/event_datetime/event_type
     UNIQUE constraint -- re-logging the same event is a no-op update, not a
-    duplicate row). Returns the row id."""
+    duplicate row). Returns the row id.
+
+    Caller must have already ensured `symbol` exists in `stocks` (every real
+    call site does, via insert_candles() earlier in the same pipeline run) --
+    this used to call db.ensure_stock(symbol) itself, plus a follow-up SELECT
+    to read back the id, meaning every single event logged cost 3 DB round
+    trips. Against the shared Turso HTTP connection, with some symbols
+    logging 100+ events per session, that alone added tens of seconds per
+    symbol. Neither call added anything real: ensure_stock() was always a
+    no-op here (the stock row already exists by this point), and lastrowid
+    is already correct on the ON CONFLICT DO UPDATE branch (verified against
+    both sqlite3 and the Turso wrapper), so the extra SELECT never changed
+    the answer -- just paid for it twice."""
     event_date, event_time = event_datetime.split(" ") if " " in event_datetime else (event_datetime, "00:00:00")
-    db.ensure_stock(symbol)
     cur = db.conn.execute(
         """INSERT INTO fire_events
            (symbol, event_date, event_time, event_datetime, event_type, mfi_value,
@@ -34,11 +45,7 @@ def log_fire_event(db, symbol: str, event_type: str, event_datetime: str,
          price_compression_pct, fire_score, int(session_transition), int(near_close), notes),
     )
     db.conn.commit()
-    row = db.conn.execute(
-        "SELECT id FROM fire_events WHERE symbol=? AND event_datetime=? AND event_type=?",
-        (symbol, event_datetime, event_type),
-    ).fetchone()
-    return row["id"] if row else cur.lastrowid
+    return cur.lastrowid
 
 
 def query_fire_events(db, symbol: str = None, event_type: str = None,

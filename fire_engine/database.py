@@ -226,12 +226,7 @@ class DatabaseManager:
         """UPSERT candles keyed on (symbol, datetime). Returns count inserted/updated.
         Each candle is a dict with datetime/date/time_of_day/open/high/low/close/volume."""
         self.ensure_stock(symbol)
-        rows = [
-            (symbol, c["datetime"], c["date"], c["time_of_day"], c["open"], c["high"],
-             c["low"], c["close"], c["volume"], data_source, data_quality_status, session_id)
-            for c in candles
-        ]
-        self.conn.executemany(
+        upsert_sql = (
             """INSERT INTO market_candles
                (symbol, datetime, date, time_of_day, open, high, low, close, volume,
                 data_source, data_quality_status, session_id)
@@ -241,10 +236,26 @@ class DatabaseManager:
                  close=excluded.close, volume=excluded.volume,
                  data_source=excluded.data_source,
                  data_quality_status=excluded.data_quality_status,
-                 session_id=excluded.session_id""",
-            rows,
+                 session_id=excluded.session_id"""
         )
-        self.conn.commit()
+        rows = [
+            (symbol, c["datetime"], c["date"], c["time_of_day"], c["open"], c["high"],
+             c["low"], c["close"], c["volume"], data_source, data_quality_status, session_id)
+            for c in candles
+        ]
+        # executemany() against the Turso wrapper is one HTTP round trip PER
+        # ROW (up to ~480 candles/session) -- measured as the dominant cost
+        # of the daily batch (a ~25-30s per-symbol floor regardless of event
+        # count). batch_query() sends the whole session as ONE HTTP request
+        # (same convention already used in backend/app.py for bulk inserts).
+        # Falls back to executemany() for a local sqlite3 connection, which
+        # has no batch_query and doesn't need one (no network round trip).
+        if hasattr(self.conn, "batch_query"):
+            if rows:
+                self.conn.batch_query([(upsert_sql, r) for r in rows])
+        else:
+            self.conn.executemany(upsert_sql, rows)
+            self.conn.commit()
         return len(rows)
 
     def query_candles(self, symbol: str, start_date: str, end_date: str) -> list:
