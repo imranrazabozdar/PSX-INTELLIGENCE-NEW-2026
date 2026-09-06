@@ -1,0 +1,51 @@
+name: PSX FIRE Engine daily batch (after market close)
+
+on:
+  schedule:
+    # Mon-Thu: 3:40 PM PKT (10:40 UTC) -- 5 min after refresh_chart_patterns.yml's
+    # own post-close run, so this reads that run's freshly-refreshed daily_ohlc
+    # if fire_engine's indicator layer ever needs it (it doesn't today, but keeps
+    # the two jobs from racing on the same Turso DB at the exact same minute).
+    - cron: '40 10 * * 1-4'
+    # Fri: 4:40 PM PKT (11:40 UTC)
+    - cron: '40 11 * * 5'
+  # Manual trigger for testing/backfill
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'YYYY-MM-DD to process (default: yesterday)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  fire_batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r fire_engine/requirements.txt
+
+      - name: 🔥 Run PSX FIRE Engine daily batch
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python fire_engine/run_daily_batch.py --date "${{ github.event.inputs.date }}"
+          else
+            python fire_engine/run_daily_batch.py
+          fi
