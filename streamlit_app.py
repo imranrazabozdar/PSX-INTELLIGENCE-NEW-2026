@@ -3352,9 +3352,17 @@ with tab_patterns:
     st.markdown('<div class="psx-section-eyebrow">MARKET BEHAVIOUR</div>'
                 '<div class="psx-section-title">📊 Wyckoff Institutional Accumulation</div>',
                 unsafe_allow_html=True)
-    st.info("💡 This scanner flags WATCH/READY/EXTREME setups using Daily + 4-Hour data. Once "
-            "flagged, open the 1-Hour chart manually to find the exact entry (Spring, absorption "
-            "spikes, etc.) -- this scanner intentionally never fetches or computes on 1-hour data.")
+    st.warning("⚠️ **Not a buy signal, and not a prediction.** WATCH/READY/EXTREME describe how "
+               "completely a textbook Wyckoff accumulation *pattern* is present right now (tight "
+               "range + volume drying up + a high-volume absorption day + OBV/price divergence) -- "
+               "not the odds the price actually rises. This pattern fails often in real markets, "
+               "and this scanner has never been backtested for hit rate (unlike this project's VCP/ "
+               "Flat Base detectors, which were backtested and came back needing rework). Treat a "
+               "hit as \"worth a closer look on the 1-hour chart for a real entry trigger (Spring, "
+               "absorption spike, etc.),\" never as \"buy this.\"")
+    st.caption("💡 Daily + 4-hour data only -- entry timing (Spring, absorption spikes, etc.) is a "
+               "manual 1-hour-chart step; this scanner intentionally never fetches or computes on "
+               "1-hour data.")
     _wyckoff_scan = _get("/patterns/wyckoff-scan", **_pat_refresh_params)
     if _scan_status_banner(_wyckoff_scan, "Wyckoff Accumulation"):
         _wyckoff_hits = _wyckoff_scan.get("hits") or []
@@ -3364,16 +3372,14 @@ with tab_patterns:
                     "recent completed daily batch.")
         else:
             st.caption(f"Last completed scan: {_wyckoff_date or '—'} · {_wyckoff_scan.get('scanned', 0)} "
-                       "symbol(s) scanned, ranked by accumulation score (highest priority first). "
-                       "A strength score, not a probability or profitability claim.")
+                       "symbol(s) scanned, ranked by accumulation score (highest priority first) -- "
+                       "a pattern-strength score, not a probability or profitability claim.")
             names_wyckoff = _company_names()
             _signal_badge = {"EXTREME": "🔴 EXTREME", "READY": "🟡 READY", "WATCH": "🟢 WATCH"}
             _wyckoff_rows = [{
                 "symbol": h["symbol"], "company": names_wyckoff.get(h["symbol"], ""),
                 "signal": _signal_badge.get(h.get("signal_type"), h.get("signal_type")),
                 "score": h.get("accumulation_score"),
-                "bb": h.get("bb_width_score"), "supply": h.get("dry_supply_score"),
-                "absorb": h.get("absorption_score"), "obv": h.get("obv_divergence_score"),
                 "price": h.get("current_price"),
             } for h in _wyckoff_hits]
             _wyckoffdf = pd.DataFrame(_wyckoff_rows)
@@ -3383,16 +3389,18 @@ with tab_patterns:
                          "🟢 WATCH": "rgba(40, 167, 69, 0.15)"}.get(row["signal"], "")
                 return [f"background-color: {color}"] * len(row) if color else [""] * len(row)
 
+            # Fewer columns than the underlying data has, deliberately -- the
+            # per-component score breakdown (bb/supply/absorb/obv) duplicates
+            # the Component Details expander below (as booleans there) and
+            # was making this table too wide to read on a phone without
+            # horizontal scrolling; Symbol/Company/Signal/Score/Price is what
+            # someone scanning the list actually needs at a glance.
             _render_pattern_table(_wyckoffdf, _wyckoff_row_color, "wyckoff_scan_table", {
                 "symbol": "Symbol", "company": "Company", "signal": "Signal",
                 "score": st.column_config.NumberColumn("Score", format="%d"),
-                "bb": st.column_config.NumberColumn("BB", format="%d"),
-                "supply": st.column_config.NumberColumn("Supply", format="%d"),
-                "absorb": st.column_config.NumberColumn("Absorb", format="%d"),
-                "obv": st.column_config.NumberColumn("OBV", format="%d"),
                 "price": st.column_config.NumberColumn("Price", format="%.2f"),
             })
-            with st.expander("Component Details"):
+            with st.expander("Component breakdown (why each symbol scored what it did)"):
                 for h in _wyckoff_hits:
                     try:
                         components = json.loads(h.get("components") or "{}")
@@ -3400,6 +3408,10 @@ with tab_patterns:
                         components = {}
                     st.write(f"**{h['symbol']}** | Score: {h.get('accumulation_score')} | "
                              f"Signal: {h.get('signal_type')}")
+                    st.caption(f"BB compression: {h.get('bb_width_score')}/20 · "
+                               f"Supply exhaustion: {h.get('dry_supply_score')}/20 · "
+                               f"Absorption: {h.get('absorption_score')}/30 · "
+                               f"OBV divergence: {h.get('obv_divergence_score')}/30")
                     st.json(components)
         with st.expander("📖 View Rules & Metrics for Wyckoff Accumulation"):
             st.caption("Detects consolidation (tight 20-day range, by % or ATR) + supply exhaustion "
