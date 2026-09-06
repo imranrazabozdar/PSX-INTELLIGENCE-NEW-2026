@@ -28,21 +28,13 @@ on:
         description: 'backfill_4h_only: YYYY-MM-DD, most recent date to cover'
         required: false
         default: ''
-      preview_symbols:
-        description: 'Comma-separated symbols for a one-off Wyckoff preview scan (non-empty triggers it, skips FIRE+Wyckoff+backfill this dispatch)'
-        required: false
-        default: ''
-      preview_end_date:
-        description: 'preview_symbols: YYYY-MM-DD (default: today)'
-        required: false
-        default: ''
 
 permissions:
   contents: read
 
 jobs:
   fire_batch:
-    if: ${{ github.event.inputs.backfill_4h_only != 'true' && github.event.inputs.preview_symbols == '' }}
+    if: ${{ github.event.inputs.backfill_4h_only != 'true' }}
     runs-on: ubuntu-latest
     # 60, not 30: this job now runs FIRE then Wyckoff back to back, sharing
     # one job-level timeout. The FIRE step alone measured ~21 minutes on
@@ -143,40 +135,3 @@ jobs:
           python -m fire_engine.backfill_4h \
             --start-date "${{ github.event.inputs.backfill_start_date }}" \
             --end-date "${{ github.event.inputs.backfill_end_date }}"
-
-  wyckoff_preview:
-    # One-off preview scan for a symbol list, standalone (doesn't touch
-    # stocks.universe or write into wyckoff_accumulation -- see
-    # run_wyckoff_preview.py's module docstring). Added for a specific
-    # ad-hoc request; remove this job (and preview_symbols/preview_end_date
-    # above) once no longer needed rather than leaving it as permanent
-    # production surface.
-    if: ${{ github.event.inputs.preview_symbols != '' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r fire_engine/requirements.txt
-
-      - name: 🔍 Wyckoff preview scan
-        env:
-          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
-          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
-          PYTHONUNBUFFERED: "1"
-        run: |
-          if [ -n "${{ github.event.inputs.preview_end_date }}" ]; then
-            python -m fire_engine.run_wyckoff_preview --symbols "${{ github.event.inputs.preview_symbols }}" --end-date "${{ github.event.inputs.preview_end_date }}"
-          else
-            python -m fire_engine.run_wyckoff_preview --symbols "${{ github.event.inputs.preview_symbols }}"
-          fi
