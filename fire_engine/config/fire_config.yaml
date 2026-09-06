@@ -199,3 +199,65 @@ dashboard:
   type: "streamlit"
   port: 8501
   auto_refresh_minutes: 5
+
+# Wyckoff Institutional Stealth Accumulation Detector (Phases 18-22).
+# Reuses stocks.universe and exclusion.* above rather than a second,
+# parallel stock list -- there's no "stocks_universe" key here, on
+# purpose, so the FIRE and Wyckoff scanners can't drift out of sync
+# with each other.
+wyckoff:
+  enabled: true
+
+  # Consolidation bounds -- Method A (pct) or Method B (ATR-normalized),
+  # either passing marks the session as consolidating.
+  consolidation_pct_threshold: 0.08
+  consolidation_atr_multiplier: 4.5      # NOT 1.5 -- mathematically impossible over a 20-bar window
+
+  # Supply exhaustion (10-day lookback, 10-day memory)
+  supply_exhaustion_volume_pct: 0.50
+  supply_exhaustion_count_threshold: 2   # >= 2 dry days (not 3) is enough on PSX
+  supply_exhaustion_lookback: 10
+  supply_exhaustion_memory: 10
+
+  # Absorption (8-day memory, not 5) -- PSX-calibrated against the real
+  # FCL 2026-08-07 absorption day, which a 1.00 ATR spread cap would miss.
+  absorption_spread_atr_threshold: 1.45
+  absorption_co_atr_threshold: 0.85
+  absorption_volume_multiplier: 2.0
+  absorption_memory: 8
+
+  # OBV divergence (both slopes z-normalized within their own window)
+  obv_slope_threshold: 0.05
+  price_slope_threshold: 0.02
+  slope_lookback: 15
+
+  # BB compression -- calculated on 4-hour bars only, then resampled to
+  # daily via last() before being merged into the daily score (Data
+  # Alignment Rule). No other metric here touches the 4-hour timeframe,
+  # and nothing anywhere in this section touches 1-hour data at all --
+  # that timeframe is a manual step once a signal fires.
+  bb_width_threshold: 0.10
+  bb_period: 20
+  bb_std: 2.0
+
+  # Scoring -- must sum to 100 (validated at config-load time, same as
+  # fire_scoring.weights above)
+  bb_width_points: 20
+  supply_exhaustion_points: 20
+  absorption_points: 30
+  obv_divergence_points: 30
+
+  # Signal thresholds
+  watch_threshold: 60
+  ready_threshold: 70
+  extreme_threshold: 85
+
+  # MACD confirmation gate (daily)
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+
+  # Data fetch
+  daily_lookback_days: 90
+  h4_lookback_days: 30
+  h4_cache_hours: 4

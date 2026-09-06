@@ -231,9 +231,10 @@ import turso_db
 
 # fire_engine/ lives one level up (repo_root/fire_engine, sibling of
 # repo_root/backend where this file runs with backend/ as cwd) -- add the
-# repo root to sys.path so its fire_events/daily_reports tables (written
-# by fire_engine/run_daily_batch.py against this SAME turso_db connection)
-# are readable here for the Patterns tab's FIRE scan.
+# repo root to sys.path so its fire_events/daily_reports/wyckoff_accumulation
+# tables (written by fire_engine/run_daily_batch.py and
+# fire_engine/run_wyckoff_batch.py against this SAME turso_db connection)
+# are readable here for the Patterns tab's FIRE and Wyckoff scans.
 import sys as _sys
 from pathlib import Path as _Path
 _REPO_ROOT = str(_Path(__file__).parent.parent)
@@ -3511,6 +3512,58 @@ def patterns_fire_scan(request:Request, force:bool=False):
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("fire_scan")
+    return out
+
+
+def _run_wyckoff_scan():
+    """Wyckoff Institutional Stealth Accumulation Detector (fire_engine/
+    wyckoff_detector.py) results for the most recent completed daily
+    batch -- NOT computed live here, same convention as _run_fire_scan()
+    above. fire_engine/run_wyckoff_batch.py runs after the FIRE Engine
+    batch (same GitHub Actions job), writing one row per symbol per
+    scan_date into wyckoff_accumulation; this just reads the latest
+    date's rows back out, ranked by accumulation_score descending, and
+    keeps only WATCH/READY/EXTREME rows as "hits" (a NO_SIGNAL row is
+    still stored for completeness/debugging, but isn't a setup worth
+    surfacing in the Patterns tab)."""
+    with db() as c:
+        try:
+            row = c.execute("SELECT MAX(scan_date) AS d FROM wyckoff_accumulation").fetchone()
+        except Exception as exc:
+            return {"status": "ok", "scanned": 0, "hits": [],
+                    "reason": f"wyckoff_accumulation not available yet ({type(exc).__name__}); "
+                              "the daily batch (fire_engine/run_wyckoff_batch.py) hasn't run "
+                              "against this database yet."}
+        latest_date = row["d"] if row else None
+        if not latest_date:
+            return {"status": "ok", "scanned": 0, "hits": [],
+                    "reason": "No Wyckoff scan results yet -- run "
+                              "fire_engine/run_wyckoff_batch.py after a market close first."}
+        rows = [dict(r) for r in c.execute(
+            "SELECT * FROM wyckoff_accumulation WHERE scan_date = ? ORDER BY accumulation_score DESC",
+            (latest_date,),
+        ).fetchall()]
+
+    hits = [r for r in rows if r["signal_type"] != "NO_SIGNAL"]
+    return {"status": "ok", "scanned": len(rows), "date": latest_date, "hits": hits}
+
+
+@app.get("/patterns/wyckoff-scan")
+def patterns_wyckoff_scan(request:Request, force:bool=False):
+    """Wyckoff Institutional Stealth Accumulation Detector -- consolidation
+    + supply exhaustion + absorption + OBV divergence (daily) + BB
+    compression (4-hour, resampled to daily) -> WATCH/READY/EXTREME,
+    0-100 accumulation_score. Reads the most recent completed daily
+    batch's results, ranked by accumulation_score descending. Once a
+    signal fires, entry timing (Spring, absorption spikes, etc.) is a
+    manual 1-hour-chart step -- this scanner deliberately never fetches
+    or computes on 1-hour data."""
+    cached = _scan_cache.latest("wyckoff_scan")
+    result, err = _serve_cached_and_refresh("wyckoff_scan", _run_wyckoff_scan, cached,
+                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+    if err: return err
+    out = dict(result)
+    out["_background_refresh_running"] = _bg_job_running("wyckoff_scan")
     return out
 
 

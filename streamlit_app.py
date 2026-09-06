@@ -12,6 +12,7 @@ Run:
     streamlit run streamlit_app.py
 """
 
+import json
 import os
 import sys
 import threading
@@ -3338,6 +3339,76 @@ with tab_patterns:
                        "forming (score 60-74); FIRE = breakout confirmed (score >=75). Runs once "
                        "per day after market close, not live intraday yet -- see "
                        "fire_engine/run_daily_batch.py.")
+
+    # ---------------------------------- Wyckoff Institutional Accumulation ----
+    # Daily consolidation/supply-exhaustion/absorption/OBV-divergence +
+    # 4-hour BB compression -> WATCH/READY/EXTREME, scored 0-100. Reads the
+    # last completed daily batch (fire_engine/run_wyckoff_batch.py, runs
+    # right after the FIRE Engine batch in the same job) via
+    # /patterns/wyckoff-scan -- same cached-scan convention as every other
+    # block on this tab, ranked by accumulation_score (highest priority
+    # first). Once a signal fires, entry timing is a manual 1-hour-chart
+    # step -- this scanner never fetches or computes on 1-hour data.
+    st.markdown('<div class="psx-section-eyebrow">MARKET BEHAVIOUR</div>'
+                '<div class="psx-section-title">📊 Wyckoff Institutional Accumulation</div>',
+                unsafe_allow_html=True)
+    st.info("💡 This scanner flags WATCH/READY/EXTREME setups using Daily + 4-Hour data. Once "
+            "flagged, open the 1-Hour chart manually to find the exact entry (Spring, absorption "
+            "spikes, etc.) -- this scanner intentionally never fetches or computes on 1-hour data.")
+    _wyckoff_scan = _get("/patterns/wyckoff-scan", **_pat_refresh_params)
+    if _scan_status_banner(_wyckoff_scan, "Wyckoff Accumulation"):
+        _wyckoff_hits = _wyckoff_scan.get("hits") or []
+        _wyckoff_date = _wyckoff_scan.get("date")
+        if not _wyckoff_hits:
+            st.info(_wyckoff_scan.get("reason") or "No WATCH/READY/EXTREME setups in the most "
+                    "recent completed daily batch.")
+        else:
+            st.caption(f"Last completed scan: {_wyckoff_date or '—'} · {_wyckoff_scan.get('scanned', 0)} "
+                       "symbol(s) scanned, ranked by accumulation score (highest priority first). "
+                       "A strength score, not a probability or profitability claim.")
+            names_wyckoff = _company_names()
+            _signal_badge = {"EXTREME": "🔴 EXTREME", "READY": "🟡 READY", "WATCH": "🟢 WATCH"}
+            _wyckoff_rows = [{
+                "symbol": h["symbol"], "company": names_wyckoff.get(h["symbol"], ""),
+                "signal": _signal_badge.get(h.get("signal_type"), h.get("signal_type")),
+                "score": h.get("accumulation_score"),
+                "bb": h.get("bb_width_score"), "supply": h.get("dry_supply_score"),
+                "absorb": h.get("absorption_score"), "obv": h.get("obv_divergence_score"),
+                "price": h.get("current_price"),
+            } for h in _wyckoff_hits]
+            _wyckoffdf = pd.DataFrame(_wyckoff_rows)
+
+            def _wyckoff_row_color(row):
+                color = {"🔴 EXTREME": "rgba(220, 53, 69, 0.22)", "🟡 READY": "rgba(255, 193, 7, 0.18)",
+                         "🟢 WATCH": "rgba(40, 167, 69, 0.15)"}.get(row["signal"], "")
+                return [f"background-color: {color}"] * len(row) if color else [""] * len(row)
+
+            _render_pattern_table(_wyckoffdf, _wyckoff_row_color, "wyckoff_scan_table", {
+                "symbol": "Symbol", "company": "Company", "signal": "Signal",
+                "score": st.column_config.NumberColumn("Score", format="%d"),
+                "bb": st.column_config.NumberColumn("BB", format="%d"),
+                "supply": st.column_config.NumberColumn("Supply", format="%d"),
+                "absorb": st.column_config.NumberColumn("Absorb", format="%d"),
+                "obv": st.column_config.NumberColumn("OBV", format="%d"),
+                "price": st.column_config.NumberColumn("Price", format="%.2f"),
+            })
+            with st.expander("Component Details"):
+                for h in _wyckoff_hits:
+                    try:
+                        components = json.loads(h.get("components") or "{}")
+                    except (TypeError, ValueError):
+                        components = {}
+                    st.write(f"**{h['symbol']}** | Score: {h.get('accumulation_score')} | "
+                             f"Signal: {h.get('signal_type')}")
+                    st.json(components)
+        with st.expander("📖 View Rules & Metrics for Wyckoff Accumulation"):
+            st.caption("Detects consolidation (tight 20-day range, by % or ATR) + supply exhaustion "
+                       "(volume drying up) + absorption (high volume, tight spread) + OBV/price "
+                       "divergence on daily bars, plus Bollinger Band compression on 4-hour bars "
+                       "resampled into the daily score, gated by a daily MACD confirmation. "
+                       "WATCH = score 60-69, READY = 70-84, EXTREME = 85+. Runs once per day after "
+                       "market close, right after the FIRE Engine batch -- see "
+                       "fire_engine/run_wyckoff_batch.py.")
 
     st.divider()
 

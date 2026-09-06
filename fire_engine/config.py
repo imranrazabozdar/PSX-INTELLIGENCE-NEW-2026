@@ -12,7 +12,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent / "config" / "fire_config.yaml"
 _REQUIRED_TOP_LEVEL_KEYS = [
     "database", "mfi", "volume", "compression", "absorption",
     "support_resistance", "pre_fire", "fire", "fire_scoring", "session",
-    "stocks", "exclusion", "data_source", "scheduling", "dashboard",
+    "stocks", "exclusion", "data_source", "scheduling", "dashboard", "wyckoff",
 ]
 
 
@@ -32,5 +32,13 @@ def load_config(path=None) -> dict:
     total = sum(weights.values())
     if total != 100:
         raise ValueError(f"fire_scoring.weights must sum to 100, got {total}: {weights}")
+
+    wcfg = cfg["wyckoff"]
+    wyckoff_points = (
+        wcfg["bb_width_points"] + wcfg["supply_exhaustion_points"]
+        + wcfg["absorption_points"] + wcfg["obv_divergence_points"]
+    )
+    if wyckoff_points != 100:
+        raise ValueError(f"wyckoff's *_points must sum to 100, got {wyckoff_points}")
 
     return cfg

@@ -1,9 +1,13 @@
-# fire_engine/'s actual runtime dependencies (verified: no module in this
-# package imports pandas/numpy/streamlit/plotly/apscheduler/playwright --
-# the scraper hits chart.scstrade.com's plain JSON API with `requests`,
-# storage is stdlib sqlite3, everything else is pure Python).
+# fire_engine/'s runtime dependencies. The original FIRE Engine (Phases
+# 1-17) is pure stdlib + requests -- no pandas/numpy anywhere in it. The
+# Wyckoff detector (Phases 18-22) is the first module in this package that
+# needs them: rolling OBV/MACD/Bollinger/ATR and the daily+4h resample-
+# and-merge alignment step are all pandas-native operations, and
+# reimplementing them by hand would just be a worse pandas.
 pyyaml>=6.0
 requests>=2.31.0
+pandas>=2.0.0
+numpy>=1.24.0
 
 # Testing only
 pytest>=7.4.0

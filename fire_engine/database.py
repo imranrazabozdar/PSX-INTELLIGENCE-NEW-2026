@@ -116,6 +116,80 @@ CREATE INDEX IF NOT EXISTS idx_candles_session ON market_candles(session_id);
 CREATE INDEX IF NOT EXISTS idx_fire_events_symbol_date ON fire_events(symbol, event_date);
 CREATE INDEX IF NOT EXISTS idx_fire_events_type ON fire_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_fire_events_score ON fire_events(fire_score DESC);
+
+-- Wyckoff Institutional Stealth Accumulation Detector (Phases 18-22).
+-- 4-hour OHLCV cache -- the one genuinely new data pipeline this adds
+-- (daily bars are read from this project's own existing daily_ohlc
+-- table instead of being fetched again; see wyckoff_data_fetcher.py's
+-- module docstring for why).
+CREATE TABLE IF NOT EXISTS ohlcv_4h (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    datetime DATETIME NOT NULL,
+    date DATE NOT NULL,
+    time_of_day TEXT,
+    open DECIMAL(10,4),
+    high DECIMAL(10,4),
+    low DECIMAL(10,4),
+    close DECIMAL(10,4),
+    volume BIGINT,
+    data_source TEXT DEFAULT 'SCS',
+    collection_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol, datetime),
+    FOREIGN KEY (symbol) REFERENCES stocks(symbol)
+);
+
+CREATE TABLE IF NOT EXISTS wyckoff_scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date DATE NOT NULL,
+    scan_time TIME NOT NULL,
+    stocks_scanned INTEGER,
+    stocks_with_signal INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(scan_date)
+);
+
+CREATE TABLE IF NOT EXISTS wyckoff_accumulation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    scan_date DATE NOT NULL,
+
+    accumulation_score INTEGER,
+    signal_type TEXT,
+
+    bb_width_score INTEGER,
+    dry_supply_score INTEGER,
+    absorption_score INTEGER,
+    obv_divergence_score INTEGER,
+
+    is_consolidating BOOLEAN,
+    macd_confirmation BOOLEAN,
+
+    bb_width DECIMAL(6,4),
+    obv_slope DECIMAL(6,3),
+    price_slope DECIMAL(6,3),
+    consolidation_pct DECIMAL(6,4),
+    consolidation_atr DECIMAL(6,2),
+    spread_atr_ratio DECIMAL(6,2),
+    co_atr_ratio DECIMAL(6,2),
+    volume_sma_20 BIGINT,
+    atr_14 DECIMAL(10,4),
+    current_price DECIMAL(10,4),
+    current_volume BIGINT,
+
+    components TEXT,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (scan_id) REFERENCES wyckoff_scans(id),
+    FOREIGN KEY (symbol) REFERENCES stocks(symbol),
+    UNIQUE(scan_date, symbol)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wyckoff_score ON wyckoff_accumulation(accumulation_score DESC);
+CREATE INDEX IF NOT EXISTS idx_wyckoff_signal ON wyckoff_accumulation(signal_type);
+CREATE INDEX IF NOT EXISTS idx_wyckoff_date ON wyckoff_accumulation(scan_date DESC);
+CREATE INDEX IF NOT EXISTS idx_ohlcv_4h_symbol_dt ON ohlcv_4h(symbol, datetime);
 """
 # NOTE: the spec's idx_candles_date_range used a `date('now', '-90 days')`
 # partial-index predicate. SQLite partial indexes are static at creation

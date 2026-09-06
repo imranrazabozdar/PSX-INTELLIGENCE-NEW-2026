@@ -56,3 +56,17 @@ jobs:
           else
             python -m fire_engine.run_daily_batch
           fi
+
+      - name: 📊 Run Wyckoff Institutional Accumulation scan
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        # Runs after the FIRE Engine batch above, against the same
+        # universe/exclusion filter and the same shared Turso DB.
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python -m fire_engine.run_wyckoff_batch --date "${{ github.event.inputs.date }}"
+          else
+            python -m fire_engine.run_wyckoff_batch
+          fi
