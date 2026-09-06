@@ -120,7 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_fire_events_score ON fire_events(fire_score DESC)
 -- Wyckoff Institutional Stealth Accumulation Detector (Phases 18-22).
 -- 4-hour OHLCV cache -- the one genuinely new data pipeline this adds
 -- (daily bars are read from this project's own existing daily_ohlc
--- table instead of being fetched again; see wyckoff_data_fetcher.py's
+-- table instead of being fetched again -- see wyckoff_data_fetcher.py's
 -- module docstring for why).
 CREATE TABLE IF NOT EXISTS ohlcv_4h (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
