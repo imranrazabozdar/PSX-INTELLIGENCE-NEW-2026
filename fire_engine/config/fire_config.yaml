@@ -77,12 +77,25 @@ session:
   expected_candles_per_day: 480
 
 stocks:
-  # Full watchlist (backend/app.py's WATCHLIST_SYMBOLS, 89 symbols) --
-  # not a hand-picked subset. exclusion.enabled below still removes any
-  # of these that also appear in the excluded-sectors list (currently
-  # just YOUW, per that list's own 244-of-519 gap -- see
-  # fire_engine/excluded_sectors_config.py's docstring) at batch-run time,
-  # so this list intentionally is NOT pre-filtered here.
+  # Originally backend/app.py's WATCHLIST_SYMBOLS (89 symbols) verbatim --
+  # this list has since diverged from that one on purpose: the 61 symbols
+  # appended below (STL through GWLC) were added to broaden FIRE+Wyckoff's
+  # once-daily batch scan only, and were deliberately NOT added to
+  # WATCHLIST_SYMBOLS, which is a separate, continuously-polled intraday
+  # DSS list under its own reduced-data-usage budget (see backend/app.py's
+  # own comment above that list). Do not resync the two.
+  #
+  # 61, not 89: the requested 89-symbol addition list actually contained
+  # 93 entries once deduplicated, and 32 of those were already in the
+  # original 89 (e.g. ABL, PPL, OGDC, MARI) -- so only the 61 genuinely
+  # new symbols below were appended. Total universe: 89 + 61 = 150, not
+  # the 178 a naive 89+89 add would imply.
+  #
+  # exclusion.enabled below still removes any of these that also appear
+  # in the excluded-sectors list (currently just YOUW, per that list's
+  # own 244-of-519 gap -- see fire_engine/excluded_sectors_config.py's
+  # docstring) at batch-run time, so this list intentionally is NOT
+  # pre-filtered here.
   universe:
     - CNERGY
     - PRL
@@ -173,6 +186,67 @@ stocks:
     - PTC
     - QTECH
     - ITANZ
+    - ASL
+    - FPJM
+    - TPL
+    - KOSM
+    - DCL
+    - ZUMA
+    - DFML
+    - ASC
+    - FCSC
+    - LSECL
+    - DSIL
+    - TPLT
+    - NETSOL
+    - KAPCO
+    - AHCL
+    - ENGROH
+    - CSIL
+    - STPL
+    - ILP
+    - TREET
+    - EPCL
+    - DSL
+    - MEBL
+    - IMS
+    - PSX
+    - GATM
+    - JVDC
+    - AMTEX
+    - ISL
+    - GHGL
+    - POL
+    - NATF
+    - DEL
+    - "786"
+    - DADX
+    - SINDM
+    - PNSC
+    - HIFA
+    - ALAC
+    - HICL
+    - FCEPL
+    - BBFL
+    - TSBL
+    - PIAHCLA
+    - LSEFSL
+    - PASL
+    - AKDSL
+    - SPAC1
+    - SPAC2
+    - TRSM
+    - FTSM
+    - FFLM
+    - FANM
+    - UCAPM
+    - PIM
+    - FEM
+    - BFMOD
+    - OBOY
+    - WAFI
+    - APL
+    - GWLC
 
 exclusion:
   enabled: true

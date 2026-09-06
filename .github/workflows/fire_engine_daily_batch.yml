@@ -36,13 +36,17 @@ jobs:
   fire_batch:
     if: ${{ github.event.inputs.backfill_4h_only != 'true' }}
     runs-on: ubuntu-latest
-    # 60, not 30: this job now runs FIRE then Wyckoff back to back, sharing
+    # 120, not 60: this job now runs FIRE then Wyckoff back to back, sharing
     # one job-level timeout. The FIRE step alone measured ~21 minutes on
-    # its own real production run (2026-09-04, run 34031050189) after its
-    # Turso round-trip fixes; the Wyckoff step adds its own daily+4h fetch
-    # and detection pass on top of that in the same job, so 30 was already
-    # too tight for both steps combined.
-    timeout-minutes: 60
+    # its own real production run (2026-09-04, run 34031050189) against the
+    # 89-symbol universe; the Wyckoff step adds its own daily+4h fetch and
+    # detection pass on top of that in the same job, so 30 was already too
+    # tight for both steps combined even before this. The universe grew to
+    # 150 symbols (+69%) on 2026-09-06, so 60 no longer has enough headroom
+    # either -- 120 keeps a comfortable margin without having measured the
+    # new combined runtime yet; tighten it back down once a real run reports
+    # actual timing at 150 symbols.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout code
