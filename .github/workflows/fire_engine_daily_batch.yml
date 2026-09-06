@@ -28,13 +28,17 @@ on:
         description: 'backfill_4h_only: YYYY-MM-DD, most recent date to cover'
         required: false
         default: ''
+      check_symbols:
+        description: 'Comma-separated symbols to check against PSX live /symbols directory (non-empty triggers it, skips other jobs)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   fire_batch:
-    if: ${{ github.event.inputs.backfill_4h_only != 'true' }}
+    if: ${{ github.event.inputs.backfill_4h_only != 'true' && github.event.inputs.check_symbols == '' }}
     runs-on: ubuntu-latest
     # 60, not 30: this job now runs FIRE then Wyckoff back to back, sharing
     # one job-level timeout. The FIRE step alone measured ~21 minutes on
@@ -135,3 +139,31 @@ jobs:
           python -m fire_engine.backfill_4h \
             --start-date "${{ github.event.inputs.backfill_start_date }}" \
             --end-date "${{ github.event.inputs.backfill_end_date }}"
+
+  check_symbols:
+    # One-off diagnostic: is a symbol actually in PSX's live /symbols
+    # equity directory right now? Read-only, no Turso credentials needed.
+    # Temporary -- remove this job once its specific question is answered
+    # rather than leaving it as permanent production surface (same
+    # judgment call as the wyckoff_preview job removed earlier).
+    if: ${{ github.event.inputs.check_symbols != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: 🔎 Check symbols against PSX live directory
+        run: |
+          python -m fire_engine.check_symbols_live --symbols "${{ github.event.inputs.check_symbols }}"
