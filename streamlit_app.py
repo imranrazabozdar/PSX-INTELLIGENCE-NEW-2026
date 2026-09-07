@@ -39,7 +39,7 @@ TIMEOUT = 45  # generous margin for cross-region latency to Turso (Streamlit
 _EMBED_BACKEND = os.getenv("PSX_EMBED_BACKEND", "").lower() in ("1", "true", "yes")
 _BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
 
-_BACKEND_VERSION = "v6"  # bump this to force a full backend restart on deploy
+_BACKEND_VERSION = "v7"  # bumped for the fire-scan/wyckoff-scan 24h->30min cache-interval fix
 
 
 @st.cache_resource
