@@ -2,12 +2,16 @@ name: PSX FIRE Engine daily batch (after market close)
 
 on:
   schedule:
-    # Mon-Thu: 3:40 PM PKT (10:40 UTC) -- 5 min after refresh_chart_patterns.yml's
-    # own post-close run, so this reads that run's freshly-refreshed daily_ohlc
-    # if fire_engine's indicator layer ever needs it (it doesn't today, but keeps
-    # the two jobs from racing on the same Turso DB at the exact same minute).
-    - cron: '40 10 * * 1-4'
-    # Fri: 4:40 PM PKT (11:40 UTC)
+    # Mon-Thu: 4:40 PM PKT (11:40 UTC) -- was '40 10 * * 1-4' (3:40 PM PKT),
+    # which fired 50 minutes BEFORE the 4:30 PM PKT close and would scan a
+    # still-forming session instead of the finalized end-of-day one. Fixed
+    # to match Friday's already-correct post-close timing below. (The old
+    # comment's claim of "5 min after refresh_chart_patterns.yml" was itself
+    # wrong on the same reasoning -- that workflow's Mon-Thu cron, '35 10 * *
+    # 1-4', has the identical before-close problem and hasn't been changed
+    # here; flagged separately, not fixed as part of this change.)
+    - cron: '40 11 * * 1-4'
+    # Fri: 4:40 PM PKT (11:40 UTC) -- unchanged, already correct.
     - cron: '40 11 * * 5'
   # Manual trigger for testing/backfill
   workflow_dispatch:
