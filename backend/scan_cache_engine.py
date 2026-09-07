@@ -9,6 +9,12 @@ and not gated behind a manual "enter admin token" button for routine use.
 Different analyses genuinely need different refresh cadences:
   - dss_scan / alerts: depend partly on TODAY's live volume/price, refreshed
     every SCAN_REFRESH_INTERVAL (default 30 min).
+  - fire_scan / wyckoff_scan: also SCAN_REFRESH_INTERVAL, even though each is
+    a cheap SELECT against fire_events/wyckoff_accumulation rather than a
+    live computation -- they were wrongly wired to HEAVY_REFRESH_INTERVAL
+    until 2026-09-07, which meant a fresh fire_engine/run_daily_batch.py or
+    run_wyckoff_batch.py run could sit unreflected in the Patterns tab for
+    up to 24h even though the underlying read is instant.
   - backtest_run / walkforward / regime_split / edge_discovery: computed from
     YEARS of daily bars that don't shift within a day — refreshed on
     HEAVY_REFRESH_INTERVAL (default once per day).

@@ -3508,7 +3508,7 @@ def patterns_fire_scan(request:Request, force:bool=False):
     fire_engine/run_daily_batch.py ran, not a live per-request scan."""
     cached = _scan_cache.latest("fire_scan")
     result, err = _serve_cached_and_refresh("fire_scan", _run_fire_scan, cached,
-                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+                                             SCAN_REFRESH_INTERVAL, force, lambda: _require_admin(request))
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("fire_scan")
@@ -3560,7 +3560,7 @@ def patterns_wyckoff_scan(request:Request, force:bool=False):
     or computes on 1-hour data."""
     cached = _scan_cache.latest("wyckoff_scan")
     result, err = _serve_cached_and_refresh("wyckoff_scan", _run_wyckoff_scan, cached,
-                                             HEAVY_REFRESH_INTERVAL, force, lambda: _require_admin(request))
+                                             SCAN_REFRESH_INTERVAL, force, lambda: _require_admin(request))
     if err: return err
     out = dict(result)
     out["_background_refresh_running"] = _bg_job_running("wyckoff_scan")
