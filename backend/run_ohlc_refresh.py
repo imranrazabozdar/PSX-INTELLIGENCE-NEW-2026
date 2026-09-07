@@ -6,8 +6,19 @@ Daily OHLC data refresh — fetches latest daily bars from PSX Data Portal
 This runs in GitHub Actions (which CAN reach dps.psx.com.pk, unlike
 Streamlit Cloud whose datacenter IPs are blocked by PSX).
 
-Covers the WHOLE MARKET: dynamically fetches the full equity list from
-PSX's /symbols directory (~550 equities, excluding ETFs and debt).
+Scoped to the FIRE Engine + Wyckoff universe (fire_engine/config/
+fire_config.yaml's stocks.universe, ~150 symbols) -- NOT the whole PSX
+market. This used to dynamically fetch PSX's full ~750-symbol equity
+list to also feed the separate whole-market pattern-scan/backtest
+features (bullish engulfing, MHarris, MACD+EMA200, etc.), but that meant
+a symbol newly added to the FIRE/Wyckoff universe could sit behind
+hundreds of alphabetically-earlier symbols nobody here needed, taking
+days to get its initial backfill purely by chance of its ticker's first
+letter -- and the other ~600 symbols were never used by anything this
+project's user actually wanted, just data overload. Restricted to this
+universe by explicit request (2026-09-07): the whole-market pattern-scan
+features will stop getting new data for every symbol outside this list;
+their results for those symbols will go stale rather than update.
 
 For initial backfill: fetches full history (up to 5 years) for symbols
 that have no data yet. For subsequent runs: fetches only the last 5 days
@@ -19,9 +30,10 @@ import time
 import logging
 from datetime import datetime, timedelta, timezone
 
-import requests
 import sys
 from pathlib import Path
+
+import yaml
 
 _BACKEND_DIR = str(Path(__file__).parent)
 if _BACKEND_DIR not in sys.path:
@@ -36,45 +48,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-FALLBACK_SYMBOLS = [
-    'CNERGY', 'PRL', 'BOP', 'FNEL', 'KEL', 'SSGC', 'PACE', 'WAVESAPP', 'NBP', 'PIBTL',
-    'FCL', 'PPL', 'BLUEX', 'AKBL', 'PREMA', 'BECO', 'BAFL', 'LOTCHEM', 'NRL', 'SYS',
-    'HUBC', 'AICL', 'THCCL', 'FCCL', 'HASCOL', 'ABL', 'PSO', 'HBL', 'OGDC', 'AVN',
-    'SLGL', 'SPSL', 'POWER', 'UBL', 'TRG', 'TOMCL', 'AIRLINK', 'FFL', 'SEARL', 'CLOV',
-    'SNBL', 'SNGP', 'MDTL', 'BML', 'BNL', 'BAHL', 'SYM', 'WASL', 'CPHL', 'FFC',
-    'MARI', 'MUGHAL', 'BGL', 'GAL', 'GDL', 'YOUW', 'ZAL', 'AGP', 'LOADS', 'KOHC',
-    'SAZEW', 'WAHDAT', 'STCL', 'GLAXO', 'TGL', 'MCB', 'JSBL', 'IMAGE', 'SCBPL', 'BOK',
-    'AGTL', 'ECPL', 'BIPL', 'HMB', 'FABL', 'SBL', 'ASTL', 'EFERT', 'DGKC', 'LUCK',
-    'TBL', 'STL', 'STLR', 'MLCF', 'CHCC', 'WTL', 'PTC', 'QTECH', 'ITANZ',
-]
+_FIRE_CONFIG_PATH = Path(__file__).parent.parent / "fire_engine" / "config" / "fire_config.yaml"
 
 
-def fetch_all_equity_symbols() -> list[str]:
-    """Fetch the full equity list from PSX's /symbols directory.
-    Filters out ETFs and debt instruments. Falls back to the 89-symbol
-    watchlist if the PSX endpoint is unreachable."""
-    try:
-        r = requests.get(
-            "https://dps.psx.com.pk/symbols",
-            headers={"User-Agent": "PSX-Intelligence-V2/2.0 private-research"},
-            timeout=15,
-        )
-        r.raise_for_status()
-        rows = r.json()
-        symbols = []
-        for x in rows:
-            sym = (x.get("symbol") or "").upper()
-            if not sym:
-                continue
-            if x.get("isETF") or x.get("isDebt"):
-                continue
-            symbols.append(sym)
-        logger.info(f"Fetched {len(symbols)} equity symbols from PSX /symbols directory")
-        return sorted(set(symbols))
-    except Exception as e:
-        logger.warning(f"Could not fetch symbol list from PSX: {e}")
-        logger.warning(f"Falling back to {len(FALLBACK_SYMBOLS)} watchlist symbols")
-        return FALLBACK_SYMBOLS
+def load_universe_symbols() -> list[str]:
+    """The FIRE Engine + Wyckoff universe (fire_engine/config/fire_config.yaml's
+    stocks.universe) -- the only symbols this script now fetches. Raises if
+    the config can't be read: unlike the old whole-market fetch (a network
+    call with a legitimate fallback for transient PSX outages), a missing or
+    malformed local config file is a real bug, not a transient condition, and
+    silently falling back to some other hardcoded list would just reintroduce
+    the same "scanning symbols nobody asked for" problem this change removed."""
+    with open(_FIRE_CONFIG_PATH) as f:
+        cfg = yaml.safe_load(f)
+    return sorted({str(s).upper() for s in cfg["stocks"]["universe"]})
 
 
 def ensure_ohlc_table(conn):
@@ -109,21 +96,36 @@ def main():
     conn = turso_db.get_connection()
     ensure_ohlc_table(conn)
 
-    count_row = conn.execute("SELECT COUNT(DISTINCT symbol) as cnt FROM daily_ohlc").fetchone()
-    existing_count = count_row["cnt"] if isinstance(count_row, dict) else count_row[0]
-    logger.info(f"Existing symbols in daily_ohlc: {existing_count}")
+    try:
+        symbols = load_universe_symbols()
+    except Exception as e:
+        logger.error(f"Could not load FIRE/Wyckoff universe from {_FIRE_CONFIG_PATH}: "
+                     f"{type(e).__name__}: {e}")
+        return 1
 
-    symbols = fetch_all_equity_symbols()
-    logger.info(f"Will process {len(symbols)} symbols")
+    def _count_universe_coverage():
+        placeholders = ",".join("?" for _ in symbols)
+        row = conn.execute(
+            f"SELECT COUNT(DISTINCT symbol) as cnt FROM daily_ohlc WHERE symbol IN ({placeholders})",
+            tuple(symbols),
+        ).fetchone()
+        return row["cnt"] if isinstance(row, dict) else row[0]
 
-    # A full-history initial backfill over the whole PSX market (~750
-    # symbols x ~20-25s/symbol) takes hours -- far longer than any single
-    # CI run's timeout. Rather than let the job get hard-cancelled mid-symbol
-    # (which starves every LATER workflow step -- pattern scans, backtests --
-    # of a turn, every single run, forever), this script self-stops within a
-    # time budget and exits cleanly so the rest of the workflow always runs.
-    # Each run persists what it fetched (INSERT OR IGNORE) and the next run
-    # resumes from get_last_stored_date(), so coverage grows run over run.
+    logger.info(f"Existing universe symbols already in daily_ohlc: {_count_universe_coverage()}/{len(symbols)}")
+    logger.info(f"Will process {len(symbols)} symbols (FIRE/Wyckoff universe only -- "
+                f"daily_ohlc may still hold older, no-longer-refreshed rows for other symbols)")
+
+    # Even scoped to ~150 symbols, an all-new universe's first-ever backfill
+    # (5 years of history each, ~20-25s/symbol once the daily_ohlc table is
+    # empty for them) can run past a single CI job's turn. Rather than let
+    # the job get hard-cancelled mid-symbol (which starves every LATER
+    # workflow step -- pattern scans, backtests -- of a turn, every single
+    # run, forever), this script self-stops within a time budget and exits
+    # cleanly so the rest of the workflow always runs. Each run persists what
+    # it fetched (INSERT OR IGNORE) and the next run resumes from
+    # get_last_stored_date(), so coverage grows run over run. In steady
+    # state (all 150 already backfilled), a run is just ~150 quick
+    # last-day refreshes -- well under the budget.
     run_start = time.monotonic()
 
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -200,11 +202,7 @@ def main():
             failed += 1
             time.sleep(0.5)
 
-    final_count = conn.execute("SELECT COUNT(DISTINCT symbol) as cnt FROM daily_ohlc").fetchone()
-    total_symbols = final_count["cnt"] if isinstance(final_count, dict) else final_count[0]
-
-    total_rows = conn.execute("SELECT COUNT(*) as cnt FROM daily_ohlc").fetchone()
-    total = total_rows["cnt"] if isinstance(total_rows, dict) else total_rows[0]
+    final_universe_count = _count_universe_coverage()
 
     print("")
     logger.info(f"OHLC refresh {'stopped at time budget' if budget_exhausted else 'complete'}!")
@@ -212,11 +210,10 @@ def main():
     logger.info(f"  Refreshed: {refreshed}")
     logger.info(f"  Skipped (up to date): {skipped}")
     logger.info(f"  Failed/no data: {failed}")
-    logger.info(f"  Total symbols in DB: {total_symbols} / {len(symbols)} target")
-    logger.info(f"  Total rows in DB: {total}")
+    logger.info(f"  Universe symbols with data in DB: {final_universe_count} / {len(symbols)} target")
     if budget_exhausted:
-        logger.info(f"  {len(symbols) - total_symbols} symbols still need their initial backfill "
-                    f"— will continue on the next scheduled run.")
+        logger.info(f"  {len(symbols) - final_universe_count} universe symbols still need their "
+                    f"initial backfill — will continue on the next scheduled run.")
 
     return 0
 
