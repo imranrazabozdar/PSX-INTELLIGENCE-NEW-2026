@@ -315,29 +315,51 @@ def run_backtest(universe):
         for name, sigs in b.items():
             all_baseline_signals[name].extend(sigs)
 
+    # Collect every horizon's rows first, then send each table's inserts as
+    # ONE batch_query call instead of one round trip per (pattern, horizon)
+    # or (baseline, horizon) pair -- 7 horizons x (~20-30 patterns + 4
+    # baselines) was ~150-200 individual INSERT round trips against Turso
+    # per run. run_id has to be known first (autoincrement lastrowid), so
+    # that one insert stays solo.
+    pattern_rows = []
+    baseline_rows = []
+    pattern_names = set()
+    for h in HORIZONS:
+        pat_stats = aggregate_patterns(all_pattern_signals, h)
+        for pat, st in pat_stats.items():
+            pattern_names.add(pat)
+            pattern_rows.append((pat, h, st["n"], st["win_rate"], st["avg_return"], st["median_return"],
+                                  st["stdev"], st["avg_win"], st["avg_loss"], st.get("mfe"), st.get("mae"),
+                                  st["expectancy"], int(st["low_sample"])))
+        base_stats = aggregate_baselines(all_baseline_signals, h)
+        for name, st in base_stats.items():
+            baseline_rows.append((name, h, st["n"], st["win_rate"], st["avg_return"], st["median_return"],
+                                   st["stdev"], st["expectancy"], int(st["low_sample"])))
+
     with _conn() as c:
         cur = c.execute("INSERT INTO backtest_runs(run_at, universe_symbols, universe_bars) VALUES(?,?,?)",
                          (datetime.now(timezone.utc).isoformat(), len(universe), total_bars))
         run_id = cur.lastrowid
-        pattern_names = set()
-        for h in HORIZONS:
-            pat_stats = aggregate_patterns(all_pattern_signals, h)
-            for pat, st in pat_stats.items():
-                pattern_names.add(pat)
-                c.execute("""INSERT INTO backtest_pattern_stats
-                    (run_id,pattern,horizon,n,win_rate,avg_return,median_return,stdev,avg_win,avg_loss,mfe,mae,expectancy,low_sample)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (run_id, pat, h, st["n"], st["win_rate"], st["avg_return"], st["median_return"],
-                     st["stdev"], st["avg_win"], st["avg_loss"], st.get("mfe"), st.get("mae"),
-                     st["expectancy"], int(st["low_sample"])))
-            base_stats = aggregate_baselines(all_baseline_signals, h)
-            for name, st in base_stats.items():
-                c.execute("""INSERT INTO backtest_baseline_stats
-                    (run_id,baseline,horizon,n,win_rate,avg_return,median_return,stdev,expectancy,low_sample)
-                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (run_id, name, h, st["n"], st["win_rate"], st["avg_return"], st["median_return"],
-                     st["stdev"], st["expectancy"], int(st["low_sample"])))
-        c.commit()
+
+        pattern_sql = """INSERT INTO backtest_pattern_stats
+            (run_id,pattern,horizon,n,win_rate,avg_return,median_return,stdev,avg_win,avg_loss,mfe,mae,expectancy,low_sample)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+        baseline_sql = """INSERT INTO backtest_baseline_stats
+            (run_id,baseline,horizon,n,win_rate,avg_return,median_return,stdev,expectancy,low_sample)
+            VALUES(?,?,?,?,?,?,?,?,?,?)"""
+        pattern_params = [(run_id, *r) for r in pattern_rows]
+        baseline_params = [(run_id, *r) for r in baseline_rows]
+
+        if turso_db.USING_TURSO and hasattr(c, 'batch_query'):
+            CHUNK = 100
+            for i in range(0, len(pattern_params), CHUNK):
+                c.batch_query([(pattern_sql, p) for p in pattern_params[i:i + CHUNK]])
+            for i in range(0, len(baseline_params), CHUNK):
+                c.batch_query([(baseline_sql, p) for p in baseline_params[i:i + CHUNK]])
+        else:
+            c.executemany(pattern_sql, pattern_params)
+            c.executemany(baseline_sql, baseline_params)
+            c.commit()
 
     return {"run_id": run_id, "universe_symbols": len(universe), "universe_bars": total_bars,
             "patterns_found": sorted(pattern_names), "horizons": HORIZONS}

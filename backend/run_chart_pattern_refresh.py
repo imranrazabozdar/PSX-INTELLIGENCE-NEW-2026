@@ -29,7 +29,6 @@ local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
 """
 
 import json
-import sqlite3
 import time
 import pandas as pd
 from datetime import datetime, timezone
@@ -457,29 +456,28 @@ def save_to_chart_patterns_table(all_patterns: list):
     today = datetime.now(PSX_TZ).strftime('%Y-%m-%d')
     conn.execute("DELETE FROM chart_patterns WHERE DATE(signal_date) < ?", (today,))
 
-    stored = 0
-    for pattern in all_patterns:
-        try:
-            conn.execute("""
-                INSERT INTO chart_patterns
-                (symbol, pattern_type, signal_date, confidence_score, detected_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                pattern.get('symbol'),
-                pattern.get('pattern_type'),
-                pattern.get('signal_date'),
-                pattern.get('confidence_score'),
-                datetime.now(PSX_TZ).isoformat(),
-            ))
-            stored += 1
-        except (sqlite3.IntegrityError, Exception) as e:
-            if "UNIQUE" in str(e).upper() or "integrity" in str(e).lower():
-                pass
-            else:
-                logger.debug(f"Insert failed for {pattern.get('symbol')}: {e}")
-
-    conn.commit()
-    return stored
+    detected_at = datetime.now(PSX_TZ).isoformat()
+    sql = """INSERT OR IGNORE INTO chart_patterns
+             (symbol, pattern_type, signal_date, confidence_score, detected_at)
+             VALUES (?, ?, ?, ?, ?)"""
+    rows = [
+        (p.get('symbol'), p.get('pattern_type'), p.get('signal_date'), p.get('confidence_score'), detected_at)
+        for p in all_patterns
+    ]
+    # INSERT OR IGNORE (relying on the UNIQUE constraint to silently skip
+    # dupes) instead of a per-row try/except IntegrityError -- lets this
+    # batch over one HTTP pipeline call against Turso instead of one round
+    # trip per pattern. Return value is now "attempted" not "actually new
+    # rows" (dupes are silently skipped, not counted) -- not worth an extra
+    # round trip to count precisely for what's only used in a log line.
+    if turso_db.USING_TURSO and hasattr(conn, 'batch_query'):
+        CHUNK = 100
+        for i in range(0, len(rows), CHUNK):
+            conn.batch_query([(sql, r) for r in rows[i:i + CHUNK]])
+    else:
+        conn.executemany(sql, rows)
+        conn.commit()
+    return len(rows)
 
 
 # ---------------------------------------------------------------------------
