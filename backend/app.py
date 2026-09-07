@@ -405,8 +405,15 @@ def clean_symbol(raw):
     return sym.strip(), flags
 
 
-_MW_CACHE={"rows":None,"ts":0.0,"lock":None}
+_MW_CACHE={"rows":None,"ts":0.0,"lock":None,"last_failure_ts":0.0}
 MARKET_TTL=int(os.getenv("PSX_MARKET_TTL","60"))   # seconds
+# Once a full 3-attempt retry burst fails (portal confirmed down, not just one
+# flaky response), don't burn another 3 attempts x up to 20s each on every
+# subsequent caller until this cooldown passes -- during an outage,
+# _run_watchlist_scan() alone calls market_watch() once per WATCHLIST_SYMBOLS
+# entry (89), which without this turns one bad tick into up to 267 blocking
+# fetch attempts against a confirmed-dead endpoint.
+MARKET_RETRY_COOLDOWN=int(os.getenv("PSX_MARKET_RETRY_COOLDOWN","120"))   # seconds
 
 # ============================================================================
 # QUICK WIN #1: Gzip Compression (added to app below)
@@ -772,6 +779,12 @@ def market_watch(force=False):
         now=_t.time()
         if not force and _MW_CACHE["rows"] is not None and (now-_MW_CACHE["ts"])<MARKET_TTL:
             return _MW_CACHE["rows"]
+        if not force and (now-_MW_CACHE["last_failure_ts"])<MARKET_RETRY_COOLDOWN:
+            # Portal confirmed down (a full 3-attempt burst failed) within the
+            # cooldown window -- skip straight to stale cache/empty instead of
+            # re-attempting. force=True (an explicit "I checked /market-status
+            # and want fresh data") still bypasses this.
+            return _MW_CACHE["rows"] if _MW_CACHE["rows"] is not None else []
         # PSX's portal 502s intermittently (observed directly, not hypothetical).
         # Every endpoint in this file — /market, /opportunities, /sectors,
         # /decision, /news-feed, /refresh-news — calls market_watch(), so an
@@ -789,6 +802,7 @@ def market_watch(force=False):
                 last_err=e
                 if attempt<2:
                     _t.sleep(1.5*(attempt+1))
+        _MW_CACHE["last_failure_ts"]=_t.time()
         print(f"[market_watch] PSX portal fetch failed after 3 attempts: {last_err}")
         if _MW_CACHE["rows"] is not None:
             # Serve the stale cache rather than crash every caller. Callers that
@@ -968,11 +982,14 @@ def market_status():
     endpoint reads from. If PSX's portal is 502ing, rows here go stale rather
     than every dependent endpoint failing — this tells you which is happening."""
     import time as _t
-    ts=_MW_CACHE["ts"]
+    ts=_MW_CACHE["ts"]; fail_ts=_MW_CACHE["last_failure_ts"]
+    in_cooldown = bool(fail_ts and (_t.time()-fail_ts)<MARKET_RETRY_COOLDOWN)
     return {"cached_rows":len(_MW_CACHE["rows"] or []),
             "age_seconds":round(_t.time()-ts,1) if ts else None,
             "ttl_seconds":MARKET_TTL,
-            "stale":bool(ts and (_t.time()-ts)>MARKET_TTL)}
+            "stale":bool(ts and (_t.time()-ts)>MARKET_TTL),
+            "portal_retry_cooldown_active":in_cooldown,
+            "cooldown_seconds_remaining":round(MARKET_RETRY_COOLDOWN-(_t.time()-fail_ts),1) if in_cooldown else 0}
 
 
 # ============================================================================
@@ -1702,13 +1719,33 @@ def intelligence(symbol:str):
     return {"symbol":symbol.upper(),"sessions":len(a),"atr14":atr14(a),
             "structure":structure_ohlc(a),"candles":candle_patterns(a),"wyckoff":wyckoff_ohlc(a)}
 
+_ohlc_coverage_cache = {"ts": 0.0, "rows": None}
+_OHLC_COVERAGE_CACHE_TTL = 300  # seconds
+
 @app.get("/ohlc-coverage")
 def ohlc_coverage():
+    """Per-symbol row-count/date-range summary of the whole daily_ohlc table.
+    Cached for _OHLC_COVERAGE_CACHE_TTL: daily_ohlc only changes once a day
+    (the GitHub Actions OHLC batch), but this function is called from 25+
+    call sites across this file, several inside per-symbol loops (dss() via
+    _rs_multi_for(), called once per WATCHLIST_SYMBOLS entry during a
+    watchlist scan) -- uncached, that meant re-aggregating the ENTIRE
+    daily_ohlc table (a real GROUP BY over the whole table, not an
+    index-satisfied lookup) once per symbol per pass, the same
+    recompute-the-identical-thing-per-symbol cost that ohlc_rows_multi()
+    was built to avoid for peer-history reads."""
+    now = time.time()
+    cached = _ohlc_coverage_cache["rows"]
+    if cached is not None and (now - _ohlc_coverage_cache["ts"]) < _OHLC_COVERAGE_CACHE_TTL:
+        return cached
     ensure_ohlc()
     with db() as c:
         rows=c.execute("""SELECT symbol,COUNT(*) sessions,MIN(trade_date) first_date,MAX(trade_date) last_date
                           FROM daily_ohlc GROUP BY symbol ORDER BY sessions DESC""").fetchall()
-    return [dict(x) for x in rows]
+    result = [dict(x) for x in rows]
+    _ohlc_coverage_cache["rows"] = result
+    _ohlc_coverage_cache["ts"] = now
+    return result
 
 @app.get("/data-quality/{symbol}")
 def data_quality(symbol:str):
