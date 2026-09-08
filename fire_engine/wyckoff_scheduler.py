@@ -13,9 +13,8 @@ wyckoff_accumulation in the same shared Turso DB backend/app.py already
 reads from, the same way fire_engine/scheduler.py's FIRE batch does --
 the next /patterns/wyckoff-scan request picks up new rows on its own.
 """
-from datetime import datetime, timedelta
-
 from fire_engine.exclusions import filter_excluded_stocks, load_exclusions_from_config
+from fire_engine.market_hours import _now_pkt
 from fire_engine.wyckoff_data_fetcher import fetch_daily_and_4h
 from fire_engine.wyckoff_detector import WyckoffDetector
 
@@ -26,7 +25,7 @@ def _get_or_create_scan(db, scan_date: str) -> int:
     db.conn.execute(
         "INSERT INTO wyckoff_scans (scan_date, scan_time, stocks_scanned, stocks_with_signal) "
         "VALUES (?, ?, 0, 0) ON CONFLICT(scan_date) DO UPDATE SET scan_time=excluded.scan_time",
-        (scan_date, datetime.now().strftime("%H:%M:%S")),
+        (scan_date, _now_pkt().strftime("%H:%M:%S")),
     )
     db.conn.commit()
     row = db.conn.execute("SELECT id FROM wyckoff_scans WHERE scan_date = ?", (scan_date,)).fetchone()
@@ -87,10 +86,15 @@ def _default_progress(msg):
 
 def run_daily_wyckoff_batch(db, cfg: dict, date: str = None, progress=_default_progress) -> dict:
     """Entry point: run every non-excluded configured symbol for `date`
-    (defaults to yesterday, matching fire_engine.scheduler's own default).
+    (defaults to TODAY in PKT, matching fire_engine.scheduler's own
+    default -- NOT yesterday; see that module's run_daily_batch()
+    docstring for why "yesterday" was a real production bug: this batch
+    runs after TODAY's own close specifically to capture that day's
+    session, so a scheduled run with no --date should process the day
+    it's actually running on, not the prior trading day).
     Returns {date, scan_id, results: [prepared dicts], stocks_with_signal}."""
     if date is None:
-        date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        date = _now_pkt().strftime("%Y-%m-%d")
 
     universe = cfg["stocks"]["universe"]
     if cfg["exclusion"]["enabled"]:

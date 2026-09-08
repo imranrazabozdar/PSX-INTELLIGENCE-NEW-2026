@@ -25,8 +25,6 @@ shared Turso connection backend/app.py already uses, the Patterns tab's
 /patterns/fire-scan endpoint sees this run's results immediately, no
 separate report file to distribute.
 """
-from datetime import datetime, timedelta
-
 from fire_engine.scraper import fetch_daily_ohlcv
 from fire_engine.validators import validate_trading_session
 from fire_engine.mfi_engine import calculate_mfi, calculate_mfi_derivatives
@@ -42,6 +40,7 @@ from fire_engine.support_resistance import calculate_support_resistance
 from fire_engine.events import log_fire_event
 from fire_engine.session_transition import detect_near_close_events, check_session_transitions
 from fire_engine.exclusions import filter_excluded_stocks, load_exclusions_from_config
+from fire_engine.market_hours import _now_pkt
 
 
 def run_symbol_for_date(db, symbol: str, date: str, cfg: dict) -> dict:
@@ -160,8 +159,19 @@ def _default_progress(msg):
 
 def run_daily_batch(db, cfg: dict, date: str = None, progress=_default_progress) -> dict:
     """Entry point: run every non-excluded configured symbol for `date`
-    (defaults to yesterday, since this always runs after that day's
-    close). Returns {date, results: [per-symbol summaries]}.
+    (defaults to TODAY in PKT, not yesterday: this job is scheduled to
+    run AFTER today's own market close specifically so it can capture
+    that same day's session -- see run_daily_batch.py's/market_hours.py's
+    own comments on why the cron fires post-close. A "yesterday" default
+    was a real bug found in production: every scheduled run (which never
+    passes --date) silently processed the PRIOR trading day's data
+    instead of the day it just closed on, one full day behind, forever
+    -- e.g. a run firing Tuesday post-close reported "Wyckoff batch for
+    2026-09-07" (Monday) instead of 2026-09-08 (Tuesday, the day it was
+    actually running on and had just captured the close of). Uses PKT,
+    not host/UTC time, since a GitHub Actions runner's "today" in UTC can
+    already be tomorrow relative to PKT depending on the hour.
+    Returns {date, results: [per-symbol summaries]}.
 
     `progress` is called once per symbol as it finishes (default: print),
     so an unattended run (GitHub Actions) shows live per-symbol progress
@@ -169,7 +179,7 @@ def run_daily_batch(db, cfg: dict, date: str = None, progress=_default_progress)
     difference between "the log went quiet for 20 minutes, is it stuck?"
     and being able to see exactly which symbol it's on."""
     if date is None:
-        date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        date = _now_pkt().strftime("%Y-%m-%d")
 
     universe = cfg["stocks"]["universe"]
     if cfg["exclusion"]["enabled"]:

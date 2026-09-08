@@ -32,6 +32,14 @@ MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE = 16, 30
 
 
 def _now_pkt() -> datetime:
+    """Leading underscore means "internal to fire_engine", not "internal to
+    this file" -- scheduler.py and wyckoff_scheduler.py both import this
+    directly for their own default-date resolution (today in PKT, not
+    host/UTC time), rather than duplicating the same fixed-offset
+    construction in three places. Kept as `_now_pkt` rather than renamed
+    public: the local parameter also called `now_pkt` in is_trading_day()/
+    is_market_open()/get_market_status() below would shadow a same-named
+    module-level function."""
     return datetime.now(timezone.utc).astimezone(_PKT)
 
 

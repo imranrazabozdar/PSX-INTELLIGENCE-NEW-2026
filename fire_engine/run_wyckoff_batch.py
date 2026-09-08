@@ -23,7 +23,7 @@ from fire_engine.wyckoff_scheduler import run_daily_wyckoff_batch
 
 def main():
     parser = argparse.ArgumentParser(description="Run the Wyckoff Accumulation daily batch.")
-    parser.add_argument("--date", default=None, help="YYYY-MM-DD (default: yesterday)")
+    parser.add_argument("--date", default=None, help="YYYY-MM-DD (default: today, PKT)")
     parser.add_argument("--local-db", default=None,
                          help="Path to a standalone sqlite file instead of the shared Turso DB "
                               "(development/testing only)")
