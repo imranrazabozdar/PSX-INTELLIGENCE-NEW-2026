@@ -2,17 +2,33 @@ name: PSX FIRE Engine daily batch (after market close)
 
 on:
   schedule:
-    # Mon-Thu: 4:40 PM PKT (11:40 UTC) -- was '40 10 * * 1-4' (3:40 PM PKT),
-    # which fired 50 minutes BEFORE the 4:30 PM PKT close and would scan a
-    # still-forming session instead of the finalized end-of-day one. Fixed
-    # to match Friday's already-correct post-close timing below. (The old
-    # comment's claim of "5 min after refresh_chart_patterns.yml" was itself
-    # wrong on the same reasoning -- that workflow's Mon-Thu cron, '35 10 * *
-    # 1-4', has the identical before-close problem and hasn't been changed
-    # here; flagged separately, not fixed as part of this change.)
-    - cron: '40 11 * * 1-4'
-    # Fri: 4:40 PM PKT (11:40 UTC) -- unchanged, already correct.
-    - cron: '40 11 * * 5'
+    # Mon-Fri: 4:30 PM PKT (11:30 UTC), right at PSX close -- explicit
+    # request (2026-09-09) to fire at the close time itself. Was two
+    # separate entries (Mon-Thu / Fri) both at 4:40 PM PKT; collapsed to
+    # one since they'd become identical in practice, and moved 10 min
+    # earlier per that request.
+    #
+    # IMPORTANT: this native GitHub Actions `schedule:` trigger is NOT
+    # the only thing that fires this workflow's data pipeline anymore.
+    # Real production evidence over three consecutive days (2026-09-07
+    # through 09) showed GitHub's own cron scheduler is unreliable for
+    # this repo: Monday it silently never fired at all; Tuesday it fired
+    # ~3h37m late (15:17 UTC instead of 11:40 UTC); Wednesday it still
+    # hadn't fired over an hour past its slot. Retiming the cron string
+    # alone does not fix that -- it's GitHub's own scheduler infrastructure
+    # being best-effort, not a bug in this file. The actual fix is a
+    # second, independent trigger path: a Claude Code Remote Routine
+    # (cron '26 11 * * 1-5', see this repo's operator session) that
+    # directly calls the workflow_dispatch API for this workflow (and
+    # refresh_chart_patterns.yml) every weekday -- the same dispatch
+    # mechanism used throughout this project's development, which has
+    # fired instantly and reliably every single time it's been used this
+    # week, unlike the native schedule. Running both is intentional
+    # redundancy: every step in this pipeline is idempotent (INSERT OR
+    # IGNORE / UPSERT throughout), so an occasional double-fire on a day
+    # the native cron also happens to work is harmless, just slightly
+    # wasteful of CI minutes.
+    - cron: '30 11 * * 1-5'
   # Manual trigger for testing/backfill
   workflow_dispatch:
     inputs:
