@@ -2,10 +2,24 @@ name: Refresh pattern scans (daily after market close)
 
 on:
   schedule:
-    # Mon-Thu: 3:35 PM PKT (10:35 UTC)
-    - cron: '35 10 * * 1-4'
-    # Fri: 4:35 PM PKT (11:35 UTC)
-    - cron: '35 11 * * 5'
+    # Mon-Fri: 4:30 PM PKT (11:30 UTC), at PSX close -- was two separate
+    # entries, Mon-Thu at 3:35 PM PKT (BEFORE the 4:30 PM close, the same
+    # before-close bug already fixed in fire_engine_daily_batch.yml's own
+    # cron) and Fri at 4:35 PM PKT. Unified to one Mon-Fri entry matching
+    # that workflow's new schedule (2026-09-09): this job and the FIRE/
+    # Wyckoff batch don't block or wait on each other (separate workflow
+    # files, separate jobs), so firing at the same moment is fine -- the
+    # old few-minutes stagger was a nice-to-have against simultaneous
+    # Turso access, not a functional requirement.
+    #
+    # Same reliability caveat as fire_engine_daily_batch.yml: GitHub's own
+    # schedule trigger has proven unreliable for this repo across three
+    # consecutive days (2026-09-07 to 09) -- see that workflow's comment.
+    # A Claude Code Remote Routine independently dispatches this workflow
+    # (cron '26 11 * * 1-5') as the actual guaranteed trigger; this native
+    # cron is a best-effort primary that sometimes beats it to the punch,
+    # not the only thing this pipeline depends on.
+    - cron: '30 11 * * 1-5'
   # Manual trigger for testing/backfill
   workflow_dispatch:
 
