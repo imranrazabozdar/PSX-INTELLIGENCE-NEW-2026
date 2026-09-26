@@ -319,6 +319,21 @@ def _make_connection():
     return conn
 
 
+class _LocalSqliteConnection(sqlite3.Connection):
+    """sqlite3.Connection subclass adding batch_query() for API parity with
+    _TursoConnection. Needed because USING_TURSO callers across app.py,
+    backtest_engine.py, scan_cache_engine.py etc. call conn.batch_query(...)
+    unconditionally whenever Turso creds are configured -- but get_connection()
+    can still hand back this local-fallback connection instead (Turso
+    unreachable, e.g. a free-tier quota block), and a plain sqlite3.Connection
+    has no such method. Without this, every one of those call sites raised
+    AttributeError on every request while stuck on the fallback, turning a
+    read-quota block into a total outage instead of a degraded one."""
+
+    def batch_query(self, queries):
+        return [self.execute(sql, params).fetchall() for sql, params in queries]
+
+
 def _make_local_sqlite_connection():
     # A single sqlite3.Connection object is NOT safe to call concurrently
     # from multiple threads -- check_same_thread=False only disables
@@ -331,7 +346,8 @@ def _make_local_sqlite_connection():
     # WAL mode is what actually makes concurrent access safe -- but only
     # across SEPARATE connections to the same file, one per thread, which
     # is what get_connection() now hands out.
-    conn = sqlite3.connect(LOCAL_REPLICA_PATH, timeout=30, check_same_thread=False)
+    conn = sqlite3.connect(LOCAL_REPLICA_PATH, timeout=30, check_same_thread=False,
+                            factory=_LocalSqliteConnection)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = _row_factory
     return conn
