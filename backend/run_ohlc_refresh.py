@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Daily OHLC data refresh — fetches latest daily bars from PSX Data Portal
-(dps.psx.com.pk) and stores them in the daily_ohlc table in Turso.
+Daily OHLC data refresh — fetches latest daily bars from SCS
+(chart.scstrade.com, see scs_daily.py) and stores them in the daily_ohlc
+table in Turso.
 
-This runs in GitHub Actions (which CAN reach dps.psx.com.pk, unlike
-Streamlit Cloud whose datacenter IPs are blocked by PSX).
+Source was PSX's own Data Portal (dps_scraper.py) until 2026-09-27, when
+dps.psx.com.pk/historical began returning 403 to every request from
+GitHub Actions. SCS is the same UDF feed fire_engine already uses for its
+1-minute and 4-hour bars. This runs in GitHub Actions (Streamlit Cloud's
+datacenter IPs can't reach PSX at all).
 
 Scoped to the FIRE Engine + Wyckoff universe (fire_engine/config/
 fire_config.yaml's stocks.universe, ~150 symbols) -- NOT the whole PSX
@@ -40,7 +44,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 import turso_db
-import dps_scraper
+import scs_daily
 
 logging.basicConfig(
     level=logging.INFO,
@@ -158,7 +162,7 @@ def main():
                 start_date = (datetime.now(timezone.utc) - timedelta(days=1827)).strftime("%Y-%m-%d")
                 logger.info(f"  [{i+1}/{len(symbols)}] {symbol}: initial backfill from {start_date}")
 
-            df = dps_scraper.fetch_psx_dps_ohlc(symbol, start_date=start_date, end_date=end_date)
+            df = scs_daily.fetch_scs_daily_ohlc(symbol, start_date=start_date, end_date=end_date)
 
             if df.empty:
                 logger.info(f"    {symbol}: no data returned")
@@ -173,7 +177,7 @@ def main():
                     if not (l <= min(o, c) <= max(o, c) <= h) or c <= 0:
                         continue
                     good.append((symbol.upper(), x["date"], o, h, l, c,
-                                 float(x["volume"] or 0), "PSX Data Portal (dps.psx.com.pk)"))
+                                 float(x["volume"] or 0), scs_daily.SOURCE_LABEL))
                 except Exception:
                     continue
 
