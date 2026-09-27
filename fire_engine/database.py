@@ -109,10 +109,15 @@ CREATE TABLE IF NOT EXISTS config (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_candles_symbol_datetime ON market_candles(symbol, datetime);
 CREATE INDEX IF NOT EXISTS idx_candles_symbol_date ON market_candles(symbol, date);
-CREATE INDEX IF NOT EXISTS idx_candles_symbol_time ON market_candles(symbol, time_of_day);
-CREATE INDEX IF NOT EXISTS idx_candles_session ON market_candles(session_id);
+-- Every index is written on every candle insert, and Turso bills each
+-- one as a row written: 7 writes per 1-minute candle, ~253K per daily
+-- batch (2026-09-27). symbol+datetime is already covered by the table's
+-- UNIQUE(symbol, datetime), and no query filters market_candles by
+-- time_of_day or session_id, so these three only cost writes.
+DROP INDEX IF EXISTS idx_candles_symbol_datetime;
+DROP INDEX IF EXISTS idx_candles_symbol_time;
+DROP INDEX IF EXISTS idx_candles_session;
 CREATE INDEX IF NOT EXISTS idx_fire_events_symbol_date ON fire_events(symbol, event_date);
 CREATE INDEX IF NOT EXISTS idx_fire_events_type ON fire_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_fire_events_score ON fire_events(fire_score DESC);
@@ -310,7 +315,18 @@ class DatabaseManager:
                  close=excluded.close, volume=excluded.volume,
                  data_source=excluded.data_source,
                  data_quality_status=excluded.data_quality_status,
-                 session_id=excluded.session_id"""
+                 session_id=excluded.session_id
+               -- Skip identical rows: a re-run for the same date (native
+               -- cron + Routine both firing) otherwise rewrites every
+               -- candle, and Turso bills each rewrite.
+               WHERE market_candles.open IS NOT excluded.open
+                  OR market_candles.high IS NOT excluded.high
+                  OR market_candles.low IS NOT excluded.low
+                  OR market_candles.close IS NOT excluded.close
+                  OR market_candles.volume IS NOT excluded.volume
+                  OR market_candles.data_source IS NOT excluded.data_source
+                  OR market_candles.data_quality_status IS NOT excluded.data_quality_status
+                  OR market_candles.session_id IS NOT excluded.session_id"""
         )
         rows = [
             (symbol, c["datetime"], c["date"], c["time_of_day"], c["open"], c["high"],

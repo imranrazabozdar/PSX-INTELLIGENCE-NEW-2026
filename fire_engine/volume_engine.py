@@ -14,11 +14,23 @@ def calculate_time_of_day_baseline(db, symbol: str, lookback_sessions: int = 30)
     for each time_of_day seen in the last `lookback_sessions` distinct
     trading dates, store the median and mean volume traded at that minute.
     Returns {time_of_day: {median_volume, mean_volume, session_count}}."""
+    # Session dates come from trading_sessions' primary key (session_id =
+    # "SYMBOL:YYYY-MM-DD"), so this reads ~lookback_sessions rows. The old
+    # SELECT DISTINCT date FROM market_candles scanned every stored candle
+    # of the symbol, a read cost that grew every trading day.
     cur = db.conn.execute(
-        "SELECT DISTINCT date FROM market_candles WHERE symbol = ? ORDER BY date DESC LIMIT ?",
-        (symbol, lookback_sessions),
+        "SELECT session_date AS date FROM trading_sessions "
+        "WHERE session_id > ? AND session_id < ? AND total_candles > 0 "
+        "ORDER BY session_id DESC LIMIT ?",
+        (f"{symbol}:", f"{symbol};", lookback_sessions),
     )
     dates = [r["date"] for r in cur.fetchall()]
+    if not dates:   # candles stored without session rows (older data)
+        cur = db.conn.execute(
+            "SELECT DISTINCT date FROM market_candles WHERE symbol = ? ORDER BY date DESC LIMIT ?",
+            (symbol, lookback_sessions),
+        )
+        dates = [r["date"] for r in cur.fetchall()]
     if not dates:
         return {}
 
@@ -39,7 +51,10 @@ def calculate_time_of_day_baseline(db, symbol: str, lookback_sessions: int = 30)
            ON CONFLICT(symbol, time_of_day) DO UPDATE SET
              median_volume=excluded.median_volume, mean_volume=excluded.mean_volume,
              lookback_sessions=excluded.lookback_sessions,
-             last_updated=CURRENT_TIMESTAMP"""
+             last_updated=CURRENT_TIMESTAMP
+           WHERE volume_baseline.median_volume IS NOT excluded.median_volume
+              OR volume_baseline.mean_volume IS NOT excluded.mean_volume
+              OR volume_baseline.lookback_sessions IS NOT excluded.lookback_sessions"""
     )
     result = {}
     writes = []
