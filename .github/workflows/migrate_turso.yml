@@ -1,0 +1,62 @@
+name: One-off Turso database migration
+
+# Manual-only, run at most a handful of times ever -- moves the production
+# database from the current Turso account (LIBSQL_URL/LIBSQL_AUTH_TOKEN,
+# exhausted its free-tier 500M-reads/month quota on 2026-09-26) to a fresh
+# account (NEW_LIBSQL_URL/NEW_LIBSQL_AUTH_TOKEN). Runs on a GitHub-hosted
+# runner specifically because it has real internet access to Turso -- the
+# operator's own sandboxed session does not (its egress proxy only allows a
+# small CDN allowlist).
+#
+# Add NEW_LIBSQL_URL / NEW_LIBSQL_AUTH_TOKEN as repo secrets (Settings ->
+# Secrets and variables -> Actions) before dispatching this -- the existing
+# LIBSQL_URL / LIBSQL_AUTH_TOKEN secrets are reused as the migration SOURCE.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'true = print row counts/schema only, copy nothing'
+        required: false
+        default: 'false'
+      tables:
+        description: 'Comma-separated table names to migrate (default: all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Migrate Turso -> Turso
+        working-directory: .
+        env:
+          SRC_LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          SRC_LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          DST_LIBSQL_URL: ${{ secrets.NEW_LIBSQL_URL }}
+          DST_LIBSQL_AUTH_TOKEN: ${{ secrets.NEW_LIBSQL_AUTH_TOKEN }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ -n "${{ github.event.inputs.tables }}" ]; then
+            ARGS="$ARGS --tables ${{ github.event.inputs.tables }}"
+          fi
+          python scripts/migrate_turso_to_turso.py $ARGS
