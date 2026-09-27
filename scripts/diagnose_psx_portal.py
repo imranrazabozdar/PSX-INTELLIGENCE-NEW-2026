@@ -135,6 +135,30 @@ def main():
     except Exception as e:
         print(f"Attempt 4 failed: {type(e).__name__}: {e}")
 
+    # Attempt 5: the OTHER real endpoints this codebase depends on, all
+    # under the same dps.psx.com.pk host -- to establish whether today's
+    # block is narrow (just POST /historical) or hits the whole domain.
+    # Uses the exact same headers backend/app.py's market_watch()/eod() use.
+    APP_HEAD = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://dps.psx.com.pk/",
+        "Connection": "keep-alive",
+    }
+    for label, url in [
+        ("GET /market-watch (live quotes -- app.py's market_watch())", "https://dps.psx.com.pk/market-watch"),
+        ("GET /timeseries/eod/OGDC (app.py's eod())", "https://dps.psx.com.pk/timeseries/eod/OGDC"),
+        ("GET /company/OGDC (fundamentals page)", "https://dps.psx.com.pk/company/OGDC"),
+    ]:
+        try:
+            r = requests.get(url, headers=APP_HEAD, timeout=20)
+            dump(f"Attempt 5: {label}", r)
+        except Exception as e:
+            print(f"\n===== Attempt 5: {label} =====\nrequest failed: {type(e).__name__}: {e}")
+
     # Attempt 3: bare request, no special headers at all (sanity check --
     # confirms whether ANY request to this host succeeds right now,
     # independent of header tuning).
