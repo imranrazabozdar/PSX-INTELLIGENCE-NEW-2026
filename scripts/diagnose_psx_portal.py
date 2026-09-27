@@ -109,8 +109,58 @@ def probe_scs_daily():
             print(f"  {fmt(t[i])}  O={o[i]} H={h[i]} L={l[i]} C={c[i]} V={v[i]}")
 
 
+def probe_scs_adjustment():
+    """Are SCS daily bars dividend/split-ADJUSTED (like Yahoo, which this
+    project rejected for that reason) or raw PSX prints? Compare an old
+    day's SCS daily close to that same day's last 1-minute close (1-min
+    bars are raw trades). Adjusted daily history would sit systematically
+    below the raw 1-min close on dates before a dividend/bonus."""
+    from datetime import datetime, timedelta, timezone
+    base = "https://chart.scstrade.com"
+    hdr = {
+        "User-Agent": BROWSER_HEADERS["User-Agent"],
+        "Referer": "https://www.scstrade.com/TechnicalAnalysis/TA_RealTimeCharting.aspx",
+        "Accept": "application/json",
+    }
+    pkt = timezone(timedelta(hours=5))
+    for sym in ("OGDC", "HBL", "LUCK"):
+        now = datetime.now(timezone.utc)
+        d = requests.get(f"{base}/history", params={
+            "symbol": sym, "resolution": "D",
+            "from": int((now - timedelta(days=800)).timestamp()), "to": int(now.timestamp())},
+            headers=hdr, timeout=30).json()
+        if d.get("s") != "ok":
+            print(f"\n{sym}: daily s={d.get('s')}")
+            continue
+        daily = {datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d"): c
+                 for t, c in zip(d["t"], d["c"])}
+        dates = sorted(daily)
+        print(f"\n===== SCS adjustment check: {sym} =====")
+        for back in (5, 60, 180, 365, 700):
+            if back >= len(dates):
+                continue
+            day = dates[-1 - back]
+            y, m, dd = (int(x) for x in day.split("-"))
+            frm = int(datetime(y, m, dd, 9, 0, tzinfo=pkt).timestamp())
+            to = int(datetime(y, m, dd, 16, 30, tzinfo=pkt).timestamp())
+            try:
+                mn = requests.get(f"{base}/history", params={
+                    "symbol": sym, "resolution": "1", "from": frm, "to": to},
+                    headers=hdr, timeout=30).json()
+            except Exception as e:
+                print(f"  {day}: 1-min fetch failed: {e}")
+                continue
+            if mn.get("s") != "ok" or not mn.get("c"):
+                print(f"  {day}: daily C={daily[day]}  1-min: s={mn.get('s')} (no intraday history this far back)")
+                continue
+            last_min = mn["c"][-1]
+            diff = (daily[day] - last_min) / last_min * 100
+            print(f"  {day}: daily C={daily[day]}  last 1-min C={last_min}  diff={diff:+.2f}%")
+
+
 def main():
     probe_scs_daily()
+    probe_scs_adjustment()
     session = requests.Session()
 
     # Attempt 1: exactly what dps_scraper.py does today -- cold POST, no
