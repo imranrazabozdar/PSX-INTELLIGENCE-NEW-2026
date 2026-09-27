@@ -883,7 +883,7 @@ def _market_watch_from_ohlc():
         setup="Momentum breakout" if pct>3 and loc>.8 else "Strong close" if loc>.72 else "Pullback / watch" if pct<0 and loc>.45 else "Neutral"
         raw_sector=((names.get(s) or {}).get("sector") or "").strip()
         sector=sector_titles.get(raw_sector.upper(),raw_sector.title())
-        out.append(dict(symbol=s,name=_names.name(s,default=None),sector=sector,listed="",ldcp=ldcp,open=o,high=h,low=l,price=p,
+        out.append(dict(symbol=s,name=(names.get(s) or {}).get("name"),sector=sector,listed="",ldcp=ldcp,open=o,high=h,low=l,price=p,
                         change=round(ch,4),pct=round(pct,2),volume=vol,score=round(score,1),setup=setup,eligible=vol>=MIN_VOLUME,
                         corporate_action=[],as_of=latest,quote_source="daily_ohlc (SCS end-of-day)",**_shariah_status(s,"")))
     return out
@@ -5037,6 +5037,11 @@ async def _watchlist_refresh_loop():
     near-live analysis without recomputing per page view.
     """
     _last_eod_scan = None
+    # Let the server finish binding :8000 and answer /health before the first
+    # scan: parts of dss() run synchronously on this event loop, and a scan
+    # starting at boot delayed the bind long enough for Streamlit's
+    # _backend_up() to start duplicate backends.
+    await asyncio.sleep(60)
     while True:
         now_pkt = datetime.now(PSX_TZ)
         is_trading = _is_trading_hours(now_pkt)

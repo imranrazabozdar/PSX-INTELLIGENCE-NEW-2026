@@ -17,6 +17,10 @@ PSX = "https://dps.psx.com.pk"
 HEAD = {"User-Agent": "PSX-Intelligence-V2/2.0 private-research"}
 CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "symbol_names.json")
 TTL_SECONDS = 24 * 3600
+# After a failed refresh, wait this long before asking PSX again. Without
+# it a stale cache retried the fetch (15s timeout) on EVERY name() call --
+# hundreds per scan from hosts that can't reach PSX (Streamlit Cloud).
+RETRY_AFTER_FAILURE_SECONDS = 3600
 
 _MEM = {"map": None, "ts": 0.0}
 
@@ -53,13 +57,15 @@ def load(force=False):
             pass
         return m
     except Exception:
+        retry_ts = now - TTL_SECONDS + RETRY_AFTER_FAILURE_SECONDS
         if _MEM["map"] is not None:
+            _MEM["ts"] = retry_ts
             return _MEM["map"]
         try:
             with open(CACHE_PATH, encoding="utf-8") as f:
                 cached = json.load(f)
             _MEM["map"] = cached["map"]
-            _MEM["ts"] = cached.get("fetched_at", 0)
+            _MEM["ts"] = retry_ts
             return _MEM["map"]
         except Exception:
             return {}
