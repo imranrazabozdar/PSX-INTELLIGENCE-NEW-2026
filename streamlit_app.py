@@ -87,6 +87,9 @@ def _ensure_embedded_backend(_version=None):
     socket.socket.bind = _reuse_bind
     threading.Thread(target=server.run, daemon=True).start()
     socket.socket.bind = _orig_bind
+    # Survives script reruns (module globals don't): _backend_up() reads it
+    # so a backend still starting up is waited for, not duplicated.
+    os.environ["PSX_EMBED_STARTED_AT"] = str(time.time())
 
     for _ in range(30):
         try:
@@ -781,7 +784,8 @@ def _backend_up():
     # Last resort: if embedded backend was supposed to start but didn't,
     # try starting it now (cache_resource may have returned True from a
     # previous hot-reload where the thread was still alive but has since died)
-    if _EMBED_BACKEND and _backend_port_open():
+    _started_at = float(os.environ.get("PSX_EMBED_STARTED_AT", "0") or 0)
+    if _EMBED_BACKEND and (_backend_port_open() or time.time() - _started_at < 180):
         # Something still owns :8000 -- the backend is alive but busy (e.g. a
         # long scan on its event loop), not dead. Starting another one here
         # re-ran its whole startup (DB self-test write, background scans)
