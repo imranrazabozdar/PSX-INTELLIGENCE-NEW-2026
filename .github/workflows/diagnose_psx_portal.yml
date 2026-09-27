@@ -1,0 +1,32 @@
+name: Diagnose PSX data portal 403
+
+# Temporary, manual-only diagnostic for the 2026-09-27 incident where
+# dps.psx.com.pk started returning 403 Forbidden for every request from
+# GitHub Actions runners (confirmed on two separate runs/runner IPs, from
+# the very first request each time -- not a rate-limit-after-burst pattern).
+# No Turso/app code involved. Delete this workflow once the scraper is
+# fixed and confirmed working again.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Diagnose PSX portal response
+        run: python scripts/diagnose_psx_portal.py
