@@ -165,6 +165,21 @@ def main():
     r3 = requests.get("https://dps.psx.com.pk/", timeout=20)
     dump("Attempt 3: bare GET of the site root, default requests UA", r3)
 
+    # Attempt 6: /market-watch and /timeseries/eod/{symbol} came back 404 in
+    # a prior round (not 403 -- a real "doesn't exist", not a block). Search
+    # the homepage we already fetched for its actual nav links to find
+    # where PSX moved these, if they moved rather than disappeared.
+    print("\n===== Attempt 6: nav links on the homepage mentioning market/watch/historical/eod/timeseries =====")
+    import re
+    hrefs = set(re.findall(r'href=["\']([^"\']+)["\']', r3.text))
+    keywords = ("market", "watch", "historical", "eod", "timeseries", "quote", "price")
+    matches = sorted(h for h in hrefs if any(k in h.lower() for k in keywords))
+    if matches:
+        for h in matches:
+            print(f"  {h}")
+    else:
+        print("  No matching nav links found in the homepage HTML.")
+
 
 if __name__ == "__main__":
     main()
