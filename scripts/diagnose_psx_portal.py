@@ -62,7 +62,55 @@ def find_csrf_markers(html):
     return found
 
 
+def probe_scs_daily():
+    """Can SCS (chart.scstrade.com) -- the UDF feed fire_engine already uses
+    for 1-min and 4h bars -- serve DAILY bars over a multi-year range? If so
+    it can replace the now-403'd PSX /historical endpoint for daily_ohlc."""
+    import time as _time
+    from datetime import datetime, timezone
+    base = "https://chart.scstrade.com"
+    hdr = {
+        "User-Agent": BROWSER_HEADERS["User-Agent"],
+        "Referer": "https://www.scstrade.com/TechnicalAnalysis/TA_RealTimeCharting.aspx",
+        "Accept": "application/json",
+    }
+    print("\n===== SCS probe: /config =====")
+    cfg = requests.get(f"{base}/config", headers=hdr, timeout=20)
+    print(f"status: {cfg.status_code}")
+    try:
+        print(f"supported_resolutions: {cfg.json().get('supported_resolutions')}")
+    except Exception as e:
+        print(f"could not parse /config JSON: {e}; body[:300]={cfg.text[:300]}")
+
+    now = int(_time.time())
+    five_years_ago = now - 5 * 366 * 86400
+    for res in ("D", "1D"):
+        print(f"\n===== SCS probe: /history symbol=OGDC resolution={res} (5y) =====")
+        r = requests.get(f"{base}/history",
+                         params={"symbol": "OGDC", "resolution": res, "from": five_years_ago, "to": now},
+                         headers=hdr, timeout=30)
+        print(f"status: {r.status_code}")
+        try:
+            data = r.json()
+        except Exception as e:
+            print(f"not JSON: {e}; body[:300]={r.text[:300]}")
+            continue
+        print(f"s: {data.get('s')}")
+        t = data.get("t") or []
+        if not t:
+            print(f"no bars; keys={list(data.keys())}")
+            continue
+        o, h, l, c, v = (data.get(k) or [] for k in ("o", "h", "l", "c", "v"))
+        fmt = lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        print(f"bars: {len(t)}  first: {fmt(t[0])}  last: {fmt(t[-1])}")
+        bad = sum(1 for i in range(len(t)) if not (l[i] <= min(o[i], c[i]) <= max(o[i], c[i]) <= h[i]))
+        print(f"OHLC-inconsistent bars: {bad}")
+        for i in range(max(0, len(t) - 5), len(t)):
+            print(f"  {fmt(t[i])}  O={o[i]} H={h[i]} L={l[i]} C={c[i]} V={v[i]}")
+
+
 def main():
+    probe_scs_daily()
     session = requests.Session()
 
     # Attempt 1: exactly what dps_scraper.py does today -- cold POST, no
