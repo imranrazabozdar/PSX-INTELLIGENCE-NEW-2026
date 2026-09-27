@@ -46,6 +46,22 @@ def dump(label, resp):
     print(body[:600])
 
 
+def find_csrf_markers(html):
+    """Looks for the common places a site embeds a CSRF/session token that a
+    plain requests.Session() (no JS execution) would never pick up on its
+    own: a <meta name="csrf-token"> tag, a hidden <input> field, or an
+    inline JS variable assignment. Returns a list of (kind, snippet)."""
+    import re
+    found = []
+    for m in re.finditer(r'<meta[^>]+name=["\'](csrf-token|_token|xsrf-token)["\'][^>]*>', html, re.I):
+        found.append(("meta tag", m.group(0)))
+    for m in re.finditer(r'<input[^>]+name=["\'](csrf_token|_token|authenticity_token)["\'][^>]*>', html, re.I):
+        found.append(("hidden input", m.group(0)))
+    for m in re.finditer(r'(csrfToken|CSRF_TOKEN|_token)\s*[=:]\s*["\'][^"\']{8,80}["\']', html):
+        found.append(("inline JS var", m.group(0)))
+    return found
+
+
 def main():
     session = requests.Session()
 
@@ -61,6 +77,20 @@ def main():
     try:
         rg = session2.get(HISTORICAL_PAGE, headers={"User-Agent": BROWSER_HEADERS["User-Agent"]}, timeout=20)
         print(f"\n===== Attempt 2 warm-up GET status: {rg.status_code}, cookies: {dict(session2.cookies)} =====")
+        print(f"warm-up GET body length: {len(rg.text)}")
+        markers = find_csrf_markers(rg.text)
+        if markers:
+            print(f"Found {len(markers)} possible CSRF/token marker(s) in the page HTML:")
+            for kind, snippet in markers:
+                print(f"  [{kind}] {snippet[:200]}")
+        else:
+            print("No csrf-token/xsrf-token/_token meta tag, hidden input, or inline JS var found "
+                  "in the raw HTML -- if this page sets a token, it's likely injected client-side "
+                  "by JS after page load, which a plain GET here would never see.")
+        # Response headers on the GET itself -- a Set-Cookie here wouldn't
+        # show in session2.cookies if it was rejected (e.g. bad domain/path).
+        if "set-cookie" in rg.headers:
+            print(f"warm-up GET response header[set-cookie]: {rg.headers['set-cookie']}")
     except Exception as e:
         print(f"\nAttempt 2 warm-up GET failed: {type(e).__name__}: {e}")
     r2 = session2.post(HISTORICAL_POST, data={"symbol": "OGDC", "date": "2026-09-27"},
