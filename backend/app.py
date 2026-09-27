@@ -5396,7 +5396,17 @@ async def _start_background_refresh_loops():
     asyncio.create_task(_watchlist_refresh_loop())
     asyncio.create_task(_heavy_refresh_loop())
     asyncio.create_task(_market_watch_refresh_loop())
-    asyncio.create_task(_intraday_bars_collector_loop())
+    # Disabled by default (2026-09-27, explicit request) after this exact
+    # pattern -- an always-on background loop nobody's viewing -- contributed
+    # to exhausting the Turso free-tier quota: every 60s during trading hours
+    # (~450 ticks/day) this wrote one batch_query INSERT per symbol into
+    # intraday_bars, whether or not anyone had the Intraday tab open. The
+    # Intraday tab still reads whatever historical bars already exist; it
+    # just stops accumulating new ones until this is re-enabled. Same
+    # opt-in-via-env-var pattern already used above for _fast_refresh_loop
+    # after an earlier occurrence of this same quota problem.
+    if os.getenv("PSX_ENABLE_INTRADAY_BARS_COLLECTOR"):
+        asyncio.create_task(_intraday_bars_collector_loop())
 
 
 import threading as _threading
