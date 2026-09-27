@@ -31,6 +31,10 @@ jobs:
       # Each Python step prints its Turso rows read/written (by SQL shape)
       # at exit -- see backend/turso_db.py usage accounting.
       PSX_TURSO_USAGE_REPORT: "1"
+      # Written by the snapshot step below; every later step answers its
+      # daily_ohlc reads from this file instead of Turso (see
+      # backend/snapshot_daily_ohlc.py). Absent -> steps read Turso.
+      PSX_DAILY_OHLC_SNAPSHOT: ${{ github.workspace }}/daily_ohlc_snapshot.db
 
     steps:
       - name: Checkout code
@@ -47,12 +51,19 @@ jobs:
           pip install -r backend/requirements.txt
           pip install lxml
 
-      - name: 📥 Refresh daily OHLC data from PSX portal
+      - name: 📥 Refresh daily OHLC data (SCS daily bars)
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_ohlc_refresh.py
+
+      - name: 💾 Snapshot daily_ohlc for the steps below
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python snapshot_daily_ohlc.py
 
       - name: 🔍 Detect all pattern families (latest bar only)
         working-directory: backend
@@ -123,7 +134,7 @@ jobs:
           echo ""
           echo "✅ Daily refresh workflow complete"
           echo ""
-          echo "Step 1: OHLC data refresh from dps.psx.com.pk → Turso"
+          echo "Step 1: OHLC data refresh from SCS daily bars → Turso (then a local daily_ohlc snapshot for the steps below)"
           echo "Step 2: Pattern scans (Bullish Engulfing, Morning Star, IHS/DB, MHarris, MACD+EMA200, Triangle Squeeze, Level Break Out, Head & Shoulders Top)"
           echo "        → results saved to analysis_cache in Turso"
           echo "Step 3: Signal accuracy backtest (intraday alerts vs forward returns)"
