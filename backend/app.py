@@ -792,18 +792,28 @@ def market_watch(force=False):
         # 500 on every one of them simultaneously, which is what "modules not
         # talking to each other" actually was: not a wiring bug, an unhandled
         # upstream failure with no retry and no fallback.
+        # Once the portal has failed before (it 404s since the Sept 2026
+        # restructure, and Streamlit Cloud can't reach it at all), re-probe
+        # with ONE short attempt: callers like dss() run this synchronously
+        # on the embedded backend's event loop, and 3 x 20s retries froze
+        # /health long enough for Streamlit to start duplicate backends.
+        known_down=_MW_CACHE["last_failure_ts"]>0
+        attempts=1 if known_down else 3
         last_err=None
-        for attempt in range(3):
+        for attempt in range(attempts):
             try:
-                rows=_market_watch_uncached()
+                rows=_market_watch_uncached(timeout=8 if known_down else 20)
                 _MW_CACHE["rows"]=rows; _MW_CACHE["ts"]=_t.time()
                 return rows
             except Exception as e:
                 last_err=e
-                if attempt<2:
+                status=getattr(getattr(e,"response",None),"status_code",None)
+                if status is not None and 400<=status<500:
+                    break   # 404/403 is not transient -- retrying can't help
+                if attempt<attempts-1:
                     _t.sleep(1.5*(attempt+1))
         _MW_CACHE["last_failure_ts"]=_t.time()
-        print(f"[market_watch] PSX portal fetch failed after 3 attempts: {last_err}")
+        print(f"[market_watch] PSX portal fetch failed: {last_err}")
         # PSX restructured its portal in Sept 2026 (/market-watch now 404s) and
         # Streamlit Cloud can't reach it at all, so without this every quote-
         # driven tab went empty. Fall back to the last two end-of-day bars per
@@ -887,9 +897,9 @@ def _get_psx_session():
         _psx_session.headers.update(HEAD)
     return _psx_session
 
-def _market_watch_uncached():
+def _market_watch_uncached(timeout=20):
     s=_get_psx_session()
-    r=s.get(PSX+"/market-watch",timeout=20);r.raise_for_status()
+    r=s.get(PSX+"/market-watch",timeout=timeout);r.raise_for_status()
     soup=BeautifulSoup(r.text,"html.parser"); out=[]
     for tr in soup.select("tr"):
         x=[td.get_text(" ",strip=True) for td in tr.select("td")]
