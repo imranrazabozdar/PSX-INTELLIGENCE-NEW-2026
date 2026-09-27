@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       date:
-        description: 'YYYY-MM-DD to process (default: yesterday)'
+        description: 'YYYY-MM-DD to process (default: yesterday). Setting it also skips the weekend guard, for manual backfills.'
         required: false
         default: ''
       backfill_4h_only:
@@ -97,7 +97,7 @@ jobs:
         # on sys.path, which is what every fire_engine module assumes.
         run: |
           if [ -n "${{ github.event.inputs.date }}" ]; then
-            python -m fire_engine.run_daily_batch --date "${{ github.event.inputs.date }}"
+            python -m fire_engine.run_daily_batch --date "${{ github.event.inputs.date }}" --skip-market-check
           else
             python -m fire_engine.run_daily_batch
           fi
@@ -111,7 +111,7 @@ jobs:
         # universe/exclusion filter and the same shared Turso DB.
         run: |
           if [ -n "${{ github.event.inputs.date }}" ]; then
-            python -m fire_engine.run_wyckoff_batch --date "${{ github.event.inputs.date }}"
+            python -m fire_engine.run_wyckoff_batch --date "${{ github.event.inputs.date }}" --skip-market-check
           else
             python -m fire_engine.run_wyckoff_batch
           fi
