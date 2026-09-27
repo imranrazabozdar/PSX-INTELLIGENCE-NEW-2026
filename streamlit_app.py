@@ -759,6 +759,15 @@ def _session_cache(key, fetcher, ttl=300):
     return st.session_state[key]
 
 
+def _backend_port_open():
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", 8000), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
 def _backend_up():
     for _attempt in range(3):
         try:
@@ -772,6 +781,18 @@ def _backend_up():
     # Last resort: if embedded backend was supposed to start but didn't,
     # try starting it now (cache_resource may have returned True from a
     # previous hot-reload where the thread was still alive but has since died)
+    if _EMBED_BACKEND and _backend_port_open():
+        # Something still owns :8000 -- the backend is alive but busy (e.g. a
+        # long scan on its event loop), not dead. Starting another one here
+        # re-ran its whole startup (DB self-test write, background scans)
+        # each time, multiplying Turso usage; wait for it instead.
+        for _ in range(3):
+            try:
+                if requests.get(f"{BACKEND}/health", timeout=10).ok:
+                    return True
+            except Exception:
+                pass
+        return False
     if _EMBED_BACKEND:
         try:
             _ensure_embedded_backend.clear()
