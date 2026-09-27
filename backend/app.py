@@ -804,11 +804,79 @@ def market_watch(force=False):
                     _t.sleep(1.5*(attempt+1))
         _MW_CACHE["last_failure_ts"]=_t.time()
         print(f"[market_watch] PSX portal fetch failed after 3 attempts: {last_err}")
+        # PSX restructured its portal in Sept 2026 (/market-watch now 404s) and
+        # Streamlit Cloud can't reach it at all, so without this every quote-
+        # driven tab went empty. Fall back to the last two end-of-day bars per
+        # universe symbol that the daily GitHub Actions job stores in
+        # daily_ohlc, cached for MARKET_FALLBACK_TTL so the portal is only
+        # re-probed that often.
+        try:
+            rows=_market_watch_from_ohlc()
+        except Exception as e:
+            print(f"[market_watch] daily_ohlc fallback failed: {type(e).__name__}: {e}")
+            rows=[]
+        if rows:
+            _MW_CACHE["rows"]=rows
+            _MW_CACHE["ts"]=_t.time()-MARKET_TTL+MARKET_FALLBACK_TTL
+            _MW_CACHE["last_failure_ts"]=_MW_CACHE["ts"]
+            return rows
         if _MW_CACHE["rows"] is not None:
             # Serve the stale cache rather than crash every caller. Callers that
             # care about freshness can force=True after checking /market-status.
             return _MW_CACHE["rows"]
         return []
+
+
+MARKET_FALLBACK_TTL=int(os.getenv("PSX_MARKET_FALLBACK_TTL","1800"))   # seconds
+_FIRE_CONFIG_PATH=os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","fire_engine","config","fire_config.yaml")
+
+
+def _quote_universe():
+    """Symbols the daily_ohlc fallback quotes: the FIRE/Wyckoff universe that
+    run_ohlc_refresh.py keeps current, plus the intraday watchlist."""
+    syms=set()
+    try:
+        import yaml
+        with open(_FIRE_CONFIG_PATH,encoding="utf-8") as f:
+            syms.update(str(s).upper() for s in yaml.safe_load(f)["stocks"]["universe"])
+    except Exception as e:
+        print(f"[market_watch] fire_config universe unavailable: {e}")
+    syms.update(WATCHLIST_SYMBOLS)
+    return sorted(syms)
+
+
+def _market_watch_from_ohlc():
+    """Market-watch-shaped rows built from the latest two daily_ohlc bars per
+    symbol. One indexed `WHERE symbol=? ... LIMIT 2` per symbol in a single
+    batch (~2 rows read each) -- never a trade_date range scan or GROUP BY,
+    which would read the whole table on every refresh."""
+    per_sym=ohlc_rows_multi(_quote_universe(),limit=2)
+    if not per_sym:
+        return []
+    latest=max((b[-1]["trade_date"] for b in per_sym.values() if b),default=None)
+    if not latest:
+        return []
+    names=_names.load() or {}
+    sector_titles={v.upper():v for v in _sector_codes.CODES.values()}
+    out=[]
+    for s,bars in per_sym.items():
+        # Only symbols that traded on the latest stored session -- a stale
+        # last bar would present weeks-old prices as today's.
+        if not bars or bars[-1]["trade_date"]!=latest:
+            continue
+        b=bars[-1]; o,h,l,p,vol=(num(b[k]) for k in ("open","high","low","close","volume"))
+        ldcp=num(bars[-2]["close"]) if len(bars)>1 else o
+        ch=p-ldcp; pct=100*ch/ldcp if ldcp else 0.0
+        rng=max(.00001,h-l); loc=(p-l)/rng; liq=min(20,math.log10(max(vol,1))*3)
+        mom=max(-20,min(20,pct*2.2)); strength=(loc-.5)*24
+        score=max(0,min(100,50+mom+strength+liq/2))
+        setup="Momentum breakout" if pct>3 and loc>.8 else "Strong close" if loc>.72 else "Pullback / watch" if pct<0 and loc>.45 else "Neutral"
+        raw_sector=((names.get(s) or {}).get("sector") or "").strip()
+        sector=sector_titles.get(raw_sector.upper(),raw_sector.title())
+        out.append(dict(symbol=s,name=_names.name(s,default=None),sector=sector,listed="",ldcp=ldcp,open=o,high=h,low=l,price=p,
+                        change=round(ch,4),pct=round(pct,2),volume=vol,score=round(score,1),setup=setup,eligible=vol>=MIN_VOLUME,
+                        corporate_action=[],as_of=latest,quote_source="daily_ohlc (SCS end-of-day)",**_shariah_status(s,"")))
+    return out
 
 
 _psx_session = None
@@ -850,16 +918,23 @@ def save_snapshot(rows):
             c.executemany("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",params_list)
             c.commit()
 
+_EOD_DOWN_UNTIL=[0.0]
+
 def eod(symbol):
     # Network call — guarded here (not just at call sites) so any future
     # caller gets fail-soft behavior by default rather than needing to
     # remember to wrap it. A prior incident: /scan's fallback path called
     # yahoo_ohlcv() unwrapped and a single 404 crashed the whole request.
+    # After a failure, skip the portal for 10 minutes -- it has 404'd since
+    # the Sept 2026 restructure, and callers fall back to daily_ohlc.
+    if time.time()<_EOD_DOWN_UNTIL[0]:
+        return []
     try:
         r=requests.get(f"{PSX}/timeseries/eod/{symbol}",headers=HEAD,timeout=15);r.raise_for_status()
         raw=r.json()
     except Exception as e:
         print(f"[eod] {symbol}: {type(e).__name__}: {e}")
+        _EOD_DOWN_UNTIL[0]=time.time()+600
         return []
     a=raw.get("data") or raw.get("timeseries") or []
     out=[]
@@ -896,6 +971,15 @@ def best_history(symbol):
         x=eod(symbol)
         if len(x)>=30:return x,"PSX EOD"
     except: pass
+    # PSX's /timeseries/eod has 404'd since the Sept 2026 portal restructure;
+    # daily_ohlc (SCS daily bars, refreshed every weekday) is the stored copy.
+    try:
+        x=[{"time":int(datetime.strptime(r["trade_date"],"%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()*1000),
+            "open":r["open"],"high":r["high"],"low":r["low"],"close":r["close"],"volume":r["volume"]}
+           for r in ohlc_rows(symbol,300)]
+        if len(x)>=30:return x,"daily_ohlc (SCS daily)"
+    except Exception as e:
+        print(f"[best_history] {symbol}: daily_ohlc fallback failed: {e}")
     try:
         x=yahoo_ohlcv(symbol)
         if len(x)>=30:return x,f"Yahoo Finance {symbol.upper()}.KA"
@@ -1024,9 +1108,13 @@ def turso_stats():
     Tracks daily query count and warns if approaching limits.
     """
     stats = _get_turso_stats()
+    # Real rows read/written as billed by Turso, per SQL shape, since this
+    # process started -- see turso_db.usage_report().
+    stats["billed_usage_since_start"] = turso_db.usage_report(top=20)
     stats["note"] = (
-        "Standard Turso plan: 1M reads/month (~33k/day). "
-        "This is a soft limit — monitor to avoid unexpected overages."
+        "Turso free plan: 500M rows read / 10M rows written per calendar month "
+        "(~16M reads/day). billed_usage_since_start is this process only; the "
+        "GitHub Actions batch jobs print their own totals at the end of each run."
     )
     if stats["percent_used"] > 80:
         stats["warning"] = "⚠️ High quota usage, approaching limit"
@@ -1207,7 +1295,15 @@ def company_names():
 
 @app.get("/market")
 def market(min_volume:int=0, shariah:bool=False):
-    rows=market_watch(); save_snapshot(rows)
+    rows=market_watch()
+    # One snapshot per distinct fetch, not per request: every /market call
+    # used to append ~500 rows even when served from the 60s cache, which
+    # is Turso write quota spent on duplicates. daily_ohlc-fallback rows are
+    # already stored in daily_ohlc, so they aren't snapshotted at all.
+    if rows and _MW_CACHE.get("snapshot_ts")!=_MW_CACHE["ts"] and "quote_source" not in rows[0]:
+        _MW_CACHE["snapshot_ts"]=_MW_CACHE["ts"]
+        try: save_snapshot(rows)
+        except Exception as e: print(f"[market] save_snapshot failed: {e}")
     return [x for x in rows if x["volume"]>=min_volume and (not shariah or x["shariah"])]
 
 
@@ -1720,7 +1816,11 @@ def intelligence(symbol:str):
             "structure":structure_ohlc(a),"candles":candle_patterns(a),"wyckoff":wyckoff_ohlc(a)}
 
 _ohlc_coverage_cache = {"ts": 0.0, "rows": None}
-_OHLC_COVERAGE_CACHE_TTL = 300  # seconds
+# 6h, not 5 min: this is a full-table GROUP BY (~190K rows read on Turso,
+# which bills rows scanned) and daily_ohlc only changes once a weekday. At
+# 300s the dashboard's background loops re-ran it ~288x/day -- on its own
+# more than the free plan's 500M rows-read/month.
+_OHLC_COVERAGE_CACHE_TTL = int(os.getenv("PSX_OHLC_COVERAGE_TTL", "21600"))  # seconds
 
 @app.get("/ohlc-coverage")
 def ohlc_coverage():
@@ -4931,7 +5031,12 @@ async def _watchlist_refresh_loop():
         now_pkt = datetime.now(PSX_TZ)
         is_trading = _is_trading_hours(now_pkt)
 
-        if is_trading:
+        if is_trading and _quotes_are_eod_fallback(await asyncio.to_thread(market_watch)):
+            # No live quotes (PSX portal unreachable): the inputs are
+            # yesterday's end-of-day bars, identical on every intraday tick,
+            # so the evening scan below is the only one worth its reads.
+            pass
+        elif is_trading:
             if _cache_fresh("watchlist_scan", WATCHLIST_REFRESH_INTERVAL):
                 print("[scan_cache] watchlist_scan tick skipped — cached result still fresh")
             else:
@@ -4954,7 +5059,9 @@ async def _watchlist_refresh_loop():
             # After market closes (3:30+ PM PSX), run ONE final scan to cache end-of-day data
             # This ensures fresh data for next morning without constant quota drain
             today = now_pkt.date()
-            if _last_eod_scan != today and now_pkt.hour >= 16:  # 4 PM PSX = end-of-day
+            # 5 PM PKT: after the 4:30 PM GitHub Actions job has written the
+            # day's bars to daily_ohlc (at 4 PM it scanned yesterday's data).
+            if _last_eod_scan != today and now_pkt.hour >= 17:
                 try:
                     print("[scan_cache] Running end-of-day watchlist scan...")
                     result = await _run_watchlist_scan()
@@ -4968,6 +5075,16 @@ async def _watchlist_refresh_loop():
 
 
 MW_REFRESH_INTERVAL = int(os.getenv("PSX_MW_REFRESH_INTERVAL", "300"))  # 5 min
+_AVG_VOL_CACHE = {}
+
+
+def _quotes_are_eod_fallback(rows=None):
+    """True when market_watch() is serving _market_watch_from_ohlc() rows
+    (end-of-day bars from daily_ohlc) rather than a live PSX quote table --
+    those don't change during the session, so intraday rescans, alerts and
+    cache invalidations on them only spend Turso reads."""
+    rows = _MW_CACHE["rows"] if rows is None else rows
+    return bool(rows) and "quote_source" in rows[0]
 
 # Alert thresholds -- named so the numbers used inside
 # _compute_intraday_signals() are self-documenting at the call site.
@@ -4996,24 +5113,31 @@ def _compute_intraday_signals(rows):
     progress = _psx_live.session_progress() if _psx_live else 0.0
 
     # STEP C ADDITION 2: one AVG(volume) query for every symbol instead
-    # of one query per symbol per poll (443 queries -> 1).
-    ensure_ohlc()
-    try:
-        with db() as c:
-            avg_vol_rows = c.execute(
-                "SELECT symbol, AVG(volume) as avg_vol FROM daily_ohlc "
-                "WHERE trade_date >= date('now','localtime','-20 days') "
-                "GROUP BY symbol"
-            ).fetchall()
-        # db() returns dict-like rows (turso_db._Row), not tuples -- r[0]/r[1]
-        # raised KeyError on every poll (confirmed live, 2026-08-31 morning
-        # session: avg_vol_map stayed empty all session, silently disabling
-        # every volume-gated alert type). Column-name access via an explicit
-        # alias instead.
-        avg_vol_map = {r["symbol"]: r["avg_vol"] for r in avg_vol_rows}
-    except Exception as e:
-        logger.warning(f"intraday avg_vol query failed: {e}")
-        avg_vol_map = {}
+    # of one query per symbol per poll (443 queries -> 1). Cached per day:
+    # the trade_date range isn't index-satisfiable without a symbol, so each
+    # run scans all of daily_ohlc, and the 20-day average can't change
+    # intraday anyway.
+    if _AVG_VOL_CACHE.get("date") == today_str:
+        avg_vol_map = _AVG_VOL_CACHE["map"]
+    else:
+        ensure_ohlc()
+        try:
+            with db() as c:
+                avg_vol_rows = c.execute(
+                    "SELECT symbol, AVG(volume) as avg_vol FROM daily_ohlc "
+                    "WHERE trade_date >= date('now','localtime','-20 days') "
+                    "GROUP BY symbol"
+                ).fetchall()
+            # db() returns dict-like rows (turso_db._Row), not tuples -- r[0]/r[1]
+            # raised KeyError on every poll (confirmed live, 2026-08-31 morning
+            # session: avg_vol_map stayed empty all session, silently disabling
+            # every volume-gated alert type). Column-name access via an explicit
+            # alias instead.
+            avg_vol_map = {r["symbol"]: r["avg_vol"] for r in avg_vol_rows}
+            _AVG_VOL_CACHE.update(date=today_str, map=avg_vol_map)
+        except Exception as e:
+            logger.warning(f"intraday avg_vol query failed: {e}")
+            avg_vol_map = {}
 
     all_alerts = []
     for row in rows:
@@ -5142,6 +5266,11 @@ async def _market_watch_refresh_loop():
             try:
                 rows = await asyncio.to_thread(market_watch)
                 print("[scan_cache] market_watch proactive refresh ok")
+                if _quotes_are_eod_fallback(rows):
+                    # End-of-day fallback rows: nothing moved intraday, so
+                    # don't invalidate caches or derive "intraday" alerts.
+                    await asyncio.sleep(MW_REFRESH_INTERVAL)
+                    continue
 
                 # FIX #1: Invalidate caches with fresh market data
                 # Ensures technical analysis uses latest prices
@@ -5347,6 +5476,14 @@ async def _heavy_refresh_loop():
         await asyncio.sleep(HEAVY_REFRESH_INTERVAL)
 
 
+async def _turso_usage_log_loop():
+    """Hourly: print cumulative Turso rows read/written for this process,
+    broken down by SQL shape, into the app logs."""
+    while True:
+        await asyncio.sleep(3600)
+        turso_db.print_usage_report(label="dashboard backend (cumulative since start)", top=10)
+
+
 @app.on_event("startup")
 async def _start_background_refresh_loops():
     conn = db()
@@ -5397,6 +5534,7 @@ async def _start_background_refresh_loops():
     asyncio.create_task(_watchlist_refresh_loop())
     asyncio.create_task(_heavy_refresh_loop())
     asyncio.create_task(_market_watch_refresh_loop())
+    asyncio.create_task(_turso_usage_log_loop())
     # Disabled by default (2026-09-27, explicit request) after this exact
     # pattern -- an always-on background loop nobody's viewing -- contributed
     # to exhausting the Turso free-tier quota: every 60s during trading hours

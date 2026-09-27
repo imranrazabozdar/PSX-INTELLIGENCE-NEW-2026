@@ -67,6 +67,8 @@ jobs:
     # new combined runtime yet; tighten it back down once a real run reports
     # actual timing at 150 symbols.
     timeout-minutes: 120
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
 
     steps:
       - name: Checkout code
