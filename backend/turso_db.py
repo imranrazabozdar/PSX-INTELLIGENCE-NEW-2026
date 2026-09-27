@@ -104,6 +104,66 @@ def _encode_arg(v):
     return {"type": "text", "value": str(v)}
 
 
+# ------------------------------------------------------ usage accounting --
+# Turso bills rows READ (rows scanned, not rows returned) and rows WRITTEN,
+# and its HTTP pipeline reports both per statement. Aggregated here by SQL
+# shape so a batch job or the dashboard can say exactly which queries cost
+# what, instead of guessing -- the previous account hit its 500M/month read
+# cap without anyone being able to see where the reads went.
+import re as _re
+
+_usage_lock = threading.Lock()
+_usage = {}          # sql shape -> [calls, rows_read, rows_written]
+_usage_has_fields = False
+
+
+def _sql_shape(sql):
+    return _re.sub(r"\s+", " ", sql).strip()[:160]
+
+
+def _account(sql, result):
+    global _usage_has_fields
+    rr, rw = result.get("rows_read"), result.get("rows_written")
+    if rr is not None or rw is not None:
+        _usage_has_fields = True
+    with _usage_lock:
+        u = _usage.setdefault(_sql_shape(sql), [0, 0, 0])
+        u[0] += 1
+        u[1] += int(rr or 0)
+        u[2] += int(rw or 0)
+
+
+def usage_report(top=15):
+    with _usage_lock:
+        items = sorted(_usage.items(), key=lambda kv: -kv[1][1])
+    return {
+        "reported_by_turso": _usage_has_fields,
+        "calls": sum(v[0] for _, v in items),
+        "rows_read": sum(v[1] for _, v in items),
+        "rows_written": sum(v[2] for _, v in items),
+        "top_by_rows_read": [{"sql": k, "calls": v[0], "rows_read": v[1], "rows_written": v[2]}
+                             for k, v in items[:top]],
+    }
+
+
+def print_usage_report(label=None, top=15):
+    r = usage_report(top)
+    if not r["calls"]:
+        return
+    tag = label or os.path.basename(__import__("sys").argv[0] or "process")
+    print(f"\n[turso usage] {tag}: {r['calls']} statements, "
+          f"{r['rows_read']:,} rows read, {r['rows_written']:,} rows written"
+          + ("" if r["reported_by_turso"] else " (Turso did not report row counts)"))
+    for q in r["top_by_rows_read"]:
+        print(f"  {q['rows_read']:>12,} read  {q['rows_written']:>10,} written  "
+              f"{q['calls']:>6}x  {q['sql']}")
+
+
+if os.getenv("PSX_TURSO_USAGE_REPORT"):
+    import atexit as _atexit
+    _atexit.register(print_usage_report)
+
+
 class _TursoCursor:
     """Minimal DB-API-shaped cursor backed by one Hrana "execute" result —
     just enough of sqlite3.Cursor's surface for how this codebase uses it:
@@ -234,6 +294,7 @@ class _TursoConnection:
         if res.get("type") == "error":
             raise sqlite3.OperationalError(res["error"].get("message", "Turso error"))
         result = res["response"]["result"]
+        _account(sql, result)
         if cache_key is not None:
             if len(self._query_cache) > 5000:  # crude cap against unbounded
                 self._query_cache.clear()       # growth over a long-lived process
@@ -261,10 +322,11 @@ class _TursoConnection:
             reqs.append({"type": "execute", "stmt": stmt})
         data = self._post(reqs)
         out = []
-        for res in data["results"]:
+        for (sql, _), res in zip(queries, data["results"]):
             if res.get("type") == "error":
                 raise sqlite3.OperationalError(res["error"].get("message", "Turso error"))
             result = res["response"]["result"]
+            _account(sql, result)
             cols = [c["name"] for c in result.get("cols", [])]
             rows = [_Row(zip(cols, [_decode_cell(v) for v in r])) for r in result.get("rows", [])]
             out.append(rows)
@@ -278,9 +340,10 @@ class _TursoConnection:
         if not stmts:
             return
         data = self._post([{"type": "execute", "stmt": {"sql": s}} for s in stmts])
-        for res in data["results"]:
+        for s, res in zip(stmts, data["results"]):
             if res.get("type") == "error":
                 raise sqlite3.OperationalError(res["error"].get("message", "Turso error"))
+            _account(s, res["response"]["result"])
 
     def commit(self):
         pass  # every statement above is already durable the moment it returns
