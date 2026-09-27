@@ -12,7 +12,7 @@ import asyncio, csv, inspect, io, json, logging, math, os, statistics, requests,
 import concurrent.futures as _cf
 from bs4 import BeautifulSoup
 import pandas as pd
-import dps_scraper as _dps_scraper
+import scs_daily as _scs_daily
 import ai_overlay as _ai_overlay
 from volume_engine import volume_analysis
 from fundamentals_analyzer import analyze as fundamental_analysis
@@ -2396,7 +2396,9 @@ def backfill_ohlc_from_dps(symbol, range_="5y"):
         start_date = max(requested_start, fetch_from)
     else:
         start_date = requested_start
-    df = _dps_scraper.fetch_psx_dps_ohlc(symbol.upper(), start_date=start_date, end_date=end_date)
+    # PSX's /historical endpoint (dps_scraper) 403s every request since
+    # 2026-09-27; SCS daily bars replace it -- see scs_daily.py.
+    df = _scs_daily.fetch_scs_daily_ohlc(symbol.upper(), start_date=start_date, end_date=end_date)
     good = []
     for _, x in df.iterrows():
         try:
@@ -2405,7 +2407,7 @@ def backfill_ohlc_from_dps(symbol, range_="5y"):
             if not (l <= min(o, c) <= max(o, c) <= h) or c <= 0:
                 continue
             good.append((symbol.upper(), x["date"], o, h, l, c,
-                         float(x["volume"] or 0), "PSX Data Portal (dps.psx.com.pk)"))
+                         float(x["volume"] or 0), _scs_daily.SOURCE_LABEL))
         except Exception:
             continue
     if good:
@@ -2422,9 +2424,8 @@ def backfill_ohlc_from_dps(symbol, range_="5y"):
                 c.commit()
     return {"symbol": symbol.upper(), "fetched": len(df), "stored": len(good),
             "range": range_,
-            "note": "Sourced from PSX's own Data Portal (dps.psx.com.pk) — the "
-                    "exchange's own quoted Open/High/Low/Close/Volume, not a "
-                    "third-party adjusted re-derivation of it."}
+            "note": f"Sourced from {_scs_daily.SOURCE_LABEL} -- PSX's own Data "
+                    "Portal historical endpoint has refused requests since 2026-09-27."}
 
 
 # Back-compat alias -- keep the old name callable in case anything outside
