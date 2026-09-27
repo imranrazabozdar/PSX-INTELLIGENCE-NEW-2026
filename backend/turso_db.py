@@ -164,6 +164,52 @@ if os.getenv("PSX_TURSO_USAGE_REPORT"):
     _atexit.register(print_usage_report)
 
 
+# ------------------------------------------------- daily_ohlc snapshot --
+# The GitHub Actions refresh job runs ~9 Python steps that each re-read all
+# of daily_ohlc from Turso (SELECT DISTINCT symbol + every symbol's full
+# history, or a whole-table window query) -- measured 2026-09-27 at ~3.2M
+# rows read per run. When PSX_DAILY_OHLC_SNAPSHOT names an existing local
+# SQLite file (written once per job by snapshot_daily_ohlc.py, right after
+# the OHLC refresh step), read-only statements that touch ONLY daily_ohlc
+# are answered from that file instead. Any write to daily_ohlc in the same
+# process turns routing off, so a process never reads its own stale copy.
+_SNAPSHOT_PATH = os.getenv("PSX_DAILY_OHLC_SNAPSHOT")
+_snapshot = {"conn": None, "disabled": False}
+_snapshot_lock = threading.Lock()
+_TABLE_REF = _re.compile(r"\b(?:FROM|JOIN)\s+([A-Za-z_]\w*)", _re.I)
+_CTE_NAME = _re.compile(r"(?:\bWITH|,)\s*([A-Za-z_]\w*)\s+AS\s*\(", _re.I)
+
+
+def _snapshot_eligible(sql):
+    head = sql.lstrip()[:4].upper()
+    if head not in ("SELE", "WITH"):
+        if "DAILY_OHLC" in sql.upper():
+            _snapshot["disabled"] = True
+        return False
+    ctes = {n.lower() for n in _CTE_NAME.findall(sql)}
+    tables = {t.lower() for t in _TABLE_REF.findall(sql)} - ctes
+    return tables == {"daily_ohlc"}
+
+
+def _snapshot_result(sql, params):
+    """Hrana-shaped result from the local snapshot, or None to go to Turso."""
+    if not _SNAPSHOT_PATH or _snapshot["disabled"] or not _snapshot_eligible(sql):
+        return None
+    with _snapshot_lock:
+        if _snapshot["conn"] is None:
+            if not os.path.exists(_SNAPSHOT_PATH):
+                return None
+            _snapshot["conn"] = sqlite3.connect(f"file:{_SNAPSHOT_PATH}?mode=ro", uri=True,
+                                                check_same_thread=False)
+            print(f"[turso_db] daily_ohlc reads served from local snapshot {_SNAPSHOT_PATH}")
+        cur = _snapshot["conn"].execute(sql, tuple(params or ()))
+        rows = cur.fetchall()
+    cols = [d[0] for d in (cur.description or [])]
+    return {"cols": [{"name": c} for c in cols],
+            "rows": [[_encode_arg(v) for v in r] for r in rows],
+            "affected_row_count": 0, "last_insert_rowid": None}
+
+
 class _TursoCursor:
     """Minimal DB-API-shaped cursor backed by one Hrana "execute" result —
     just enough of sqlite3.Cursor's surface for how this codebase uses it:
@@ -280,6 +326,9 @@ class _TursoConnection:
         # without hand-auditing every caller across a dozen files. Only
         # SELECTs are eligible -- a write must never be served from cache or
         # silently deduped.
+        local = _snapshot_result(sql, params)
+        if local is not None:
+            return local
         is_select = sql.lstrip()[:6].upper() == "SELECT"
         cache_key = (sql, tuple(params)) if is_select else None
         if cache_key is not None:
@@ -314,19 +363,23 @@ class _TursoConnection:
         run several independent, unrelated SELECTs (e.g. /health checking N
         cache keys, or a peer-comparison loop fetching N symbols' history)
         where the bottleneck is round-trip count, not any single query."""
+        local = [_snapshot_result(sql, params) for sql, params in queries]
+        remote = [q for q, r in zip(queries, local) if r is None]
         reqs = []
-        for sql, params in queries:
+        for sql, params in remote:
             stmt = {"sql": sql}
             if params:
                 stmt["args"] = [_encode_arg(p) for p in params]
             reqs.append({"type": "execute", "stmt": stmt})
-        data = self._post(reqs)
+        remote_results = iter(self._post(reqs)["results"] if reqs else [])
         out = []
-        for (sql, _), res in zip(queries, data["results"]):
-            if res.get("type") == "error":
-                raise sqlite3.OperationalError(res["error"].get("message", "Turso error"))
-            result = res["response"]["result"]
-            _account(sql, result)
+        for (sql, _), result in zip(queries, local):
+            if result is None:
+                res = next(remote_results)
+                if res.get("type") == "error":
+                    raise sqlite3.OperationalError(res["error"].get("message", "Turso error"))
+                result = res["response"]["result"]
+                _account(sql, result)
             cols = [c["name"] for c in result.get("cols", [])]
             rows = [_Row(zip(cols, [_decode_cell(v) for v in r])) for r in result.get("rows", [])]
             out.append(rows)

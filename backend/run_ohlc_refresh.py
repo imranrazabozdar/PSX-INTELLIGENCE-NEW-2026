@@ -108,12 +108,16 @@ def main():
         return 1
 
     def _count_universe_coverage():
-        placeholders = ",".join("?" for _ in symbols)
-        row = conn.execute(
-            f"SELECT COUNT(DISTINCT symbol) as cnt FROM daily_ohlc WHERE symbol IN ({placeholders})",
-            tuple(symbols),
-        ).fetchone()
-        return row["cnt"] if isinstance(row, dict) else row[0]
+        # One indexed `LIMIT 1` probe per symbol (~1 row read each), not
+        # COUNT(DISTINCT symbol) ... IN (...): Turso bills rows scanned, and
+        # that form read every stored bar of all 150 symbols (~111K rows)
+        # each of the two times it runs.
+        queries = [("SELECT 1 AS x FROM daily_ohlc WHERE symbol = ? LIMIT 1", (s,)) for s in symbols]
+        if hasattr(conn, "batch_query"):
+            results = conn.batch_query(queries)
+        else:
+            results = [conn.execute(q, p).fetchall() for q, p in queries]
+        return sum(1 for r in results if r)
 
     logger.info(f"Existing universe symbols already in daily_ohlc: {_count_universe_coverage()}/{len(symbols)}")
     logger.info(f"Will process {len(symbols)} symbols (FIRE/Wyckoff universe only -- "
@@ -164,6 +168,13 @@ def main():
 
             df = scs_daily.fetch_scs_daily_ohlc(symbol, start_date=start_date, end_date=end_date)
 
+            if df.empty and last_date:
+                # Already stored, no newer session yet (weekend/holiday, or
+                # SCS hasn't published today's bar) -- not a failure.
+                logger.info(f"    {symbol}: no new bars since {last_date}")
+                skipped += 1
+                time.sleep(0.3)
+                continue
             if df.empty:
                 logger.info(f"    {symbol}: no data returned")
                 failed += 1
