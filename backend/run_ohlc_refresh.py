@@ -183,10 +183,19 @@ def main():
 
             if good:
                 if turso_db.USING_TURSO and hasattr(conn, 'batch_query'):
-                    sql = "INSERT OR IGNORE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)"
-                    CHUNK = 100
+                    # Multi-row VALUES, all chunks in ONE pipeline request:
+                    # 100 single-row INSERTs per round trip took ~30s per
+                    # 5-year symbol (2026-09-27 backfill: 41 symbols in the
+                    # 20-min budget). 400 rows x 8 params stays far under
+                    # SQLite's 32,766 bound-parameter limit.
+                    CHUNK = 400
+                    queries = []
                     for ci in range(0, len(good), CHUNK):
-                        conn.batch_query([(sql, p) for p in good[ci:ci + CHUNK]])
+                        part = good[ci:ci + CHUNK]
+                        sql = ("INSERT OR IGNORE INTO daily_ohlc VALUES"
+                               + ",".join(["(?,?,?,?,?,?,?,?)"] * len(part)))
+                        queries.append((sql, [v for row in part for v in row]))
+                    conn.batch_query(queries)
                 else:
                     conn.executemany("INSERT OR IGNORE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)", good)
                     conn.commit()
