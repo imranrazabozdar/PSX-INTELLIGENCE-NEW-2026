@@ -95,7 +95,45 @@ def main():
         print(f"\nAttempt 2 warm-up GET failed: {type(e).__name__}: {e}")
     r2 = session2.post(HISTORICAL_POST, data={"symbol": "OGDC", "date": "2026-09-27"},
                         headers=BROWSER_HEADERS, timeout=20)
-    dump("Attempt 2: warm-up GET then POST with session cookies", r2)
+    dump("Attempt 2: warm-up POST with session cookies", r2)
+
+    # Attempt 4: a REAL Chromium session (Playwright), navigate to the
+    # actual page, then fire the identical POST from WITHIN the page's own
+    # JS context via fetch() -- this carries the browser's genuine TLS/HTTP
+    # fingerprint, cookies, and Origin/Referer exactly as a real user's
+    # browser would, without us having to guess what a bot-check wants.
+    print("\n===== Attempt 4: real Chromium session, fetch() from within the page =====")
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(user_agent=BROWSER_HEADERS["User-Agent"])
+            nav = page.goto(HISTORICAL_PAGE, wait_until="networkidle", timeout=30000)
+            print(f"page navigation status: {nav.status if nav else 'None'}")
+            result = page.evaluate(
+                """async () => {
+                    const resp = await fetch('/historical', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'text/html, */*; q=0.01',
+                        },
+                        body: 'symbol=OGDC&date=2026-09-27',
+                    });
+                    const text = await resp.text();
+                    return {status: resp.status, length: text.length, snippet: text.slice(0, 600)};
+                }"""
+            )
+            print(f"fetch() status: {result['status']}")
+            print(f"fetch() body length: {result['length']}")
+            print("fetch() body[:600]:")
+            print(result["snippet"])
+            browser.close()
+    except ImportError:
+        print("playwright not installed in this environment -- skipping attempt 4")
+    except Exception as e:
+        print(f"Attempt 4 failed: {type(e).__name__}: {e}")
 
     # Attempt 3: bare request, no special headers at all (sanity check --
     # confirms whether ANY request to this host succeeds right now,
