@@ -40,7 +40,7 @@ from fire_engine.support_resistance import calculate_support_resistance
 from fire_engine.events import log_fire_event
 from fire_engine.session_transition import detect_near_close_events, check_session_transitions
 from fire_engine.exclusions import filter_excluded_stocks, load_exclusions_from_config
-from fire_engine.market_hours import _now_pkt
+from fire_engine.market_hours import _now_pkt, session_date
 
 
 def run_symbol_for_date(db, symbol: str, date: str, cfg: dict) -> dict:
@@ -179,7 +179,7 @@ def run_daily_batch(db, cfg: dict, date: str = None, progress=_default_progress)
     difference between "the log went quiet for 20 minutes, is it stuck?"
     and being able to see exactly which symbol it's on."""
     if date is None:
-        date = _now_pkt().strftime("%Y-%m-%d")
+        date = session_date()
 
     universe = cfg["stocks"]["universe"]
     if cfg["exclusion"]["enabled"]:
