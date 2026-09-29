@@ -3613,10 +3613,12 @@ def _run_fire_scan():
     fire_score descending (highest-priority setups first)."""
     with db() as c:
         try:
-            row = c.execute(
-                "SELECT MAX(event_date) AS d FROM fire_events "
-                "WHERE event_type IN ('FIRE','PRE_FIRE')"
-            ).fetchone()
+            # One MAX per type: each is a single seek on
+            # idx_fire_events_type_date, where MAX(...) WHERE event_type IN
+            # (...) scanned every FIRE/PRE_FIRE row ever logged.
+            dates = [c.execute("SELECT MAX(event_date) AS d FROM fire_events WHERE event_type=?",
+                               (t,)).fetchone() for t in ("FIRE", "PRE_FIRE")]
+            row = {"d": max((r["d"] for r in dates if r and r["d"]), default=None)}
         except Exception as exc:
             return {"status": "ok", "scanned": 0, "hits": [],
                     "reason": f"fire_events not available yet ({type(exc).__name__}); "
@@ -3654,12 +3656,34 @@ def patterns_fire_scan(request:Request, force:bool=False):
     descending. See _run_fire_scan's docstring: this is a strength score,
     not a probability/profitability claim, and reflects the last time
     fire_engine/run_daily_batch.py ran, not a live per-request scan."""
-    cached = _scan_cache.latest("fire_scan")
-    result, err = _serve_cached_and_refresh("fire_scan", _run_fire_scan, cached,
-                                             SCAN_REFRESH_INTERVAL, force, lambda: _require_admin(request))
-    if err: return err
-    out = dict(result)
-    out["_background_refresh_running"] = _bg_job_running("fire_scan")
+    return _serve_cheap_scan("fire_scan", _run_fire_scan, force, request)
+
+
+def _serve_cheap_scan(cache_key, compute_fn, force, request):
+    """For scans that are just an indexed read of a batch job's output
+    (fire_scan, wyckoff_scan): recompute inline once the cache is older
+    than SCAN_REFRESH_INTERVAL instead of stale-while-revalidate. Serving
+    the stale copy first meant the first view after each daily batch showed
+    the PREVIOUS session (2026-09-29: Patterns tab still on 2026-09-25 while
+    fire_events already had 2026-09-28). Falls back to the cached copy if
+    the recompute fails."""
+    cached = _scan_cache.latest(cache_key)
+    if force and _require_admin(request):
+        force = False
+    if force or cached is None or cached["_cache_age_seconds"] >= SCAN_REFRESH_INTERVAL:
+        try:
+            fresh = compute_fn()
+            if isinstance(fresh, dict) and fresh.get("status") == "ok":
+                _scan_cache.save(cache_key, fresh)
+                cached = dict(fresh, _cache_age_seconds=0,
+                              _cache_run_at=datetime.now(timezone.utc).isoformat())
+        except Exception as e:
+            print(f"[{cache_key}] inline refresh failed, serving cached: {type(e).__name__}: {e}")
+    if cached is None:
+        return {"status": "error", "scanned": 0, "hits": [],
+                "reason": f"{cache_key} could not be computed yet"}
+    out = dict(cached)
+    out["_background_refresh_running"] = False
     return out
 
 
@@ -3706,13 +3730,7 @@ def patterns_wyckoff_scan(request:Request, force:bool=False):
     signal fires, entry timing (Spring, absorption spikes, etc.) is a
     manual 1-hour-chart step -- this scanner deliberately never fetches
     or computes on 1-hour data."""
-    cached = _scan_cache.latest("wyckoff_scan")
-    result, err = _serve_cached_and_refresh("wyckoff_scan", _run_wyckoff_scan, cached,
-                                             SCAN_REFRESH_INTERVAL, force, lambda: _require_admin(request))
-    if err: return err
-    out = dict(result)
-    out["_background_refresh_running"] = _bg_job_running("wyckoff_scan")
-    return out
+    return _serve_cheap_scan("wyckoff_scan", _run_wyckoff_scan, force, request)
 
 
 @app.get("/patterns/mharris-scan")

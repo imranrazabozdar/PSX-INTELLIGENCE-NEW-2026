@@ -119,7 +119,11 @@ DROP INDEX IF EXISTS idx_candles_symbol_datetime;
 DROP INDEX IF EXISTS idx_candles_symbol_time;
 DROP INDEX IF EXISTS idx_candles_session;
 CREATE INDEX IF NOT EXISTS idx_fire_events_symbol_date ON fire_events(symbol, event_date);
-CREATE INDEX IF NOT EXISTS idx_fire_events_type ON fire_events(event_type);
+-- (event_type, event_date) instead of event_type alone: same write cost,
+-- and it answers the dashboard's "latest FIRE/PRE_FIRE date" with one
+-- index seek per type instead of scanning the whole growing table.
+DROP INDEX IF EXISTS idx_fire_events_type;
+CREATE INDEX IF NOT EXISTS idx_fire_events_type_date ON fire_events(event_type, event_date);
 CREATE INDEX IF NOT EXISTS idx_fire_events_score ON fire_events(fire_score DESC);
 
 -- Wyckoff Institutional Stealth Accumulation Detector (Phases 18-22).
