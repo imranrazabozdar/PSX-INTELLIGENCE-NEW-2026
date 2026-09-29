@@ -5407,12 +5407,49 @@ async def _intraday_bars_collector_loop():
         await asyncio.sleep(INTRADAY_BARS_COLLECT_INTERVAL)
 
 
+_DAILY_DATA_EPOCH = {"value": 0.0, "checked": 0.0}
+
+
+def _daily_data_epoch():
+    """When the newest end-of-day data landed: the refresh_chart_patterns.yml
+    job saves bullish_engulfing_scan right after writing the day's
+    daily_ohlc bars. One primary-key lookup, re-checked every 5 min."""
+    now = time.time()
+    if now - _DAILY_DATA_EPOCH["checked"] > 300:
+        try:
+            with db() as c:
+                row = c.execute("SELECT run_at_epoch FROM analysis_cache WHERE cache_key=?",
+                                ("bullish_engulfing_scan",)).fetchone()
+            _DAILY_DATA_EPOCH["value"] = float(row["run_at_epoch"]) if row and row["run_at_epoch"] else 0.0
+        except Exception:
+            pass
+        _DAILY_DATA_EPOCH["checked"] = now
+    return _DAILY_DATA_EPOCH["value"]
+
+
+def _behind_daily_data(cached):
+    """True when a watchlist cache predates the latest daily data (or is a
+    day old). Those scans used to refresh only from the background loop at
+    5 PM PKT -- which never runs while Streamlit Cloud has the app asleep,
+    so the Home tab kept showing a previous day (2026-09-28: watchlist_scan
+    still from the 27th). Now the first request after new data refreshes
+    it in the background (stale-while-revalidate), as the pattern scans do."""
+    if cached is None:
+        return True
+    age = cached.get("_cache_age_seconds") or 0
+    if age < 1800:
+        return False
+    return (time.time() - age) < _daily_data_epoch() or age > 86400
+
+
 @app.get("/watchlist/alerts")
 def watchlist_alerts():
     """Cached VOLUME_SURGE/ACCUMULATION/DISTRIBUTION alerts scoped to
     WATCHLIST_SYMBOLS (see _run_alerts_watchlist), refreshed on the same
     30-min/market-hours cadence as /watchlist/scan."""
     cached = _scan_cache.latest("watchlist_alerts")
+    if _behind_daily_data(cached):
+        _start_bg_job("watchlist_alerts", _run_alerts_watchlist)
     if not cached:
         return {"status": "never_run", "alerts": []}
     return cached
@@ -5425,7 +5462,7 @@ def watchlist_scan(request:Request, force:bool=False):
     DSS analysis for the curated WATCHLIST_SYMBOLS set."""
     try:
         cached = _scan_cache.latest("watchlist_scan")
-        if force:
+        if force or _behind_daily_data(cached):
             _start_bg_job("watchlist_scan", _run_watchlist_scan)
         if not cached:
             return {"status": "never_run", "age_seconds": None, "symbols": WATCHLIST_SYMBOLS, "results": {}, "_background_refresh_running": _bg_job_running("watchlist_scan")}

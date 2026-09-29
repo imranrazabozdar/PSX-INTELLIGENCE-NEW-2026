@@ -14,7 +14,7 @@ reads from, the same way fire_engine/scheduler.py's FIRE batch does --
 the next /patterns/wyckoff-scan request picks up new rows on its own.
 """
 from fire_engine.exclusions import filter_excluded_stocks, load_exclusions_from_config
-from fire_engine.market_hours import _now_pkt
+from fire_engine.market_hours import _now_pkt, session_date
 from fire_engine.wyckoff_data_fetcher import fetch_daily_and_4h
 from fire_engine.wyckoff_detector import WyckoffDetector
 
@@ -94,7 +94,7 @@ def run_daily_wyckoff_batch(db, cfg: dict, date: str = None, progress=_default_p
     it's actually running on, not the prior trading day).
     Returns {date, scan_id, results: [prepared dicts], stocks_with_signal}."""
     if date is None:
-        date = _now_pkt().strftime("%Y-%m-%d")
+        date = session_date()
 
     universe = cfg["stocks"]["universe"]
     if cfg["exclusion"]["enabled"]:

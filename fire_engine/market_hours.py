@@ -50,6 +50,33 @@ def is_trading_day(now_pkt: datetime = None) -> bool:
     return now_pkt.weekday() < 5  # 0=Mon .. 4=Fri, 5=Sat, 6=Sun
 
 
+def session_date(now_pkt: datetime = None) -> str:
+    """The trading session ("YYYY-MM-DD") a post-close batch run belongs to:
+    today, unless it's before today's market open, in which case the
+    previous weekday. GitHub's native cron has fired the 4:30 PM PKT batch
+    7+ hours late (2026-09-28: started 23:42 PKT, Wyckoff step ran past
+    midnight), and "today" at 00:30 PKT is the NEXT day -- Monday's
+    results were stored as 2026-09-29, and a late Friday run would have
+    hit the weekend guard and been skipped."""
+    now_pkt = now_pkt or _now_pkt()
+    d = now_pkt.date()
+    if (now_pkt.hour, now_pkt.minute) < (MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE):
+        d -= timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.strftime("%Y-%m-%d")
+
+
+def in_batch_window(now_pkt: datetime = None) -> bool:
+    """The scheduled batches' weekend guard: a trading day, or the small
+    hours after one (a late cron run for that day's session)."""
+    now_pkt = now_pkt or _now_pkt()
+    if is_trading_day(now_pkt):
+        return True
+    before_open = (now_pkt.hour, now_pkt.minute) < (MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE)
+    return before_open and is_trading_day(now_pkt - timedelta(days=1))
+
+
 def is_market_open(now_pkt: datetime = None) -> bool:
     """Informational: True if `now` (PKT) falls within this project's
     09:00-16:30 PKT session window on a trading day. Not used to gate
