@@ -1,0 +1,137 @@
+train_end,test_draw,rule,hits,expected,n_target
+90,91,"Hot range (most-won 1,000-block)",1,1.7,1700
+90,91,"Cold / 'due' range (least-won 1,000-block)",1,1.7,1700
+90,91,Hot ending (most-won last 3 digits),0,1.7,1700
+90,91,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+90,91,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+90,91,Repeat last draw's winners,1,1.7,1700
+90,91,Most-frequent past winners,0,1.7,1700
+90,91,Near last winners (within +/-100),2,1.7,1700
+91,92,"Hot range (most-won 1,000-block)",2,1.7,1700
+91,92,"Cold / 'due' range (least-won 1,000-block)",0,1.7,1700
+91,92,Hot ending (most-won last 3 digits),1,1.7,1700
+91,92,Cold / 'due' ending (least-won last 3 digits),0,1.7,1700
+91,92,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+91,92,Repeat last draw's winners,2,1.7,1700
+91,92,Most-frequent past winners,4,1.7,1700
+91,92,Near last winners (within +/-100),2,1.7,1700
+92,93,"Hot range (most-won 1,000-block)",0,1.7,1700
+92,93,"Cold / 'due' range (least-won 1,000-block)",0,1.7,1700
+92,93,Hot ending (most-won last 3 digits),2,1.7,1700
+92,93,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+92,93,"Hot digit-by-position score (top 1,000)",0,1.7,1700
+92,93,Repeat last draw's winners,0,1.7,1700
+92,93,Most-frequent past winners,1,1.7,1700
+92,93,Near last winners (within +/-100),1,1.7,1700
+93,94,"Hot range (most-won 1,000-block)",2,1.7,1700
+93,94,"Cold / 'due' range (least-won 1,000-block)",1,1.7,1700
+93,94,Hot ending (most-won last 3 digits),1,1.7,1700
+93,94,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+93,94,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+93,94,Repeat last draw's winners,2,1.7,1700
+93,94,Most-frequent past winners,2,1.7,1700
+93,94,Near last winners (within +/-100),1,1.7,1700
+94,95,"Hot range (most-won 1,000-block)",3,1.7,1700
+94,95,"Cold / 'due' range (least-won 1,000-block)",1,1.7,1700
+94,95,Hot ending (most-won last 3 digits),0,1.7,1700
+94,95,Cold / 'due' ending (least-won last 3 digits),3,1.7,1700
+94,95,"Hot digit-by-position score (top 1,000)",4,1.7,1700
+94,95,Repeat last draw's winners,3,1.7,1700
+94,95,Most-frequent past winners,3,1.7,1700
+94,95,Near last winners (within +/-100),2,1.7,1700
+95,96,"Hot range (most-won 1,000-block)",1,1.7,1700
+95,96,"Cold / 'due' range (least-won 1,000-block)",0,1.7,1700
+95,96,Hot ending (most-won last 3 digits),0,1.7,1700
+95,96,Cold / 'due' ending (least-won last 3 digits),4,1.7,1700
+95,96,"Hot digit-by-position score (top 1,000)",4,1.7,1700
+95,96,Repeat last draw's winners,5,1.7,1700
+95,96,Most-frequent past winners,0,1.7,1700
+95,96,Near last winners (within +/-100),0,1.7,1700
+96,97,"Hot range (most-won 1,000-block)",1,1.7,1700
+96,97,"Cold / 'due' range (least-won 1,000-block)",1,1.7,1700
+96,97,Hot ending (most-won last 3 digits),3,1.7,1700
+96,97,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+96,97,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+96,97,Repeat last draw's winners,3,1.7,1700
+96,97,Most-frequent past winners,3,1.7,1700
+96,97,Near last winners (within +/-100),2,1.7,1700
+97,98,"Hot range (most-won 1,000-block)",0,1.7,1700
+97,98,"Cold / 'due' range (least-won 1,000-block)",2,1.7,1700
+97,98,Hot ending (most-won last 3 digits),2,1.7,1700
+97,98,Cold / 'due' ending (least-won last 3 digits),2,1.7,1700
+97,98,"Hot digit-by-position score (top 1,000)",2,1.7,1700
+97,98,Repeat last draw's winners,2,1.7,1700
+97,98,Most-frequent past winners,2,1.7,1700
+97,98,Near last winners (within +/-100),2,1.7,1700
+98,99,"Hot range (most-won 1,000-block)",2,1.7,1700
+98,99,"Cold / 'due' range (least-won 1,000-block)",1,1.7,1700
+98,99,Hot ending (most-won last 3 digits),3,1.7,1700
+98,99,Cold / 'due' ending (least-won last 3 digits),0,1.7,1700
+98,99,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+98,99,Repeat last draw's winners,1,1.7,1700
+98,99,Most-frequent past winners,1,1.7,1700
+98,99,Near last winners (within +/-100),2,1.7,1700
+99,100,"Hot range (most-won 1,000-block)",5,1.7,1700
+99,100,"Cold / 'due' range (least-won 1,000-block)",1,1.7,1700
+99,100,Hot ending (most-won last 3 digits),1,1.7,1700
+99,100,Cold / 'due' ending (least-won last 3 digits),2,1.7,1700
+99,100,"Hot digit-by-position score (top 1,000)",2,1.7,1700
+99,100,Repeat last draw's winners,2,1.7,1700
+99,100,Most-frequent past winners,4,1.7,1700
+99,100,Near last winners (within +/-100),3,1.7,1700
+100,101,"Hot range (most-won 1,000-block)",3,1.7,1700
+100,101,"Cold / 'due' range (least-won 1,000-block)",2,1.7,1700
+100,101,Hot ending (most-won last 3 digits),2,1.7,1700
+100,101,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+100,101,"Hot digit-by-position score (top 1,000)",4,1.7,1700
+100,101,Repeat last draw's winners,4,1.7,1700
+100,101,Most-frequent past winners,1,1.7,1700
+100,101,Near last winners (within +/-100),3,1.7,1700
+101,102,"Hot range (most-won 1,000-block)",0,1.7,1700
+101,102,"Cold / 'due' range (least-won 1,000-block)",0,1.7,1700
+101,102,Hot ending (most-won last 3 digits),3,1.7,1700
+101,102,Cold / 'due' ending (least-won last 3 digits),3,1.7,1700
+101,102,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+101,102,Repeat last draw's winners,0,1.7,1700
+101,102,Most-frequent past winners,2,1.7,1700
+101,102,Near last winners (within +/-100),4,1.7,1700
+102,103,"Hot range (most-won 1,000-block)",2,1.7,1700
+102,103,"Cold / 'due' range (least-won 1,000-block)",2,1.7,1700
+102,103,Hot ending (most-won last 3 digits),0,1.7,1700
+102,103,Cold / 'due' ending (least-won last 3 digits),2,1.7,1700
+102,103,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+102,103,Repeat last draw's winners,1,1.7,1700
+102,103,Most-frequent past winners,1,1.7,1700
+102,103,Near last winners (within +/-100),1,1.7,1700
+103,104,"Hot range (most-won 1,000-block)",0,1.7,1700
+103,104,"Cold / 'due' range (least-won 1,000-block)",3,1.7,1700
+103,104,Hot ending (most-won last 3 digits),0,1.7,1700
+103,104,Cold / 'due' ending (least-won last 3 digits),3,1.7,1700
+103,104,"Hot digit-by-position score (top 1,000)",1,1.7,1700
+103,104,Repeat last draw's winners,1,1.7,1700
+103,104,Most-frequent past winners,3,1.7,1700
+103,104,Near last winners (within +/-100),1,1.7,1700
+104,105,"Hot range (most-won 1,000-block)",0,1.7,1700
+104,105,"Cold / 'due' range (least-won 1,000-block)",3,1.7,1700
+104,105,Hot ending (most-won last 3 digits),3,1.7,1700
+104,105,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+104,105,"Hot digit-by-position score (top 1,000)",0,1.7,1700
+104,105,Repeat last draw's winners,2,1.7,1700
+104,105,Most-frequent past winners,1,1.7,1700
+104,105,Near last winners (within +/-100),1,1.7,1700
+105,106,"Hot range (most-won 1,000-block)",1,1.7,1700
+105,106,"Cold / 'due' range (least-won 1,000-block)",1,1.7,1700
+105,106,Hot ending (most-won last 3 digits),3,1.7,1700
+105,106,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+105,106,"Hot digit-by-position score (top 1,000)",2,1.7,1700
+105,106,Repeat last draw's winners,0,1.7,1700
+105,106,Most-frequent past winners,1,1.7,1700
+105,106,Near last winners (within +/-100),3,1.7,1700
+106,107,"Hot range (most-won 1,000-block)",2,1.7,1700
+106,107,"Cold / 'due' range (least-won 1,000-block)",0,1.7,1700
+106,107,Hot ending (most-won last 3 digits),1,1.7,1700
+106,107,Cold / 'due' ending (least-won last 3 digits),1,1.7,1700
+106,107,"Hot digit-by-position score (top 1,000)",4,1.7,1700
+106,107,Repeat last draw's winners,3,1.7,1700
+106,107,Most-frequent past winners,0,1.7,1700
+106,107,Near last winners (within +/-100),1,1.7,1700

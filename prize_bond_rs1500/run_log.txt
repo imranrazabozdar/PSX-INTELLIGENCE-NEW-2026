@@ -1,0 +1,267 @@
+====================================================================================================
+STEP 1 - CLEAN DATASET AND VALIDATION
+====================================================================================================
+ draw_no  draw_date  gap_days  n_tier1  n_tier2  n_tier3  n_total  malformed_tokens  duplicates_within_draw  tier3_ascending  file_matches_header                                    label_variants
+      80 2019-11-15       NaN        1        3     1696     1700                 0                       0             True                 True                                                  
+      81 2020-02-17      94.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      82 2020-05-15      88.0        1        3     1696     1700                 0                       0             True                 True                                            18500-
+      83 2020-08-17      94.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      84 2020-11-16      91.0        1        3     1696     1700                 0                       0             True                 True                                            18500-
+      85 2021-02-15      91.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      86 2021-05-17      91.0        1        3     1696     1700                 0                       0             True                 True 1000000-Prize-2 | 18500-Prize-3 | 3000000-Prize-1
+      87 2021-08-16      91.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      88 2021-11-15      91.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      89 2022-02-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      90 2022-05-16      90.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      91 2022-08-15      91.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      92 2022-11-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      93 2023-02-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      94 2023-05-15      89.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      95 2023-08-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      96 2023-11-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      97 2024-02-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      98 2024-05-15      90.0        1        3     1696     1700                 0                       0             True                 True                                                  
+      99 2024-08-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     100 2024-11-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     101 2025-02-17      94.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     102 2025-05-15      87.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     103 2025-08-15      92.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     104 2025-11-17      94.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     105 2026-02-16      91.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     106 2026-05-15      88.0        1        3     1696     1700                 0                       0             True                 True                                                  
+     107 2026-08-17      94.0        1        3     1696     1700                 0                       0             True                 True                                                  
+
+rows: 47,600   draws: 28   missing draw numbers: none
+3rd-prize count per draw: min 1696, max 1696, mode 1696
+malformed tokens total: 0; duplicates within a draw: 0
+gap between draws (days): min 87, max 94, median 92
+
+Running Monte Carlo: 10,000 random histories of 28 draws with the observed sizes ...
+    ... 2000/10000 simulated histories
+    ... 4000/10000 simulated histories
+    ... 6000/10000 simulated histories
+    ... 8000/10000 simulated histories
+    ... 10000/10000 simulated histories
+    done.
+
+====================================================================================================
+STEP 2A - REPEATS ACROSS DRAWS
+====================================================================================================
+numbers that won in more than one draw: 1,036  (expected under chance 1,061); in 3+ draws: 18 (expected 15.6); max draws for one number: 3
+number  n_draws        draws   tiers
+083892        3  82, 84, 100 3, 3, 3
+142225        3  81, 87, 104 3, 3, 3
+182048        3  85, 86, 103 3, 3, 3
+201638        3  96, 99, 104 3, 3, 3
+370694        3 93, 100, 104 3, 3, 3
+379446        3  93, 99, 100 3, 3, 3
+463644        3   86, 89, 95 3, 3, 3
+542305        3   86, 91, 99 3, 3, 3
+553539        3 93, 103, 105 3, 3, 3
+554121        3   81, 93, 97 3, 3, 3
+560370        3  88, 96, 102 3, 3, 3
+569596        3   85, 87, 90 3, 3, 3
+628758        3  91, 98, 101 3, 3, 3
+698310        3   81, 96, 97 3, 3, 3
+805186        3  82, 96, 102 3, 3, 3
+1st/2nd prize numbers that reappeared later: 3 (expected 2.57)
+number  won_draw  won_tier  again_draw  again_tier
+776936        80         2          88           3
+814653       101         2         107           3
+500006       102         2         106           3
+
+====================================================================================================
+STEP 2B - DIGIT-LEVEL DISTRIBUTION
+====================================================================================================
+position 1: counts [4777, 4818, 4666, 4710, 4838, 5021, 4725, 4735, 4646, 4664]  chi2=23.79 p=0.005
+position 2: counts [4729, 4792, 4853, 4794, 4936, 4624, 4548, 4739, 4730, 4855]  chi2=24.49 p=0.004
+position 3: counts [4796, 4813, 4840, 4659, 4890, 4832, 4684, 4627, 4659, 4800]  chi2=16.40 p=0.059
+position 4: counts [4862, 4683, 4672, 4781, 4760, 4756, 4689, 4783, 4815, 4799]  chi2=7.28 p=0.608
+position 5: counts [4665, 4785, 4835, 4772, 4810, 4683, 4775, 4683, 4806, 4786]  chi2=6.89 p=0.649
+position 6: counts [4881, 4742, 4809, 4814, 4794, 4696, 4719, 4742, 4665, 4738]  chi2=7.78 p=0.556
+First two digits (100 ranges of 10,000): chi2=139.2 df=99 p=0.005
+First three digits (1,000 ranges of 1,000): chi2=1077.9 df=999 p=0.041
+Last two digits (100 endings): chi2=92.6 df=99 p=0.661
+Last three digits (1,000 endings): chi2=967.3 df=999 p=0.759
+Stability of first digit across draws: chi2=266.7 df=243 p=0.142
+Stability of first-two-digit ranges across draws: chi2=2944.8 df=2673 p=0.000
+Digit sum: obs mean 26.935 vs exact 27.000; chi2=49.8 df=46 p=0.324
+Odd-digit count: obs mean 2.998 vs exact 3.000; chi2=2.6 df=6 p=0.860
+Distinct digits in a number: obs mean 4.690 vs exact 4.686; chi2=10.2 df=4 p=0.037
+Palindromes: 38 vs expected 47.6  p=0.191
+Adjacent repeated digit: 19343 vs expected 19492.7  p=0.163
+
+====================================================================================================
+STEP 2C - SPATIAL STRUCTURE WITHIN A DRAW (3rd-prize list is sorted)
+====================================================================================================
+ draw_no  gaps_le10  gaps_le10_expected  bucket100_chi2  bucket100_p  dispersion_10k
+      80         36              28.505         106.235        0.291           1.073
+      81         33              28.505          85.529        0.831           0.864
+      82         47              28.505         130.000        0.020           1.313
+      83         34              28.505          76.235        0.957           0.770
+      84         26              28.505         117.765        0.096           1.190
+      85         26              28.505          94.235        0.617           0.952
+      86         22              28.505         100.824        0.430           1.018
+      87         29              28.505          94.000        0.623           0.949
+      88         41              28.505         135.529        0.009           1.369
+      89         20              28.505         101.176        0.420           1.022
+      90         26              28.505          95.765        0.573           0.967
+      91         33              28.505          98.235        0.503           0.992
+      92         31              28.505          98.824        0.486           0.998
+      93         27              28.505          84.588        0.849           0.854
+      94         21              28.505         101.765        0.404           1.028
+      95         30              28.505          96.941        0.540           0.979
+      96         40              28.505         111.412        0.185           1.125
+      97         27              28.505          88.353        0.770           0.892
+      98         36              28.505         123.059        0.051           1.243
+      99         23              28.505          95.059        0.593           0.960
+     100         39              28.505         104.471        0.334           1.055
+     101         43              28.505         116.118        0.115           1.173
+     102         24              28.505         145.294        0.002           1.468
+     103         43              28.505         137.412        0.006           1.388
+     104         63              28.505         243.765        0.000           2.462
+     105         30              28.505         104.235        0.340           1.053
+     106         30              28.505         101.765        0.404           1.028
+     107         31              28.505         101.176        0.420           1.022
+per-draw 100-bucket p-values: min 0.000; draws with p<0.05: 5; mean variance/mean ratio 1.115 (1.0 = Poisson-like randomness)
+gap KS=0.0108 (sim mean 0.0039); CV2=1.0436 (sim 0.9972); gaps<=10: 911 (sim 798.5)
+
+====================================================================================================
+STEP 2D - RELATIONSHIPS BETWEEN DRAWS
+====================================================================================================
+drift mean: rho=+0.072 p=0.717
+drift median: rho=+0.021 p=0.916
+drift sd: rho=-0.082 p=0.678
+bucket lag-1 r=+0.0389 (sim 95%: -0.0380 to +0.0376);  near+/-100: 13129 (sim 13216.9); near+/-1000: 44145 (sim 44296.8)
+
+====================================================================================================
+STEP 2E - HOT / COLD / 'DUE' / LUCKY-NUMBER FOLKLORE
+====================================================================================================
+Hot ranges stay hot (split-half): observed -0.0103 vs expected +0.0001 (95%: -0.0629-+0.0617)  p=0.731
+Hot 10,000-ranges stay hot (split-half): observed +0.0111 vs expected +0.0023 (95%: -0.1961-+0.1981)  p=0.928
+'Hot numbers' win again: observed 8 vs expected 6.64  p=0.696
+'Overdue' numbers (never won) beat past winners: observed 530 vs expected 559.8  p=0.214
+'Due' (cold) ranges catch up: observed 2427 (10.20%) vs expected 2380 (10%)  p=0.310
+'Lucky endings' stay lucky: observed 2333 (9.80%) vs expected 2380 (10%)  p=0.315
+Numbers containing 786: observed 203 vs expected 190.4  p=0.364
+Round endings (..00): observed 489 vs expected 476.0  p=0.549
+'Fancy' numbers (<=2 distinct digits): observed 135 vs expected 133.3  p=0.862
+
+====================================================================================================
+STEP 3 - WALK-FORWARD BACKTEST
+====================================================================================================
+test draws: 17 (91..107); random-pick expectation 28.9 hits total (95% range 19-40)
+                                         rule  hits  expected  rate_ratio  rr_ci_low  rr_ci_high  p_beats_random  p_two_sided
+             Hot range (most-won 1,000-block)    25    28.900       0.865      0.560       1.277           0.791        0.539
+   Cold / 'due' range (least-won 1,000-block)    19    28.900       0.657      0.396       1.027           0.979        0.068
+          Hot ending (most-won last 3 digits)    25    28.900       0.865      0.560       1.277           0.791        0.539
+Cold / 'due' ending (least-won last 3 digits)    27    28.900       0.934      0.616       1.359           0.663        0.814
+      Hot digit-by-position score (top 1,000)    30    28.900       1.038      0.700       1.482           0.444        0.889
+                   Repeat last draw's winners    32    28.900       1.107      0.757       1.563           0.308        0.616
+                   Most-frequent past winners    29    28.900       1.003      0.672       1.441           0.519        1.000
+            Near last winners (within +/-100)    31    28.900       1.073      0.729       1.523           0.374        0.747
+high-power rule (hottest 10 of 100 ranges): 2956 of 28900 = 0.1023 vs 0.1000; lift x1.023 (95% CI x0.988-x1.058); one-sided p=0.100
+
+per-draw hits:
+rule       Cold / 'due' ending (least-won last 3 digits)  Cold / 'due' range (least-won 1,000-block)  Hot digit-by-position score (top 1,000)  Hot ending (most-won last 3 digits)  Hot range (most-won 1,000-block)  Most-frequent past winners  Near last winners (within +/-100)  Repeat last draw's winners
+test_draw                                                                                                                                                                                                                                                                                                      
+91                                                     1                                           1                                        1                                    0                                 1                           0                                  2                           1
+92                                                     0                                           0                                        1                                    1                                 2                           4                                  2                           2
+93                                                     1                                           0                                        0                                    2                                 0                           1                                  1                           0
+94                                                     1                                           1                                        1                                    1                                 2                           2                                  1                           2
+95                                                     3                                           1                                        4                                    0                                 3                           3                                  2                           3
+96                                                     4                                           0                                        4                                    0                                 1                           0                                  0                           5
+97                                                     1                                           1                                        1                                    3                                 1                           3                                  2                           3
+98                                                     2                                           2                                        2                                    2                                 0                           2                                  2                           2
+99                                                     0                                           1                                        1                                    3                                 2                           1                                  2                           1
+100                                                    2                                           1                                        2                                    1                                 5                           4                                  3                           2
+101                                                    1                                           2                                        4                                    2                                 3                           1                                  3                           4
+102                                                    3                                           0                                        1                                    3                                 0                           2                                  4                           0
+103                                                    2                                           2                                        1                                    0                                 2                           1                                  1                           1
+104                                                    3                                           3                                        1                                    0                                 0                           3                                  1                           1
+105                                                    1                                           3                                        0                                    3                                 0                           1                                  1                           2
+106                                                    1                                           1                                        2                                    3                                 1                           1                                  3                           0
+107                                                    1                                           0                                        4                                    1                                 2                           0                                  1                           3
+
+====================================================================================================
+RESULTS TABLE (74 tests, Benjamini-Hochberg + Bonferroni)
+====================================================================================================
+        section                                                 test                    observed                                 expected  p_value   p_bh                                                   conclusion
+      A Repeats                             Total cross-draw repeats                       1,072 1,093 (95%: 1,031-1,157); analytic 1,092   0.5423 0.8574                                       consistent with chance
+      A Repeats                         Numbers that won in 2+ draws                       1,036 1,061 (95%: 1,002-1,121); analytic 1,061   0.4284 0.7731                                       consistent with chance
+      A Repeats                         Numbers that won in 3+ draws                        18.0      15.6 (95%: 8.0-24.0); analytic 15.6   0.6001 0.8823                                       consistent with chance
+      A Repeats                                     Repeats at lag 1                        81.0     78.0 (95%: 61.0-96.0); analytic 78.0   0.7693 0.9442                                       consistent with chance
+      A Repeats                                     Repeats at lag 2                        82.0     75.3 (95%: 59.0-92.0); analytic 75.1   0.4594 0.7905                                       consistent with chance
+      A Repeats                                     Repeats at lag 3                        70.0     72.2 (95%: 56.0-89.0); analytic 72.2   0.8527 0.9523                                       consistent with chance
+      A Repeats                                     Repeats at lag 4                        81.0     69.4 (95%: 54.0-86.0); analytic 69.4   0.1882 0.4709                                       consistent with chance
+      A Repeats                                     Repeats at lag 5                        59.0     66.4 (95%: 51.0-83.0); analytic 66.5   0.3970 0.7344                                       consistent with chance
+      A Repeats                                     Repeats at lag 6                        62.0     63.6 (95%: 48.0-80.0); analytic 63.6   0.9057 0.9671                                       consistent with chance
+      A Repeats                                     Repeats at lag 7                        48.0     60.6 (95%: 46.0-76.0); analytic 60.7   0.1112 0.3291                                       consistent with chance
+      A Repeats                                     Repeats at lag 8                        58.0     57.9 (95%: 43.0-73.0); analytic 57.8   1.0000 1.0000                                       consistent with chance
+      A Repeats                                     Repeats at lag 9                        60.0     54.9 (95%: 41.0-70.0); analytic 54.9   0.5155 0.8529                                       consistent with chance
+      A Repeats                                    Repeats at lag 10                        39.0     52.0 (95%: 39.0-66.0); analytic 52.0   0.0670 0.2253                                       consistent with chance
+      A Repeats            1st/2nd prize numbers winning again later                        3.00     2.57 (95%: 0.00-6.00); analytic 2.57   0.9441 0.9703                                       consistent with chance
+       B Digits                          Digit frequency, position 1    chi2=23.8 (max dev 5.5%)                            chi2~9 (df=9)   0.0046 0.0322                                 SIGNIFICANT after correction
+       B Digits                          Digit frequency, position 2    chi2=24.5 (max dev 4.5%)                            chi2~9 (df=9)   0.0036 0.0295                                 SIGNIFICANT after correction
+       B Digits                          Digit frequency, position 3    chi2=16.4 (max dev 2.8%)                            chi2~9 (df=9)   0.0590 0.2080                                       consistent with chance
+       B Digits                          Digit frequency, position 4     chi2=7.3 (max dev 2.1%)                            chi2~9 (df=9)   0.6081 0.8823                                       consistent with chance
+       B Digits                          Digit frequency, position 5     chi2=6.9 (max dev 2.0%)                            chi2~9 (df=9)   0.6486 0.9092                                       consistent with chance
+       B Digits                          Digit frequency, position 6     chi2=7.8 (max dev 2.5%)                            chi2~9 (df=9)   0.5561 0.8574                                       consistent with chance
+       B Digits                Digit frequency, all positions pooled                   chi2=86.6                          chi2~54 (df=54)   0.0032 0.0295                                 SIGNIFICANT after correction
+       B Digits              First two digits (100 ranges of 10,000)  chi2=139; busiest=59 (534)                      chi2~99; 476.0 each   0.0048 0.0322                                 SIGNIFICANT after correction
+       B Digits           First three digits (1,000 ranges of 1,000) chi2=1078; busiest=530 (71)                      chi2~999; 47.6 each   0.0413 0.1569 nominal p<0.05 only - not significant after correction (c...
+       B Digits                        Last two digits (100 endings)   chi2=93; busiest=25 (516)                      chi2~99; 476.0 each   0.6613 0.9092                                       consistent with chance
+       B Digits                    Last three digits (1,000 endings)  chi2=967; busiest=186 (70)                      chi2~999; 47.6 each   0.7588 0.9442                                       consistent with chance
+       B Digits                Stability of first digit across draws                    chi2=267                                 chi2~243   0.1419 0.4039                                       consistent with chance
+       B Digits     Stability of first-two-digit ranges across draws                   chi2=2945                                chi2~2673   0.0002 0.0025                                 SIGNIFICANT after correction
+       B Digits                                            Digit sum      mean=26.935; chi2=49.8                     mean=27.000; chi2~46   0.3240 0.6685                                       consistent with chance
+       B Digits                                      Odd-digit count        mean=2.998; chi2=2.6                       mean=3.000; chi2~6   0.8596 0.9523                                       consistent with chance
+       B Digits                          Distinct digits in a number       mean=4.690; chi2=10.2                       mean=4.686; chi2~4   0.0372 0.1569 nominal p<0.05 only - not significant after correction (c...
+       B Digits                                          Palindromes                          38                                     47.6   0.1909 0.4709                                       consistent with chance
+       B Digits                              Adjacent repeated digit                      19,343                                 19,492.7   0.1635 0.4320                                       consistent with chance
+      C Spatial                                Gap distribution (KS)                      0.0108              0.0039 (95%: 0.0025-0.0060)   0.0002 0.0025                                 SIGNIFICANT after correction
+      C Spatial                               Gap variability (CV^2)                      1.0436              0.9972 (95%: 0.9798-1.0155)   0.0002 0.0025                                 SIGNIFICANT after correction
+      C Spatial                               Very small gaps (<=10)                         911                       799 (95%: 744-854)   0.0002 0.0025                                 SIGNIFICANT after correction
+      C Spatial                   100-bucket uniformity within draws                       3,090                 2,767 (95%: 2,625-2,916)   0.0002 0.0025                                 SIGNIFICANT after correction
+      C Spatial                 1,000-bucket dispersion within draws                      29,798              27,924 (95%: 27,468-28,406)   0.0002 0.0025                                 SIGNIFICANT after correction
+      C Spatial                  Draws failing 100-bucket uniformity                     5 of 28                                1.4 of 28   0.0117 0.0619 nominal p<0.05 only - not significant after correction (c...
+      C Spatial            100-bucket uniformity, excluding draw 104                  chi2=2,846                               chi2~2,673   0.0100 0.0570 nominal p<0.05 only - not significant after correction (c...
+      C Spatial           Very small gaps (<=10), excluding draw 104                         848                                      770   0.0057 0.0349                                 SIGNIFICANT after correction
+D Between draws                     Hot 10,000-ranges persist, lag 1                     +0.0389           -0.0002 (95%: -0.0380-+0.0376)   0.0424 0.1569 nominal p<0.05 only - not significant after correction (c...
+D Between draws                     Hot 10,000-ranges persist, lag 2                     +0.0279           -0.0002 (95%: -0.0396-+0.0386)   0.1602 0.4320                                       consistent with chance
+D Between draws                     Hot 10,000-ranges persist, lag 3                     +0.0476           -0.0003 (95%: -0.0394-+0.0393)   0.0154 0.0712 nominal p<0.05 only - not significant after correction (c...
+D Between draws                      Hot 1,000-ranges persist, lag 1                     +0.0123           +0.0000 (95%: -0.0120-+0.0117)   0.0396 0.1569 nominal p<0.05 only - not significant after correction (c...
+D Between draws                Nearby numbers win next draw (+/-100)                      13,129              13,217 (95%: 13,024-13,409)   0.3770 0.7153                                       consistent with chance
+D Between draws              Nearby numbers win next draw (+/-1,000)                      44,145              44,297 (95%: 44,176-44,413)   0.0128 0.0631 nominal p<0.05 only - not significant after correction (c...
+D Between draws           1st vs 2nd prize digit overlap (same draw)                   49 of 504                                     50.4   0.8822 0.9600                                       consistent with chance
+D Between draws 1st/2nd prize digit overlap with next draw's 1st/2nd                 255 of 2592                                    259.2   0.8187 0.9523                                       consistent with chance
+D Between draws           Distance between 1st and 2nd prize numbers              median 295,033                           median 292,893   0.3252 0.6685                                       consistent with chance
+D Between draws            3rd prizes near the 1st prize (same draw)                         479                                    474.9   0.8622 0.9523                                       consistent with chance
+D Between draws            3rd prizes near the 1st prize (next draw)                         446                                    458.0   0.5960 0.8823                                       consistent with chance
+D Between draws                          Drift over time in the mean                  rho=+0.072                   rho=0 (centre 500,000)   0.7169 0.9307                                       consistent with chance
+D Between draws                        Drift over time in the median                  rho=+0.021                                    rho=0   0.9163 0.9671                                       consistent with chance
+D Between draws                            Drift over time in the sd                  rho=-0.082                       rho=0 (sd 288,675)   0.6779 0.9121                                       consistent with chance
+D Between draws                             Per-draw mean off-centre                   chi2=52.7                          chi2~28 (df=28)   0.0031 0.0295                                 SIGNIFICANT after correction
+D Between draws          Per-draw mean off-centre, excluding draw 85                   chi2=36.8                          chi2~27 (df=27)   0.0998 0.3077                                       consistent with chance
+     E Folklore                     Hot ranges stay hot (split-half)                     -0.0103           +0.0001 (95%: -0.0629-+0.0617)   0.7309 0.9326                                       consistent with chance
+     E Folklore              Hot 10,000-ranges stay hot (split-half)                     +0.0111           +0.0023 (95%: -0.1961-+0.1981)   0.9279 0.9671                                       consistent with chance
+     E Folklore                              'Hot numbers' win again                           8                                     6.64   0.6957 0.9193                                       consistent with chance
+     E Folklore      'Overdue' numbers (never won) beat past winners                         530                                    559.8   0.2145 0.5120                                       consistent with chance
+     E Folklore                         'Due' (cold) ranges catch up               2427 (10.20%)                               2380 (10%)   0.3099 0.6685                                       consistent with chance
+     E Folklore                           'Lucky endings' stay lucky                2333 (9.80%)                               2380 (10%)   0.3150 0.6685                                       consistent with chance
+     E Folklore                               Numbers containing 786                         203                                    190.4   0.3637 0.7153                                       consistent with chance
+     E Folklore                                 Round endings (..00)                         489                                    476.0   0.5492 0.8574                                       consistent with chance
+     E Folklore                'Fancy' numbers (<=2 distinct digits)                         135                                    133.3   0.8622 0.9523                                       consistent with chance
+Step 3 Backtest               Rule: Hot range (most-won 1,000-block)             25 hits (x0.87)                                     28.9   0.7911 0.9442                                       consistent with chance
+Step 3 Backtest     Rule: Cold / 'due' range (least-won 1,000-block)             19 hits (x0.66)                                     28.9   0.9791 0.9926                                       consistent with chance
+Step 3 Backtest            Rule: Hot ending (most-won last 3 digits)             25 hits (x0.87)                                     28.9   0.7911 0.9442                                       consistent with chance
+Step 3 Backtest  Rule: Cold / 'due' ending (least-won last 3 digits)             27 hits (x0.93)                                     28.9   0.6635 0.9092                                       consistent with chance
+Step 3 Backtest        Rule: Hot digit-by-position score (top 1,000)             30 hits (x1.04)                                     28.9   0.4444 0.7830                                       consistent with chance
+Step 3 Backtest                     Rule: Repeat last draw's winners             32 hits (x1.11)                                     28.9   0.3078 0.6685                                       consistent with chance
+Step 3 Backtest                     Rule: Most-frequent past winners             29 hits (x1.00)                                     28.9   0.5186 0.8529                                       consistent with chance
+Step 3 Backtest              Rule: Near last winners (within +/-100)             31 hits (x1.07)                                     28.9   0.3737 0.7153                                       consistent with chance
+Step 3 Backtest     High-power rule: hottest 10% of the number space    2,956 of 28,900 (10.23%)                           2,890 (10.00%)   0.0998 0.3077                                       consistent with chance
+
+nominal p<0.05: 20 of 74 (about 3.7 expected by luck alone); significant after BH: 12; backtest rules surviving: 0
+
+wrote /home/user/PSX-INTELLIGENCE-NEW-2026/prize_bond_rs1500/report.html
