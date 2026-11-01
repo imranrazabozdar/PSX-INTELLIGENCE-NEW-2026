@@ -53,6 +53,7 @@ import level_breakout_detector as _level_breakout
 import psx_live as _psx_live
 import gp_evolved_detector as _gp_evolved
 import engulfing_star_detector as _engulfing_star
+import obv_mfi_scanner as _obv_mfi
 
 logging.basicConfig(
     level=logging.INFO,
@@ -249,6 +250,29 @@ def run_triangle_regression_scan(all_data: dict) -> dict:
         hits.append(result)
 
     hits.sort(key=lambda r: r["symbol"])
+    return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
+# 1d-2. OBV+MFI Setup with ATR Contraction (long-only accumulation footprint)
+# ---------------------------------------------------------------------------
+
+def run_obv_mfi_scan(all_data: dict) -> dict:
+    hits = []
+    scanned = 0
+    for symbol, ohlcv in all_data.items():
+        if len(ohlcv) < _obv_mfi.MIN_BARS_REQUIRED:
+            continue
+        scanned += 1
+        try:
+            hit, details = _obv_mfi.scan_obv_mfi_setup(pd.DataFrame(ohlcv), return_details=True)
+        except Exception:
+            continue
+        if hit:
+            hits.append({"symbol": symbol, **details})
+
+    # Strongest footprint first: most OBV kept, then the driest pullback.
+    hits.sort(key=lambda r: (-(r.get("obv_retention_pct") or 0), r["vol_drought_pct"]))
     return {"status": "ok", "scanned": scanned, "hits": hits}
 
 
@@ -526,6 +550,12 @@ def main():
         logger.info(f"  Scanned {tr_result['scanned']} symbols, {len(tr_result['hits'])} hits")
         _save_to_analysis_cache("triangle_regression_scan", tr_result)
 
+        # --- 1d-2. OBV+MFI Setup with ATR Contraction ---
+        logger.info("Running OBV+MFI Setup with ATR Contraction scan...")
+        om_result = run_obv_mfi_scan(all_data)
+        logger.info(f"  Scanned {om_result['scanned']} symbols, {len(om_result['hits'])} hits")
+        _save_to_analysis_cache("obv_mfi_scan", om_result)
+
         # --- 1e. Level Break Out ---
         logger.info("Running Level Break Out scan...")
         lb_result = run_level_breakout_scan(all_data)
@@ -571,6 +601,7 @@ def main():
         logger.info(f"  MACD+EMA200 Trend Resumption: {len(me_result['hits'])} signals")
         logger.info(f"  Regression-Channel Triangle Squeeze: {len(tr_result['hits'])} signals")
         logger.info(f"  Level Break Out: {len(lb_result['hits'])} signals")
+        logger.info(f"  OBV+MFI Setup with ATR Contraction: {len(om_result['hits'])} signals")
         logger.info(f"  GP-Evolved Formula: {len(gp_result['hits'])} signals (status={gp_result['status']})")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
         logger.info(f"  Head & Shoulders Top: {len(hst_result['hits'])} signals")

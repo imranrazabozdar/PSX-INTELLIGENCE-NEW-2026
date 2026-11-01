@@ -3831,6 +3831,23 @@ def _run_triangle_regression_scan():
     return {"status": "ok", "scanned": len(coverage), "hits": hits}
 
 
+@app.get("/patterns/obv-mfi-scan")
+def patterns_obv_mfi_scan():
+    """OBV+MFI Setup with ATR Contraction (backend/obv_mfi_scanner.py) --
+    long-only accumulation footprint. Computed only by the daily GitHub
+    Actions job (run_chart_pattern_refresh.py) from its local daily_ohlc
+    snapshot and stored as analysis_cache 'obv_mfi_scan'; this endpoint just
+    serves that, so it costs one Turso row read per view."""
+    cached = _scan_cache.latest("obv_mfi_scan")
+    if cached is None:
+        return {"status": "running", "scanned": 0, "hits": [],
+                "reason": "No OBV+MFI scan stored yet -- it runs with the daily "
+                          "4:30 PM PKT pattern refresh."}
+    out = dict(cached)
+    out["_background_refresh_running"] = False
+    return out
+
+
 @app.get("/patterns/triangle-regression-scan")
 def patterns_triangle_regression_scan(request:Request, force:bool=False):
     """Market-wide Regression-Channel Triangle Squeeze scan -- SHORT-only.
