@@ -3121,10 +3121,9 @@ with tab_patterns:
             "vol_drought": h.get("vol_drought_pct"), "mfi": h.get("mfi_now"),
             "obv_kept": h.get("obv_retention_pct"), "atr_ratio": h.get("atr_ratio"),
         } for h in hits])
-        styled = (omdf.style
-                  .background_gradient(subset=["obv_kept"], cmap="Greens")
-                  .background_gradient(subset=["vol_drought"], cmap="Greens_r")
-                  .background_gradient(subset=["atr_ratio"], cmap="Blues_r"))
+        # Plain DataFrame: Styler.background_gradient needs matplotlib, which
+        # the Streamlit Cloud image doesn't install.
+        styled = omdf
         st.dataframe(styled, hide_index=True, use_container_width=True,
                      key="obv_mfi_scan_table", column_config={
             "symbol": "Symbol", "company": "Company",
