@@ -3097,6 +3097,53 @@ with tab_patterns:
     # counterpart to fetch/split here.
     _triangle_reg_scan = _get("/patterns/triangle-regression-scan", **_pat_refresh_params)
 
+    _obv_mfi_scan = _get("/patterns/obv-mfi-scan")
+
+    def _render_obv_mfi_block():
+        st.markdown('<div class="psx-section-eyebrow">ACCUMULATION FOOTPRINT</div>'
+                    '<div class="psx-section-title">🏦 OBV+MFI Setup with ATR Contraction — 1D</div>',
+                    unsafe_allow_html=True)
+        if not _scan_status_banner(_obv_mfi_scan, "OBV+MFI Setup"):
+            return
+        age = _obv_mfi_scan.get("_cache_age_seconds")
+        age_str = f"{int(age // 3600)} h ago" if isinstance(age, (int, float)) else "—"
+        hits = _obv_mfi_scan.get("hits") or []
+        st.caption(f"📦 Scanned {_obv_mfi_scan.get('scanned', 0)} symbols · last run {age_str} · "
+                   f"{len(hits)} symbol(s) completing the full sequence today.")
+        if not hits:
+            st.info("No symbol completes the impulse → quiet-pullback sequence on its latest daily candle.")
+            return
+        names_om = _company_names()
+        omdf = pd.DataFrame([{
+            "symbol": h["symbol"], "company": names_om.get(h["symbol"], ""),
+            "close": h.get("close"), "day0": h.get("day0_date"),
+            "days": h.get("days_since_day0"), "pullback": h.get("pullback_pct"),
+            "vol_drought": h.get("vol_drought_pct"), "mfi": h.get("mfi_now"),
+            "obv_kept": h.get("obv_retention_pct"), "atr_ratio": h.get("atr_ratio"),
+        } for h in hits])
+        styled = (omdf.style
+                  .background_gradient(subset=["obv_kept"], cmap="Greens")
+                  .background_gradient(subset=["vol_drought"], cmap="Greens_r")
+                  .background_gradient(subset=["atr_ratio"], cmap="Blues_r"))
+        st.dataframe(styled, hide_index=True, use_container_width=True,
+                     key="obv_mfi_scan_table", column_config={
+            "symbol": "Symbol", "company": "Company",
+            "close": st.column_config.NumberColumn("Close", format="Rs %.2f"),
+            "day0": st.column_config.DateColumn("Day 0 (impulse)", format="MMM DD, YYYY"),
+            "days": st.column_config.NumberColumn("Days since", format="%d"),
+            "pullback": st.column_config.NumberColumn("Pullback", format="%.1f%%"),
+            "vol_drought": st.column_config.NumberColumn("Avg vol vs Day 0", format="%.1f%%"),
+            "mfi": st.column_config.NumberColumn("MFI now", format="%.1f"),
+            "obv_kept": st.column_config.NumberColumn("OBV kept", format="%.1f%%"),
+            "atr_ratio": st.column_config.NumberColumn("ATR now / Day 0", format="%.2f"),
+        })
+        with st.expander("📖 View Rules for OBV+MFI Setup with ATR Contraction"):
+            st.caption("**Day 0 (3–45 sessions ago):** close above the prior 20-day highest close, "
+                       "volume > 3× its prior 20-day average, OBV at a new 20-day high, MFI(14) > 80. "
+                       "**Today:** close 4–30% below Day 0 but above SMA20; average volume since Day 0 "
+                       "< 40% of Day 0's; MFI < 55; OBV within 10% of its Day 0 value; ATR(14) below "
+                       "Day 0's. A pattern signal, not yet backtested on PSX — not a probability of profit.")
+
     def _render_triangle_regression_block():
         st.markdown('<div class="psx-section-eyebrow">CHART PATTERNS</div>'
                     '<div class="psx-section-title">📉 Regression-Channel Triangle Squeeze — 1D</div>',
@@ -3473,6 +3520,8 @@ with tab_patterns:
 
     # ---------------------------------------------------- Long-Side tab ----
     with tab_long:
+        _render_obv_mfi_block()
+        st.divider()
         st.markdown('<div class="psx-section-eyebrow">CANDLESTICK PATTERNS</div>'
                     '<div class="psx-section-title">🕯️ Bullish Engulfing — 1D</div>', unsafe_allow_html=True)
         pr = _get("/patterns/bullish-engulfing-scan", **_pat_refresh_params)
