@@ -145,8 +145,10 @@ def render(get, company_names):
                                            " — the historical engine has not been run yet, so every setup shows "
                                            "INSUFFICIENT HISTORICAL EVIDENCE."))
 
-    v1, v2, v3, v4, v5 = st.tabs(["⚠️ Early Warning", "🟢 Bullish Expansion", "🔴 Bearish Expansion",
-                                  "🔔 Alerts", "🧪 Historical Validation"])
+    v1, v2, v3, v6, v4, v5 = st.tabs(["⚠️ Early Warning", "🟢 Bullish Expansion", "🔴 Bearish Expansion",
+                                      "🧩 Wyckoff × Volatility", "🔔 Alerts", "🧪 Historical Validation"])
+    with v6:
+        _wyckoff_view(get, names)
     with v1:
         f = _filters(rows, "vew")
         f = [r for r in f if r["stage"] in (1, 2) or (r["compression_score"] or 0) >= 50]
@@ -232,3 +234,41 @@ def _validation(stats):
     st.caption("Benchmarks: 'Baseline' = every 5th session of every stock; 'Simple BBW percentile < 10'; and the "
                "existing OBV+MFI+ATR and Regression-triangle modules, all measured the same way. Bearish trades "
                "assume shorting, which PSX restricts — read them as avoid/exit evidence.")
+
+
+def _wyckoff_view(get, names):
+    res = get("/patterns/volatility-wyckoff")
+    if res.get("status") != "ok":
+        st.info(res.get("reason") or "Combined view unavailable.")
+        return
+    st.caption(f"Wyckoff batch {res.get('wyckoff_date')} ({res.get('n_wyckoff')} stocks) · volatility scan "
+               f"{res.get('volatility_rows_date')} ({res.get('n_volatility')} stocks). The Wyckoff score and "
+               "classification are the existing engine's output, unchanged. The volatility scores are separate; "
+               "neither is a probability and they are never added together. Wyckoff's 4-hour BB compression is "
+               "shown as its own flag and is not part of the volatility compression score (that uses daily BBW "
+               "percentiles), so nothing is counted twice.")
+    only = st.radio("Show", ["Wyckoff signals only (WATCH/READY/EXTREME)", "Confluence only", "All stocks"],
+                    horizontal=True, key="vw_show")
+    rows = res.get("rows") or []
+    if only.startswith("Wyckoff"):
+        rows = [r for r in rows if r.get("wyckoff_signal") in ("WATCH", "READY", "EXTREME")]
+    elif only.startswith("Confluence"):
+        rows = [r for r in rows if r.get("confluence")]
+    if not rows:
+        st.info("No stock matches this view today.")
+        return
+    df = pd.DataFrame([{
+        "symbol": r["symbol"], "company": names.get(r["symbol"], ""), "price": r.get("close"),
+        "wyckoff_score": r.get("wyckoff_score"), "wyckoff": r.get("wyckoff_signal"),
+        "4h_bb": r.get("wy_bb4h_compression"), "supply_exh": r.get("wy_supply_exhaustion"),
+        "absorption": r.get("wy_absorption"), "obv_div": r.get("wy_obv_divergence"),
+        "compression": r.get("compression_score"), "bull": r.get("bull_score"), "bear": r.get("bear_score"),
+        "expansion_bull": r.get("bull_expansion_score"), "expansion_bear": r.get("bear_expansion_score"),
+        "stage": r.get("stage_detail"), "confluence": r.get("confluence"), "conflict": r.get("conflict"),
+        "history": ((r.get("hist") or {}).get("label") or "INSUFFICIENT HISTORICAL EVIDENCE"),
+        "liquidity": r.get("liquidity"),
+    } for r in rows])
+    st.dataframe(df, hide_index=True, use_container_width=True, key="vw_table")
+    st.caption("Confluence = a Wyckoff signal while the volatility engine shows compression or upside expansion "
+               "with bullish evidence ≥ bearish. Conflict = a Wyckoff signal while bearish evidence leads by "
+               "15+ points or a bearish expansion/failed breakout is active — check before acting.")

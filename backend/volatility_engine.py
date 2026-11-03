@@ -934,3 +934,80 @@ def build_alerts(rows, prev):
                     "liquidity": r["liquidity"], "previous": before.get(r["symbol"])})
     out.sort(key=lambda a: (ALERT_RANK.get(a["alert"], 9), -a["priority"]))
     return out
+
+
+# --------------------------------------------------------------------------
+# Wyckoff extension: join the EXISTING Wyckoff engine's stored output
+# (fire_engine/wyckoff_detector.py -> wyckoff_accumulation) with this
+# engine's scan. Read-only towards Wyckoff: nothing is recomputed, no
+# threshold/weight/schema is touched, and the two scores are never added
+# together. Overlapping evidence is shown as a confluence flag, not as
+# extra points:
+#   - Wyckoff's 4-hour BB compression is its own measurement; this engine's
+#     compression score uses DAILY BBW percentiles and never 4-hour data,
+#     so the same reading is not counted twice.
+#   - Wyckoff supply exhaustion / OBV divergence overlap conceptually with
+#     this engine's volume-contraction and OBV-flow inputs; the combined
+#     view lists them side by side and never sums them.
+# --------------------------------------------------------------------------
+WYCKOFF_COLS = ("symbol", "scan_date", "accumulation_score", "signal_type", "bb_width_score",
+                "dry_supply_score", "absorption_score", "obv_divergence_score",
+                "is_consolidating", "macd_confirmation", "components")
+
+
+def combine_with_wyckoff(vol_scan: dict, wyckoff_rows: list) -> dict:
+    import json as _json
+    wy = {}
+    wdate = None
+    for r in wyckoff_rows or []:
+        r = dict(r)
+        wdate = wdate or r.get("scan_date")
+        comp = r.get("components")
+        try:
+            comp = _json.loads(comp) if isinstance(comp, str) else (comp or {})
+        except Exception:
+            comp = {}
+        wy[r["symbol"]] = {
+            "wyckoff_score": r.get("accumulation_score"), "wyckoff_signal": r.get("signal_type"),
+            "wy_bb4h_compression": bool(comp.get("bb_compression")),
+            "wy_supply_exhaustion": bool(comp.get("supply_exhaustion")),
+            "wy_absorption": bool(comp.get("absorption")), "wy_obv_divergence": bool(comp.get("obv_divergence")),
+            "wy_consolidating": bool(r.get("is_consolidating")), "wy_macd_gate": bool(r.get("macd_confirmation")),
+        }
+    out = []
+    for v in (vol_scan or {}).get("rows", []) or []:
+        w = wy.get(v["symbol"])
+        row = {k: v.get(k) for k in ("symbol", "close", "compression_score", "bull_score", "bear_score",
+                                     "bull_expansion_score", "bear_expansion_score", "stage", "stage_label",
+                                     "stage_detail", "stage_dir", "bbw_pct100", "atr_pct100", "mtf_alignment",
+                                     "liquidity", "volume_state")}
+        row["hist"] = {k: (v.get("hist") or {}).get(k) for k in ("available", "label", "n", "bucket",
+                                                                 "p_up_10d", "p_up_10d_ci", "p_down_10d")}
+        if w:
+            row.update(w)
+            # Confluence = both engines independently describe the same quiet,
+            # supported base. A flag for reading, never added to either score.
+            row["confluence"] = bool(w["wyckoff_signal"] not in (None, "NO_SIGNAL")
+                                     and v.get("stage") in (1, 2, 3, 4) and v.get("stage_dir", 0) >= 0
+                                     and (v.get("bull_score") or 0) >= (v.get("bear_score") or 0))
+            row["conflict"] = bool(w["wyckoff_signal"] not in (None, "NO_SIGNAL")
+                                   and ((v.get("bear_score") or 0) - (v.get("bull_score") or 0) >= 15
+                                        or (v.get("stage") in (4, 5) and v.get("stage_dir") == -1)))
+        else:
+            row.update({"wyckoff_score": None, "wyckoff_signal": "NOT IN WYCKOFF SCAN",
+                        "confluence": False, "conflict": False})
+        out.append(row)
+    out.sort(key=lambda r: (-(r["wyckoff_score"] or -1), -(r["compression_score"] or 0)))
+    return {"status": "ok", "wyckoff_date": wdate, "volatility_date": (vol_scan or {}).get("_cache_run_at"),
+            "volatility_rows_date": max((v.get("date") for v in (vol_scan or {}).get("rows", [])), default=None),
+            "n_wyckoff": len(wy), "n_volatility": len((vol_scan or {}).get("rows", []) or []),
+            "rows": out,
+            "note": "Wyckoff score/classification come unchanged from fire_engine's wyckoff_accumulation table. "
+                    "Volatility scores are separate heuristics. Neither is a probability; scores are never summed."}
+
+
+def load_latest_wyckoff_rows(conn):
+    """One query for the latest Wyckoff scan date's rows (~150 rows read)."""
+    cols = ", ".join(WYCKOFF_COLS)
+    return conn.execute(f"SELECT {cols} FROM wyckoff_accumulation WHERE scan_date = "
+                        "(SELECT MAX(scan_date) FROM wyckoff_accumulation)").fetchall()
