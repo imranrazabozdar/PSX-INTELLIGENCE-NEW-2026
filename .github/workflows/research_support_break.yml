@@ -1,0 +1,42 @@
+name: RESEARCH 20-session support breakdown study (read-only, no database)
+
+# Research only. NO secrets: the job cannot reach the production database.
+# Inputs: SCS daily bars + public KSE-100. Outputs: report + leaderboard artifacts.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r fire_engine/requirements.txt pytest
+      - name: 🔒 No database credentials
+        run: |
+          if [ -n "${LIBSQL_URL}${LIBSQL_AUTH_TOKEN}" ]; then echo "credentials present -- aborting"; exit 1; fi
+          echo "No database credentials in this job."
+      - name: 🧪 Indicator validation tests
+        working-directory: backend
+        run: python -m pytest -q test_research_support_break.py
+      - name: 🔬 Study
+        working-directory: backend
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python research_support_break.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: support-break-research
+          path: |
+            support_break_report.md
+            support_break_leaderboard.csv
