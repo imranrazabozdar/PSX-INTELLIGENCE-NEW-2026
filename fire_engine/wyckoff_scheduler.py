@@ -73,6 +73,12 @@ def run_symbol_wyckoff(db, symbol: str, scan_id: int, scan_date: str, detector: 
     df_daily, df_4h = fetch_daily_and_4h(db, symbol, end_date=scan_date)
     if len(df_daily) < MIN_DAILY_BARS:
         return None
+    # Latest-candle validation: never score (and store as `scan_date`) a
+    # stock whose newest daily bar is older than the session being scanned
+    # -- a PSX holiday, a suspension, or daily bars not yet published.
+    last_bar = df_daily.index[-1].strftime("%Y-%m-%d")
+    if last_bar != scan_date:
+        return {"stale": True, "last_bar": last_bar}
 
     result = detector.detect_stealth_accumulation(df_daily, df_4h)
     prepared = detector.prepare_for_db_and_ui(result, symbol, scan_date)
@@ -105,6 +111,7 @@ def run_daily_wyckoff_batch(db, cfg: dict, date: str = None, progress=_default_p
     scan_id = _get_or_create_scan(db, date)
 
     results = []
+    stale = []
     signals = 0
     for i, symbol in enumerate(universe, 1):
         try:
@@ -114,6 +121,10 @@ def run_daily_wyckoff_batch(db, cfg: dict, date: str = None, progress=_default_p
             continue
         if prepared is None:
             progress(f"[{i}/{len(universe)}] {symbol}: insufficient daily history, skipped")
+            continue
+        if prepared.get("stale"):
+            stale.append({"symbol": symbol, "last_bar": prepared["last_bar"]})
+            progress(f"[{i}/{len(universe)}] {symbol}: latest bar {prepared['last_bar']} != {date}, stale -- skipped")
             continue
         results.append(prepared)
         if prepared["signal_type"] != "NO_SIGNAL":
@@ -127,4 +138,5 @@ def run_daily_wyckoff_batch(db, cfg: dict, date: str = None, progress=_default_p
     )
     db.conn.commit()
 
-    return {"date": date, "scan_id": scan_id, "results": results, "stocks_with_signal": signals}
+    return {"date": date, "scan_id": scan_id, "results": results, "stocks_with_signal": signals,
+            "stale": stale}

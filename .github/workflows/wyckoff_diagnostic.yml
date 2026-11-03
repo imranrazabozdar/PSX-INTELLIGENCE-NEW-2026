@@ -6,6 +6,11 @@ name: Wyckoff historical diagnostic (manual)
 # once); writes one analysis_cache row.
 on:
   workflow_dispatch:
+    inputs:
+      report_only:
+        description: "Report only, do not overwrite the stored diagnostic row"
+        type: boolean
+        default: false
 
 jobs:
   diagnostic:
@@ -29,6 +34,8 @@ jobs:
         working-directory: backend
         run: python snapshot_daily_ohlc.py
       - name: 🔍 Wyckoff diagnostic
+        env:
+          PSX_BACKTEST_NO_SAVE: ${{ inputs.report_only && '1' || '' }}
         run: python -m fire_engine.run_wyckoff_diagnostic
       - uses: actions/upload-artifact@v4
         if: always()

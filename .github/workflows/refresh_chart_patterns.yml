@@ -23,6 +23,13 @@ on:
   # Manual trigger for testing/backfill
   workflow_dispatch:
 
+# Two triggers per weekday (Routine backstop + native cron) may overlap; queue
+# rather than run concurrently, and let backend/batch_guard.py turn the later
+# one into a no-op once a run for the session has completed.
+concurrency:
+  group: refresh-chart-patterns
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -51,7 +58,16 @@ jobs:
           pip install -r backend/requirements.txt
           pip install lxml
 
+      - name: 🛡️ Run guard (one completed run per session)
+        id: guard
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python batch_guard.py check chart_refresh
+
       - name: 📥 Refresh daily OHLC data (SCS daily bars)
+        if: steps.guard.outputs.skip != 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -59,20 +75,33 @@ jobs:
         run: python run_ohlc_refresh.py
 
       - name: 💾 Snapshot daily_ohlc for the steps below
+        if: steps.guard.outputs.skip != 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python snapshot_daily_ohlc.py
 
-      - name: 🔍 Detect all pattern families (latest bar only)
+      - name: 📅 Trading-calendar check (from the local snapshot, 0 Turso reads)
+        id: cal
+        if: steps.guard.outputs.skip != 'true'
         working-directory: backend
         env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python batch_guard.py calendar --snapshot "$PSX_DAILY_OHLC_SNAPSHOT" --date "${{ steps.guard.outputs.session }}"
+
+      - name: 🔍 Detect all pattern families (latest bar only)
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
+        working-directory: backend
+        env:
+          PSX_SESSION_DATE: ${{ steps.guard.outputs.session }}
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_chart_pattern_refresh.py
 
       - name: 📈 Backtest intraday signal accuracy
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -80,6 +109,7 @@ jobs:
         run: python run_signal_backtest.py
 
       - name: 📈 Backtest daily pattern accuracy
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -87,6 +117,7 @@ jobs:
         run: python run_daily_pattern_backtest.py
 
       - name: 🔁 Backtest MHarris 5-bar reversal
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -94,6 +125,7 @@ jobs:
         run: python run_mharris_backtest.py
 
       - name: 📈 Backtest MACD+EMA200 trend resumption
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -101,6 +133,7 @@ jobs:
         run: python run_macdema_backtest.py
 
       - name: 📉 Backtest regression-channel triangle squeeze
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -108,6 +141,7 @@ jobs:
         run: python run_triangle_regression_backtest.py
 
       - name: 🚀 Backtest level break out
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -115,6 +149,7 @@ jobs:
         run: python run_level_breakout_backtest.py
 
       - name: 📉 Backtest head and shoulders top
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
@@ -122,11 +157,20 @@ jobs:
         run: python run_hstop_backtest.py
 
       - name: 🕯️ Backtest engulfing + star
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_engulfing_star_backtest.py
+
+      - name: ✅ Mark session completed
+        if: success() && steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python batch_guard.py mark chart_refresh --date "${{ steps.guard.outputs.session }}"
 
       - name: 📊 Summary
         if: always()

@@ -7,6 +7,11 @@ name: Volatility engine backtest (manual)
 # attaches to its rows.
 on:
   workflow_dispatch:
+    inputs:
+      compare_only:
+        description: "Before/after comparison run: report only, do not overwrite the production stats row"
+        type: boolean
+        default: false
 
 jobs:
   backtest:
@@ -28,15 +33,27 @@ jobs:
           pip install -r backend/requirements.txt pytest
       - name: 🧪 Unit tests
         working-directory: backend
-        run: python -m pytest -q test_volatility_engine.py
+        run: python -m pytest -q test_volatility_engine.py test_audit_fixes.py
       - name: 💾 Snapshot daily_ohlc
         working-directory: backend
         run: python snapshot_daily_ohlc.py
+      - name: 🔬 Before/after comparisons (volatility fixes, OBV+MFI variants)
+        if: ${{ inputs.compare_only }}
+        working-directory: backend
+        run: |
+          python compare_volatility_changes.py
+          python compare_obv_mfi_variants.py
+
       - name: 📊 Run volatility engine backtest
         working-directory: backend
+        env:
+          PSX_BACKTEST_NO_SAVE: ${{ inputs.compare_only && '1' || '' }}
         run: python run_volatility_backtest.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: volatility-backtest-report
-          path: volatility_backtest_report.md
+          path: |
+            volatility_backtest_report.md
+            volatility_change_comparison.md
+            obv_mfi_variant_comparison.md

@@ -156,11 +156,14 @@ def load_4h_df(db, symbol: str, end_date: str, lookback_days: int = 30,
     under 4 hours old (per spec: "cache 4-hour data, expires 4 hours");
     otherwise fetches fresh from SCS and re-caches."""
     if use_cache:
+        # `date <= end_date`: a historical (--date) run must never see 4-hour
+        # bars from after the scan date. For the normal daily run end_date is
+        # today, so this filter changes nothing.
         cur = db.conn.execute(
             "SELECT datetime, date, time_of_day, open, high, low, close, volume, "
             "MAX(collection_timestamp) OVER () as latest_fetch "
-            "FROM ohlcv_4h WHERE symbol = ? ORDER BY datetime ASC",
-            (symbol,),
+            "FROM ohlcv_4h WHERE symbol = ? AND date <= ? ORDER BY datetime ASC",
+            (symbol, end_date),
         )
         rows = [dict(r) for r in cur.fetchall()]
         if rows:
@@ -175,6 +178,7 @@ def load_4h_df(db, symbol: str, end_date: str, lookback_days: int = 30,
                               max_retries=max_retries, retry_delay=retry_delay)
     if candles:
         store_4h_data(db, symbol, candles)
+    candles = [c for c in candles if c["date"] <= end_date]
     return _candles_to_df(candles)
 
 

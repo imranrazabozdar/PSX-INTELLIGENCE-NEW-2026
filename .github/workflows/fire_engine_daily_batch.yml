@@ -52,6 +52,13 @@ on:
 permissions:
   contents: read
 
+# Two triggers per weekday may overlap; queue them. Each entry point's
+# batch_guard check then makes the later trigger a no-op once the session's
+# run has completed (explicit `date` backfills bypass the guard).
+concurrency:
+  group: fire-engine-daily-batch
+  cancel-in-progress: false
+
 jobs:
   fire_batch:
     if: ${{ github.event.inputs.backfill_4h_only != 'true' }}
