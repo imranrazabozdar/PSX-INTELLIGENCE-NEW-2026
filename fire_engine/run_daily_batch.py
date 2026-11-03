@@ -51,13 +51,27 @@ def main():
         import turso_db
         db = DatabaseManager(conn=turso_db.get_connection())
 
+    # One authoritative successful run per session date (backend/batch_guard.py).
+    # Explicit --date backfills bypass it.
+    import batch_guard
+    from fire_engine.market_hours import session_date
+    guard_date = None if args.date else session_date()
+    if guard_date and batch_guard.already_done("fire_batch", guard_date, db.conn):
+        print(f"FIRE batch for {guard_date} already completed by an earlier trigger -- nothing to do.")
+        db.close()
+        sys.exit(0)
+
     try:
         result = run_daily_batch(db, cfg, date=args.date)
+        ok = sum(1 for r in result["results"] if r["status"] not in ("ERROR", "NO_DATA"))
+        errors = [r for r in result["results"] if r["status"] == "ERROR"]
+        # Marker only for a clean run with real data: a run with errors, or one
+        # where SCS had nothing yet, stays retryable by the next trigger.
+        if guard_date and not errors and ok > 0:
+            batch_guard.mark_done("fire_batch", guard_date, f"{ok}/{len(result['results'])} ok", db.conn)
     finally:
         db.close()
 
-    ok = sum(1 for r in result["results"] if r["status"] not in ("ERROR", "NO_DATA"))
-    errors = [r for r in result["results"] if r["status"] == "ERROR"]
     total_events = sum(r.get("events_logged", 0) for r in result["results"])
     print(f"\nDaily batch for {result['date']}: {ok}/{len(result['results'])} symbols processed OK, "
           f"{total_events} events logged.")

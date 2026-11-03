@@ -63,6 +63,25 @@ def wilson(k, n, z=1.96):
     return (round(max(0, c - h) * 100, 1), round(min(1, c + h) * 100, 1))
 
 
+def cluster_ci(flags, dates, z=1.96):
+    """95% CI for a proportion, clustered by date (signals on the same market
+    day are not independent). Wilson when fewer than 2 dates."""
+    n = len(flags)
+    if not n:
+        return (None, None)
+    p = sum(flags) / n
+    by = {}
+    for f, d in zip(flags, dates):
+        a = by.setdefault(d, [0, 0])
+        a[0] += f
+        a[1] += 1
+    g = len(by)
+    if g < 2:
+        return wilson(sum(flags), n)
+    h = z * math.sqrt(sum((k - p * m) ** 2 for k, m in by.values()) / n ** 2 * g / (g - 1))
+    return (round(max(0, p - h) * 100, 1), round(min(1, p + h) * 100, 1))
+
+
 def load_daily(conn, symbols):
     out = {}
     for s in symbols:
@@ -105,14 +124,16 @@ def summarise(recs, uc_hits=None):
         v = np.array([r[f"r{h}"] for r in recs if f"r{h}" in r])
         if len(v):
             k = int((v > 0).sum())
+            dts = [r.get("date") for r in recs if f"r{h}" in r]
             out[f"mean_{h}d"] = round(float(v.mean()), 2)
             out[f"median_{h}d"] = round(float(np.median(v)), 2)
             out[f"p_up_{h}d"] = round(100 * k / len(v), 1)
-            out[f"p_up_{h}d_ci"] = wilson(k, len(v))
+            out[f"p_up_{h}d_ci"] = cluster_ci([int(x > 0) for x in v], dts)
     if uc_hits is not None and recs:
         k = sum(uc_hits)
         out["p_upper_circuit_20d"] = round(100 * k / len(uc_hits), 1)
-        out["p_upper_circuit_20d_ci"] = wilson(k, len(uc_hits))
+        out["p_upper_circuit_20d_ci"] = cluster_ci([int(x) for x in uc_hits], [r.get("date") for r in recs])
+    out["n_dates"] = len({str(r.get("date")) for r in recs})
     return out
 
 
@@ -142,8 +163,9 @@ def replay(frames, det, limit):
             if t % 5 == 0:
                 f = f or forward(df, t)
                 if f:
-                    base.append({**f, "uc20": bool(uc_next[t])})
-        for t in np.flatnonzero(uc):
+                    base.append({**f, "date": df.index[t], "uc20": bool(uc_next[t])})
+        uc_start = uc & ~np.concatenate([[False], uc[:-1]])   # one event per consecutive lock run
+        for t in np.flatnonzero(uc_start):
             if t < 40:
                 continue
             w = sig[max(0, t - CAPTURE_WINDOW):t]
@@ -153,7 +175,11 @@ def replay(frames, det, limit):
                 ("consolidation gate", row["is_consolidating"]), ("MACD gate", row["macd_confirmation"]),
                 ("supply exhaustion", row["dry_supply_flag"]), ("absorption", row["absorption_active"]),
                 ("OBV divergence", row["obv_divergence"])) if not bool(ok)]
+            run_len = 1
+            while t + run_len < n and uc[t + run_len]:
+                run_len += 1
             uc_days.append({"symbol": s, "date": df.index[t].strftime("%Y-%m-%d"), "ret_pct": round(ret[t] * 100, 2),
+                            "consecutive_locks": run_len,
                             "caught": bool(caught), "best_prior_class": max(
                                 (x for x in w if x != "NO_SIGNAL"), key=["WATCH", "READY", "EXTREME"].index, default=None),
                             "score_day_before": int(row["accumulation_score"]), "missing_day_before": missing})
@@ -168,8 +194,17 @@ def stored_signals(conn, frames, limit):
                             "FROM wyckoff_scans").fetchone()
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
+    scan_dates = sorted({d["scan_date"] for d in conn.execute("SELECT scan_date FROM wyckoff_scans").fetchall()})
+    prev_of = {d: (scan_dates[i - 1] if i else None) for i, d in enumerate(scan_dates)}
+    have = {(r["symbol"], r["scan_date"]) for r in rows}
+    raw_signal_days = len(rows)
+    # One event per consecutive signal run: keep a signal only if the stock had
+    # no signal on the previous scan date.
+    rows = [r for r in rows if (r["symbol"], prev_of.get(r["scan_date"])) not in have]
     ev = []
     for r in rows:
+        if r["symbol"] not in frames:
+            continue
         df = frames.get(r["symbol"])
         if df is None:
             continue
@@ -184,7 +219,8 @@ def stored_signals(conn, frames, limit):
                    "uc20": bool(uc[idx + 1:idx + 21].any()), **(f or {})})
     by = {c: summarise([e for e in ev if e["cls"] == c], [e["uc20"] for e in ev if e["cls"] == c])
           for c in ("WATCH", "READY", "EXTREME")}
-    return {"scan_dates": dict(span) if span else None, "signals": len(ev), "by_class": by,
+    return {"scan_dates": dict(span) if span else None, "signal_days_raw": raw_signal_days,
+            "signals": len(ev), "by_class": by,
             "all": summarise(ev, [e["uc20"] for e in ev]),
             "rows": [{k: e[k] for k in ("symbol", "date", "cls", "uc20")} | {k: round(e[k], 2) for k in e if k.startswith("r")}
                      for e in sorted(ev, key=lambda x: x["date"])]}
@@ -197,11 +233,17 @@ def main():
     cfg = load_config()
     det = WyckoffDetector(cfg)
     universe = cfg["stocks"]["universe"]
+    excluded = []
+    if cfg["exclusion"]["enabled"]:
+        from fire_engine.exclusions import load_exclusions_from_config
+        excluded = sorted(set(load_exclusions_from_config()) & set(universe))
+        universe = [s for s in universe if s not in set(excluded)]
     frames = load_daily(conn, universe)
     limit = circuit_limit(frames)
     ev, base, ucd, freq = replay(frames, det, limit)
     res = {"status": "ok", "run_at": datetime.now(timezone.utc).isoformat(),
-           "universe_config": len(universe), "symbols_with_data": len(frames),
+           "universe_config": len(universe) + len(excluded), "excluded": excluded,
+           "universe_after_exclusions": len(universe), "symbols_with_data": len(frames),
            "data_from": str(min(d.index[0] for d in frames.values()).date()),
            "data_to": str(max(d.index[-1] for d in frames.values()).date()),
            "upper_circuit_definition": f"close-to-close >= {round((limit - 0.005) * 100, 2)}% (empirical limit "
@@ -224,9 +266,10 @@ def main():
     miss = [u for u in ucd if not u["caught"]]
     from collections import Counter
     res["upper_circuit"] = {
+        "events": len(ucd), "lock_days_total": sum(u["consecutive_locks"] for u in ucd),
         "days": len(ucd), "captured": len(caught),
         "capture_rate_pct": round(100 * len(caught) / len(ucd), 1) if ucd else None,
-        "capture_rate_ci": wilson(len(caught), len(ucd)),
+        "capture_rate_ci": cluster_ci([int(u["caught"]) for u in ucd], [u["date"] for u in ucd]),
         "missed": len(miss),
         "missing_condition_counts_day_before": dict(Counter(m for u in miss for m in u["missing_day_before"]).most_common()),
         "missed_score_distribution_day_before": dict(Counter(u["score_day_before"] for u in miss).most_common()),
@@ -236,6 +279,10 @@ def main():
     res["stored"] = stored_signals(conn, frames, limit)
     res["elapsed_s"] = round(time.time() - t0)
     write_report(res)
+    import os
+    if os.getenv("PSX_BACKTEST_NO_SAVE"):
+        print("PSX_BACKTEST_NO_SAVE set -- report only")
+        return 0
     try:
         conn.execute("""INSERT INTO analysis_cache(cache_key, run_at, run_at_epoch, result_json)
             VALUES(?,?,?,?) ON CONFLICT(cache_key) DO UPDATE SET run_at=excluded.run_at,
@@ -252,7 +299,7 @@ def main():
 def _row(name, s, uc=True):
     if not s or not s.get("n"):
         return f"| {name} | 0 | | | | | |"
-    ci = s.get("p_up_10d_ci", (None, None))
+    ci = s.get("p_up_10d_ci", (None, None))  # 95%, clustered by date
     return (f"| {name} | {s['n']} | {s.get('mean_5d')} | {s.get('mean_10d')} | {s.get('mean_20d')} | "
             f"{s.get('p_up_10d')} [{ci[0]}–{ci[1]}] | {s.get('p_upper_circuit_20d', '—')} |")
 
@@ -261,7 +308,8 @@ def write_report(res):
     rp, uc, stv = res["replay"], res["upper_circuit"], res["stored"]
     H = "| Group | n | Mean 5d % | Mean 10d % | Mean 20d % | P(up 10d) [95% CI] | P(upper circuit within 20d) % |\n|---|---|---|---|---|---|---|"
     L = ["# Wyckoff engine — historical diagnostic (read-only)", "",
-         f"Run {res['run_at'][:16]} UTC · {res['symbols_with_data']}/{res['universe_config']} configured symbols with data · "
+         f"Run {res['run_at'][:16]} UTC · {res['symbols_with_data']}/{res['universe_after_exclusions']} symbols with data "
+         f"({res['universe_config']} configured, excluded {res['excluded']}) · "
          f"{res['data_from']} → {res['data_to']}", "",
          f"Upper circuit = {res['upper_circuit_definition']}. Thresholds used unchanged: {res['thresholds_used_unchanged']}.", "",
          f"**Limitation:** {res['replay_limitation']}.", "",
@@ -274,7 +322,8 @@ def write_report(res):
     for y, s in rp["by_year"].items():
         L.append(_row(y, s))
     L += ["", "## Upper-circuit capture", "",
-          f"Upper-circuit days: **{uc['days']}** · captured (signal in prior {CAPTURE_WINDOW} sessions): **{uc['captured']}** "
+          f"Upper-circuit EVENTS (first day of each consecutive lock run): **{uc['events']}** "
+          f"(covering {uc['lock_days_total']} lock days) · captured (signal in prior {CAPTURE_WINDOW} sessions): **{uc['captured']}** "
           f"→ capture rate **{uc['capture_rate_pct']}%** [95% CI {uc['capture_rate_ci'][0]}–{uc['capture_rate_ci'][1]}] · missed {uc['missed']}", "",
           f"Conditions failing on the day before a missed upper circuit: {uc['missing_condition_counts_day_before']}", "",
           f"Replayed score the day before missed upper circuits: {uc['missed_score_distribution_day_before']}", "",
@@ -288,7 +337,8 @@ def write_report(res):
     if "error" in stv:
         L.append(f"Unavailable: {stv['error']}")
     else:
-        L += [f"Scan dates: {stv['scan_dates']} · signals: {stv['signals']}", "", H]
+        L += [f"Scan dates: {stv['scan_dates']} · {stv['signal_days_raw']} signal-days → "
+              f"{stv['signals']} distinct signal events (consecutive days of the same signal counted once)", "", H]
         for c in ("WATCH", "READY", "EXTREME"):
             L.append(_row(c, stv["by_class"][c]))
         L.append(_row("All stored signals", stv["all"]))

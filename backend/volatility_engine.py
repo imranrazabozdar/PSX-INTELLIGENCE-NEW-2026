@@ -52,6 +52,7 @@ import technical_analyzer as _ta
 # --------------------------------------------------------------------------
 DEFAULT_CONFIG = {
     "bb_period": 20, "bb_mult": 2.0,
+    "bb_ddof": 0,                     # population std (textbook BB, same as the Wyckoff engine)
     "kc_period": 20, "kc_mult": 1.5,
     "pct_windows": (100, 200),
     "hv_pct_window": 252,
@@ -125,6 +126,16 @@ def pct_rank_prior(x, window, min_frac=0.8):
     return out
 
 
+def bollinger(close, period=20, mult=2.0, ddof=0):
+    """Bollinger Bands. ddof=0 = population standard deviation, the textbook
+    convention and the one fire_engine/wyckoff_detector.py uses; ddof=1
+    reproduces technical_analyzer.bollinger (kept unchanged for its other
+    callers)."""
+    mid = close.rolling(period).mean()
+    sd = close.rolling(period).std(ddof=ddof)
+    return mid + mult * sd, mid, mid - mult * sd
+
+
 def wilder_atr(h, l, c, n):
     tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
     return tr.ewm(alpha=1 / n, adjust=False, min_periods=n).mean()
@@ -166,14 +177,14 @@ def wilson(k, n, z=1.96):
 # --------------------------------------------------------------------------
 # Per-symbol feature frame (all causal)
 # --------------------------------------------------------------------------
-def weekly_features(d: pd.DataFrame) -> pd.DataFrame:
+def weekly_features(d: pd.DataFrame, ddof=0) -> pd.DataFrame:
     """Weekly bars from daily, then shifted so each daily row only sees the
     last COMPLETED week strictly before its own week."""
     w = d.set_index("Date").resample("W-FRI").agg(
         {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
     if len(w) < 15:
         return pd.DataFrame(index=d.index, columns=["wk_bbw_pct", "wk_squeeze", "wk_trend", "wk_break"])
-    up, mid, lo = _ta.bollinger(w["Close"], 20, 2)
+    up, mid, lo = bollinger(w["Close"], 20, 2, ddof)
     bbw = (up - lo) / mid
     atr = wilder_atr(w["High"], w["Low"], w["Close"], 10)
     ema = w["Close"].ewm(span=20, adjust=False).mean()
@@ -204,7 +215,7 @@ def compute_frame(df: pd.DataFrame, cfg=None, market: pd.Series | None = None,
     mf = cfg["min_pct_obs_frac"]
     w1, w2 = cfg["pct_windows"]
 
-    up, mid, lo = _ta.bollinger(c, cfg["bb_period"], cfg["bb_mult"])   # reuse
+    up, mid, lo = bollinger(c, cfg["bb_period"], cfg["bb_mult"], cfg.get("bb_ddof", 0))
     d["BB_up"], d["BB_mid"], d["BB_lo"] = up, mid, lo
     d["BBW"] = (up - lo) / mid
     d["BBW_p100"] = pct_rank_prior(d["BBW"].to_numpy(), w1, mf)
@@ -295,7 +306,7 @@ def compute_frame(df: pd.DataFrame, cfg=None, market: pd.Series | None = None,
     else:
         d["MKT_ret1"] = np.nan
 
-    wk = weekly_features(d)
+    wk = weekly_features(d, cfg.get("bb_ddof", 0))
     for col in wk.columns:
         d[col] = pd.to_numeric(wk[col], errors="coerce")
     return d
@@ -633,7 +644,8 @@ def analyze_symbol(sym, df, cfg=None, market=None, sector=None, sector_name=None
     ca_dates = d.loc[d["CA_flag"] & (d.index > t - 60), "Date"].dt.strftime("%Y-%m-%d").tolist()
     tv = g("TV20", 0)
     row = {
-        "symbol": sym, "date": r["Date"].strftime("%Y-%m-%d"), "close": g("Close"),
+        "symbol": sym, "date": r["Date"].strftime("%Y-%m-%d"), "last_bar_date": r["Date"].strftime("%Y-%m-%d"),
+        "close": g("Close"),
         "sector": sector_name,
         "compression_score": sc["compression_score"], "compression_coverage": sc["compression_coverage"],
         "bull_score": sc["bull_score"], "bear_score": sc["bear_score"],
@@ -861,36 +873,76 @@ def regime_series(market: pd.Series) -> pd.Series:
 # --------------------------------------------------------------------------
 # Universe scan (called by run_chart_pattern_refresh.py)
 # --------------------------------------------------------------------------
-def analyze_universe(all_data: dict, sectors: dict, cfg=None, market_series=None, stats=None, prev=None):
+def analyze_universe(all_data: dict, sectors: dict, cfg=None, market_series=None, stats=None, prev=None,
+                     universe=None, excluded=None, session=None):
+    """universe: the configured symbol list (Wyckoff/FIRE universe) -- when
+    given, only these symbols are analysed, `excluded` ones are dropped, and
+    configured symbols without enough price data are reported as
+    unavailable (never scored). session: the PSX session being scanned;
+    a symbol whose newest bar is older is marked stale and kept out of
+    rankings and alerts."""
     cfg = cfg or DEFAULT_CONFIG
-    frames = {}
-    for s, rows in all_data.items():
-        try:
-            frames[s] = _om._normalise(pd.DataFrame(rows))
-        except Exception:
+    excluded = sorted(set(excluded or []))
+    wanted = None if universe is None else [s for s in universe if s not in set(excluded)]
+    frames, unavailable = {}, []
+    for s in (wanted if wanted is not None else list(all_data)):
+        rows = all_data.get(s)
+        if not rows:
+            unavailable.append({"symbol": s, "reason": "no price data in daily_ohlc"})
             continue
+        try:
+            f = _om._normalise(pd.DataFrame(rows))
+        except Exception as e:
+            unavailable.append({"symbol": s, "reason": f"unreadable price data ({type(e).__name__})"})
+            continue
+        if len(f) < 60:
+            unavailable.append({"symbol": s, "reason": f"only {len(f)} daily bars (needs 60)"})
+            continue
+        frames[s] = f
     market, sec_idx, msrc = build_indices(frames, sectors, market_series)
     rows, details = [], {}
     for s, f in frames.items():
-        if len(f) < 60:
-            continue
         try:
             row, det = analyze_symbol(s, f, cfg, market, sec_idx.get(s), sectors.get(s), stats)
-        except Exception:
+        except Exception as e:
+            unavailable.append({"symbol": s, "reason": f"analysis error ({type(e).__name__})"})
             continue
         if row:
             rows.append(row)
             details[s] = det
-    alerts = build_alerts(rows, prev)
+    session = session or max((r["last_bar_date"] for r in rows), default=None)
+    for r in rows:
+        r["stale"] = bool(session and r["last_bar_date"] < session)
+    fresh = [r for r in rows if not r["stale"]]
+    baseline = alert_baseline(prev, session)
+    alerts = build_alerts(fresh, baseline["kinds"])
     regime = market_regime(market, frames)
-    return {"status": "ok", "scanned": len(rows), "market_source": msrc, "regime": regime,
+    return {"status": "ok", "session": session, "scanned": len(rows), "fresh": len(fresh),
+            "stale_symbols": [{"symbol": r["symbol"], "last_bar_date": r["last_bar_date"]} for r in rows if r["stale"]],
+            "universe_size": len(universe) if universe is not None else None,
+            "excluded": excluded, "unavailable": sorted(unavailable, key=lambda x: x["symbol"]),
+            "market_source": msrc, "regime": regime,
             "stats_available": bool(stats and stats.get("buckets")),
             "stats_run_at": (stats or {}).get("run_at"),
             "config": {k: v for k, v in cfg.items() if not k.startswith("w_")} | {
                 "w_compression": cfg["w_compression"], "w_bull": cfg["w_bull"], "w_bear": cfg["w_bear"]},
             "timeframes": {"daily": True, "weekly": True,
                            "4h": "not used: ohlcv_4h is a 35-day rolling cache, too short for percentiles"},
+            "alert_baseline": baseline,
             "rows": rows, "alerts": alerts}, details
+
+
+def alert_baseline(prev, session):
+    """Alert conditions of the PREVIOUS trading session's completed scan.
+    A re-run for the same session reuses the baseline that scan stored, so
+    re-running never wipes (or duplicates) the session's alerts."""
+    if not prev:
+        return {"session": None, "kinds": {}}
+    prev_session = prev.get("session") or max((r.get("date") for r in prev.get("rows", []) or []), default=None)
+    if session and prev_session == session:
+        return prev.get("alert_baseline") or {"session": None, "kinds": {}}
+    kinds = {r["symbol"]: _alert_kind(r) for r in prev.get("rows", []) or [] if not r.get("stale")}
+    return {"session": prev_session, "kinds": kinds}
 
 
 ALERT_RANK = {"Confirmed breakout": 1, "Confirmed breakdown": 1, "Failed bullish breakout": 2,
@@ -912,12 +964,11 @@ def _alert_kind(r):
     return None
 
 
-def build_alerts(rows, prev):
-    """Only emit an alert when a symbol's alert kind CHANGED since the
-    previous stored scan (no repeats for an unchanged condition)."""
-    before = {}
-    for r in (prev or {}).get("rows", []) or []:
-        before[r["symbol"]] = _alert_kind(r)
+def build_alerts(rows, before):
+    """Alert only when a symbol's alert kind differs from the previous trading
+    session's (`before` = {symbol: kind}) -- no repeats for an unchanged
+    condition."""
+    before = before or {}
     out = []
     liq_w = {"Highly Liquid": 1.0, "Liquid": .85, "Moderate Liquidity": .6, "Illiquid": .3, "Unknown": .5}
     for r in rows:
@@ -980,7 +1031,7 @@ def combine_with_wyckoff(vol_scan: dict, wyckoff_rows: list) -> dict:
         row = {k: v.get(k) for k in ("symbol", "close", "compression_score", "bull_score", "bear_score",
                                      "bull_expansion_score", "bear_expansion_score", "stage", "stage_label",
                                      "stage_detail", "stage_dir", "bbw_pct100", "atr_pct100", "mtf_alignment",
-                                     "liquidity", "volume_state")}
+                                     "liquidity", "volume_state", "last_bar_date", "stale")}
         row["hist"] = {k: (v.get("hist") or {}).get(k) for k in ("available", "label", "n", "bucket",
                                                                  "p_up_10d", "p_up_10d_ci", "p_down_10d")}
         if w:
@@ -1011,3 +1062,19 @@ def load_latest_wyckoff_rows(conn):
     cols = ", ".join(WYCKOFF_COLS)
     return conn.execute(f"SELECT {cols} FROM wyckoff_accumulation WHERE scan_date = "
                         "(SELECT MAX(scan_date) FROM wyckoff_accumulation)").fetchall()
+
+
+def configured_universe():
+    """(universe, excluded): the FIRE/Wyckoff configured symbol list and the
+    exclusion list applied to it, so every engine covers the same stocks."""
+    import sys as _sys
+    from pathlib import Path as _P
+    root = str(_P(__file__).resolve().parent.parent)
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
+    from fire_engine.config import load_config
+    from fire_engine.exclusions import load_exclusions_from_config
+    cfg = load_config()
+    uni = list(cfg["stocks"]["universe"])
+    excluded = sorted(set(load_exclusions_from_config()) & set(uni)) if cfg["exclusion"]["enabled"] else []
+    return uni, excluded

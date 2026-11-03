@@ -65,7 +65,7 @@ def test_bbw_atr_hv_against_reference():
     c = df["close"].to_numpy()
     t = 350
     w = c[t - 19:t + 1]
-    mid, sd = w.mean(), w.std(ddof=1)            # pandas rolling std is ddof=1
+    mid, sd = w.mean(), w.std(ddof=0)            # population std (approved convention)
     assert d["BBW"].iloc[t] == pytest.approx((4 * sd) / mid, rel=1e-9)
     # Wilder ATR(20) by explicit recursion
     h, l = df["high"].to_numpy(), df["low"].to_numpy()
@@ -212,9 +212,9 @@ def test_alerts_only_on_change():
          "bear_expansion_score": 0, "liquidity": "Liquid", "mtf_alignment": "Conflicting Alignment",
          "hist": {"available": False}}
     assert len(ve.build_alerts([r], None)) == 1
-    assert ve.build_alerts([r], {"rows": [r]}) == []
+    assert ve.build_alerts([r], {"A": ve._alert_kind(r)}) == []
     r2 = dict(r, stage=4, stage_detail="Confirmed breakout", stage_dir=1)
-    assert ve.build_alerts([r2], {"rows": [r]})[0]["alert"] == "Confirmed breakout"
+    assert ve.build_alerts([r2], {"A": ve._alert_kind(r)})[0]["alert"] == "Confirmed breakout"
 
 
 def test_insufficient_history_label():

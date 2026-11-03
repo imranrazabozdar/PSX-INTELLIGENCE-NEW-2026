@@ -86,6 +86,28 @@ def get_last_stored_date(conn, symbol):
     return None
 
 
+def get_last_stored_bar(conn, symbol):
+    """The newest stored bar for `symbol` (one indexed row read), or None."""
+    row = conn.execute(
+        "SELECT trade_date, open, high, low, close, volume FROM daily_ohlc WHERE symbol = ? "
+        "ORDER BY trade_date DESC LIMIT 1", (symbol.upper(),)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+# Re-fetching the newest stored bar corrects a candle that was saved before
+# the session's final print (e.g. a run that fired before the close). Only
+# that ONE row may ever be overwritten -- every older bar is immutable here --
+# and a change larger than this is treated as a possible corporate-action
+# re-basing by the data source, logged, and NOT applied.
+LAST_BAR_MAX_CORRECTION = 0.11
+
+
+def _bar_differs(old, new, tol=1e-9):
+    return any(abs(float(old[k]) - float(new[k])) > tol * max(1.0, abs(float(old[k])))
+               for k in ("open", "high", "low", "close", "volume"))
+
+
 MAX_RUNTIME_SECONDS = int(os.getenv("PSX_OHLC_REFRESH_BUDGET_SECONDS", str(20 * 60)))
 
 
@@ -142,6 +164,7 @@ def main():
     failed = 0
     skipped = 0
     budget_exhausted = False
+    corrected, correction_skipped = [], []
 
     for i, symbol in enumerate(symbols):
         if time.monotonic() - run_start > MAX_RUNTIME_SECONDS:
@@ -151,15 +174,14 @@ def main():
             budget_exhausted = True
             break
         try:
-            last_date = get_last_stored_date(conn, symbol)
-
-            if last_date and last_date >= end_date:
-                skipped += 1
-                continue
+            last_bar = get_last_stored_bar(conn, symbol)
+            last_date = last_bar["trade_date"] if last_bar else None
 
             is_backfill = not last_date
             if last_date:
-                start_date = (datetime.strptime(last_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+                # Start AT the last stored date (not the day after) so that bar
+                # is re-fetched and, if it was incomplete, corrected below.
+                start_date = last_date
                 if (i + 1) % 50 == 0 or i == 0:
                     logger.info(f"  [{i+1}/{len(symbols)}] {symbol}: refreshing from {start_date}")
             else:
@@ -190,6 +212,31 @@ def main():
                     good.append((symbol.upper(), x["date"], o, h, l, c,
                                  float(x["volume"] or 0), scs_daily.SOURCE_LABEL))
                 except Exception:
+                    continue
+
+            if good and last_bar:
+                # Split the re-fetched last stored bar from genuinely new bars.
+                fresh = [g for g in good if g[1] == last_date]
+                good = [g for g in good if g[1] > last_date]
+                if fresh:
+                    nb = dict(zip(("open", "high", "low", "close", "volume"), fresh[0][2:7]))
+                    if _bar_differs(last_bar, nb):
+                        move = abs(nb["close"] / float(last_bar["close"]) - 1) if float(last_bar["close"]) else 1
+                        if move > LAST_BAR_MAX_CORRECTION:
+                            logger.warning(f"    {symbol}: {last_date} re-fetch differs by {move:.1%} "
+                                           f"-- possible source re-basing, stored bar KEPT")
+                            correction_skipped.append(symbol)
+                        else:
+                            conn.execute("UPDATE daily_ohlc SET open=?, high=?, low=?, close=?, volume=?, source=? "
+                                         "WHERE symbol=? AND trade_date=?",
+                                         (nb["open"], nb["high"], nb["low"], nb["close"], nb["volume"],
+                                          fresh[0][7], symbol.upper(), last_date))
+                            conn.commit()
+                            corrected.append(f"{symbol}@{last_date} close {float(last_bar['close'])}->{nb['close']} "
+                                             f"vol {float(last_bar['volume']):.0f}->{nb['volume']:.0f}")
+                if not good:
+                    skipped += 1
+                    time.sleep(0.3)
                     continue
 
             if good:
@@ -234,6 +281,10 @@ def main():
     logger.info(f"  Refreshed: {refreshed}")
     logger.info(f"  Skipped (up to date): {skipped}")
     logger.info(f"  Failed/no data: {failed}")
+    logger.info(f"  Last stored bar corrected on re-fetch: {len(corrected)}"
+                + (": " + "; ".join(corrected[:30]) if corrected else ""))
+    if correction_skipped:
+        logger.info(f"  Re-fetch differed >{LAST_BAR_MAX_CORRECTION:.0%} (kept stored bar): {correction_skipped}")
     logger.info(f"  Universe symbols with data in DB: {final_universe_count} / {len(symbols)} target")
     if budget_exhausted:
         logger.info(f"  {len(symbols) - final_universe_count} universe symbols still need their "

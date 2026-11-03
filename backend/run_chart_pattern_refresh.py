@@ -29,6 +29,7 @@ local SQLite in development, controlled by LIBSQL_URL / LIBSQL_AUTH_TOKEN.
 """
 
 import json
+import os
 import time
 import pandas as pd
 from datetime import datetime, timezone
@@ -286,6 +287,10 @@ def run_obv_mfi_scan(all_data: dict) -> dict:
 #       stats from run_volatility_backtest.py) + 2 writes.
 # ---------------------------------------------------------------------------
 
+def _configured_universe():
+    return _vol_engine.configured_universe()
+
+
 def run_volatility_engine_scan() -> tuple:
     data = load_all_ohlcv(lookback_days=600)
     try:
@@ -295,10 +300,13 @@ def run_volatility_engine_scan() -> tuple:
         sectors = {}
     stats = _read_analysis_cache("volatility_engine_stats")
     prev = _read_analysis_cache("volatility_engine_scan")
+    universe, excluded = _configured_universe()
+    session = os.getenv("PSX_SESSION_DATE") or None
     # Benchmark = equal-weight index of the stocks loaded in daily_ohlc (the
     # user's own universe), not the external KSE-100 feed.
     return _vol_engine.analyze_universe(data, sectors, market_series=None,
-                                        stats=stats, prev=prev)
+                                        stats=stats, prev=prev, universe=universe,
+                                        excluded=excluded, session=session)
 
 
 # ---------------------------------------------------------------------------
@@ -588,8 +596,11 @@ def main():
         try:
             ve_result, ve_detail = run_volatility_engine_scan()
             ve_n, ve_alerts = ve_result["scanned"], len(ve_result["alerts"])
-            logger.info(f"  Analysed {ve_n} symbols, {ve_alerts} new alerts "
-                        f"(market: {ve_result['market_source']})")
+            logger.info(f"  Session {ve_result['session']}: {ve_result['fresh']} fresh + "
+                        f"{len(ve_result['stale_symbols'])} stale of {ve_n} analysed; "
+                        f"{len(ve_result['excluded'])} excluded, {len(ve_result['unavailable'])} unavailable "
+                        f"{[u['symbol'] for u in ve_result['unavailable']]}; {ve_alerts} new alerts vs session "
+                        f"{ve_result['alert_baseline'].get('session')} (market: {ve_result['market_source']})")
             _save_to_analysis_cache("volatility_engine_scan", ve_result)
             _save_to_analysis_cache("volatility_engine_detail", ve_detail)
             try:   # join with the latest stored Wyckoff batch (~150 row reads)

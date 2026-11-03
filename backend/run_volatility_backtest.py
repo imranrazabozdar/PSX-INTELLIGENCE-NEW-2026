@@ -59,13 +59,16 @@ COST_RT = float(os.getenv("PSX_COST_RT_PCT", "0.6")) / 100
 FIX_TGT, FIX_STP = 0.08, 0.04          # fixed target / stop
 ATR_TGT, ATR_STP = 3.0, 1.5            # ATR-multiple target / stop
 MAX_HOLD = 20
+PSX_LIMIT = 0.10                       # daily price limit (empirical cap in daily_ohlc is 10%)
 BASELINE_EVERY = 5
 REPORT = Path(__file__).parent.parent / "volatility_backtest_report.md"
 
 
 def load_universe():
     conn = turso_db.get_connection()
-    syms = [r["symbol"] for r in conn.execute("SELECT DISTINCT symbol FROM daily_ohlc").fetchall()]
+    # Same universe as the live engine: configured FIRE/Wyckoff symbols minus exclusions.
+    universe, excluded = ve.configured_universe()
+    syms = [s for s in universe if s not in set(excluded)]
     out = {}
     for s in syms:
         rows = conn.execute("SELECT trade_date, open, high, low, close, volume FROM daily_ohlc "
@@ -117,15 +120,33 @@ def forward(d, t, atrp):
             rec[f"mfe{h}"] = (H[t + 1:t + h + 1].max() / E - 1) * 100
             rec[f"mae{h}"] = (L[t + 1:t + h + 1].min() / E - 1) * 100
     a = (atrp or 0) / 100
+    # Execution realism: a stock that opens at its upper limit and stays
+    # locked (low == high) cannot be bought at that open; likewise a short
+    # cannot be opened into a lower-circuit lock. Such trades are recorded as
+    # "unfilled" and kept out of the trade statistics.
+    locked_up = O[t + 1] >= C[t] * (1 + PSX_LIMIT - 0.005) and L[t + 1] >= H[t + 1] * 0.999
+    locked_dn = O[t + 1] <= C[t] * (1 - PSX_LIMIT + 0.005) and H[t + 1] <= L[t + 1] * 1.001
 
     def tbs(tgt, stp, side):
+        if (side > 0 and locked_up) or (side < 0 and locked_dn):
+            return "unfilled", None, None
         for j in range(t + 1, end):
+            # Gap through the stop at the open -> filled at the OPEN, not at the
+            # stop price. A gap beyond the target is only credited the target.
             if side > 0:
+                if O[j] <= E * (1 - stp):
+                    return "stop", j - t, O[j] / E - 1
+                if O[j] >= E * (1 + tgt):
+                    return "target", j - t, tgt
                 if L[j] <= E * (1 - stp):
                     return "stop", j - t, -stp
                 if H[j] >= E * (1 + tgt):
                     return "target", j - t, tgt
             else:
+                if O[j] >= E * (1 + stp):
+                    return "stop", j - t, -(O[j] / E - 1)
+                if O[j] <= E * (1 - tgt):
+                    return "target", j - t, tgt
                 if H[j] >= E * (1 + stp):
                     return "stop", j - t, -stp
                 if L[j] <= E * (1 - tgt):
@@ -240,28 +261,54 @@ def existing_module_events(sym, d, liq_by_t, reg_by_date):
 
 
 # --------------------------------------------------------------------------
-def _p(vals, cond):
-    v = [x for x in vals if x is not None]
+def cluster_ci(flags, dates, z=1.96):
+    """95% CI for a proportion with events clustered by signal DATE (many
+    stocks signal on the same market day, so they are not independent).
+    Cluster-robust (sandwich) variance; falls back to Wilson when there are
+    fewer than 2 dates."""
+    n = len(flags)
+    if not n:
+        return (None, None)
+    p = sum(flags) / n
+    by = {}
+    for f, d in zip(flags, dates):
+        a = by.setdefault(d, [0, 0])
+        a[0] += f
+        a[1] += 1
+    g = len(by)
+    if g < 2:
+        return ve.wilson(sum(flags), n)
+    var = sum((k - p * m) ** 2 for k, m in by.values()) / n ** 2 * g / (g - 1)
+    h = z * math.sqrt(var)
+    return (round(max(0.0, p - h) * 100, 1), round(min(1.0, p + h) * 100, 1))
+
+
+def _p(pairs, cond):
+    """pairs: [(value, date)]. Returns (pct, date-clustered CI, n)."""
+    v = [(x, d) for x, d in pairs if x is not None]
     if not v:
         return None, (None, None), 0
-    k = sum(1 for x in v if cond(x))
-    return round(100 * k / len(v), 1), ve.wilson(k, len(v)), len(v)
+    flags = [1 if cond(x) else 0 for x, _ in v]
+    return round(100 * sum(flags) / len(v), 1), cluster_ci(flags, [d for _, d in v]), len(v)
 
 
 def trade_stats(evs, key):
-    tr = [e[key] for e in evs if key in e and e[key][0] in ("target", "stop", "timeout")]
+    done = [e for e in evs if key in e and e[key][0] in ("target", "stop", "timeout")]
+    tr = [e[key] for e in done]
+    unfilled = sum(1 for e in evs if key in e and e[key][0] == "unfilled")
     if not tr:
-        return None
+        return {"n": 0, "unfilled": unfilled} if unfilled else None
     rets = np.array([x[2] - COST_RT for x in tr]) * 100
     w, l = rets[rets > 0], rets[rets <= 0]
     hit = [x for x in tr if x[0] == "target"]
     # equity: equal-size trades in signal-date order (non-compounded)
-    order = sorted(range(len(tr)), key=lambda i: 0)
-    eq = np.cumsum(rets)
+    eq = np.cumsum(rets[np.argsort([e["date"] for e in done], kind="stable")])
     dd = float((np.maximum.accumulate(np.concatenate([[0], eq])) - np.concatenate([[0], eq])).max())
     sd = rets.std(ddof=1) if len(rets) > 1 else 0
     return {"n": len(tr), "target_first_pct": round(100 * len(hit) / len(tr), 1),
-            "target_first_ci": ve.wilson(len(hit), len(tr)),
+            "target_first_ci": cluster_ci([1 if x[0] == "target" else 0 for x in tr],
+                                          [e["date"] for e in done]),
+            "unfilled": unfilled,
             "win_rate": round(100 * len(w) / len(rets), 1),
             "avg_win": round(float(w.mean()), 2) if len(w) else None,
             "avg_loss": round(float(l.mean()), 2) if len(l) else None,
@@ -278,8 +325,8 @@ def group_stats(evs):
     out = {"n": len(evs),
            "period": f"{min(e['date'] for e in evs).date()} → {max(e['date'] for e in evs).date()}"}
     for h in HORIZONS:
-        r = [e.get(f"r{h}") for e in evs]
-        rv = np.array([x for x in r if x is not None])
+        r = [(e.get(f"r{h}"), e["date"]) for e in evs]
+        rv = np.array([x for x, _ in r if x is not None])
         out[f"p_up_{h}d"], out[f"p_up_{h}d_ci"], out[f"n_{h}d"] = _p(r, lambda x: x > 0)
         out[f"p_down_{h}d"], out[f"p_down_{h}d_ci"], _ = _p(r, lambda x: x < 0)
         out[f"mean_{h}d"] = round(float(rv.mean()), 2) if len(rv) else None
@@ -292,8 +339,8 @@ def group_stats(evs):
         out[f"mae_{h}d"] = round(float(np.mean(mae)), 2) if mae else None
         out[f"max_up_{h}d"] = round(float(np.max(mfe)), 1) if mfe else None
         out[f"max_down_{h}d"] = round(float(np.min(mae)), 1) if mae else None
-        out[f"p_mfe5_{h}d"], _, _ = _p(mfe, lambda x: x >= 5)
-        out[f"p_mae5_{h}d"], _, _ = _p(mae, lambda x: x <= -5)
+        out[f"p_mfe5_{h}d"], _, _ = _p([(e.get(f"mfe{h}"), e["date"]) for e in evs], lambda x: x >= 5)
+        out[f"p_mae5_{h}d"], _, _ = _p([(e.get(f"mae{h}"), e["date"]) for e in evs], lambda x: x <= -5)
     up_atr = [e["mfe10"] >= 2 * e["atrp"] for e in evs if "mfe10" in e and e.get("atrp")]
     dn_atr = [e["mae10"] <= -2 * e["atrp"] for e in evs if "mae10" in e and e.get("atrp")]
     out["p_up_2atr_10d"] = round(100 * np.mean(up_atr), 1) if up_atr else None
@@ -302,6 +349,7 @@ def group_stats(evs):
         out[k] = trade_stats(evs, k)
     out["long_target_first"] = (out["long_atr"] or {}).get("target_first_pct")
     out["short_target_first"] = (out["short_atr"] or {}).get("target_first_pct")
+    out["n_dates"] = len({e["date"] for e in evs})
     out["sufficient"] = out["n"] >= MIN_N
     return out
 
@@ -377,7 +425,10 @@ def main():
            "assumptions": {"entry": "next session open", "cost_round_trip_pct": COST_RT * 100,
                            "fixed_target_stop_pct": [FIX_TGT * 100, FIX_STP * 100],
                            "atr_target_stop_mult": [ATR_TGT, ATR_STP], "max_hold": MAX_HOLD,
-                           "cooldown": COOLDOWN, "min_n": MIN_N},
+                           "cooldown": COOLDOWN, "min_n": MIN_N,
+                           "fills": "long entries into an upper-circuit lock (and shorts into a lower-circuit lock) "
+                                    "are unfilled; gap-through stops fill at the open",
+                           "confidence_intervals": "95%, clustered by signal date"},
            "groups": {}, "by_split": {}, "by_regime": {}, "by_liquidity": {}, "by_year": {}, "buckets": {}}
     for k in kinds:
         ev = [e for e in events if e["kind"] == k]
@@ -405,6 +456,10 @@ def main():
     }
     res["elapsed_s"] = round(time.time() - t0)
     write_report(res)
+    if os.getenv("PSX_BACKTEST_NO_SAVE"):
+        log.info("PSX_BACKTEST_NO_SAVE set -- report only, production stats row left untouched")
+        turso_db.print_usage_report(label="run_volatility_backtest.py")
+        return 0
     try:
         conn = turso_db.get_connection()
         conn.execute("""INSERT INTO analysis_cache(cache_key, run_at, run_at_epoch, result_json)

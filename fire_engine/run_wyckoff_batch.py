@@ -46,13 +46,28 @@ def main():
         import turso_db
         db = DatabaseManager(conn=turso_db.get_connection())
 
+    import batch_guard
+    from fire_engine.market_hours import session_date
+    guard_date = None if args.date else session_date()
+    if guard_date and batch_guard.already_done("wyckoff_batch", guard_date, db.conn):
+        print(f"Wyckoff batch for {guard_date} already completed by an earlier trigger -- nothing to do.")
+        db.close()
+        sys.exit(0)
+
     try:
         result = run_daily_wyckoff_batch(db, cfg, date=args.date)
+        n_stale = len(result.get("stale", []))
+        n_ok = len(result["results"])
+        # Mark complete only when (nearly) every symbol had a bar for this date;
+        # otherwise (holiday, or daily bars not yet published) a later trigger retries.
+        if guard_date and n_ok and n_ok >= 0.9 * (n_ok + n_stale):
+            batch_guard.mark_done("wyckoff_batch", guard_date, f"{n_ok} scanned, {n_stale} stale", db.conn)
     finally:
         db.close()
 
     print(f"\nWyckoff batch for {result['date']}: {len(result['results'])} symbols scanned, "
-          f"{result['stocks_with_signal']} with a WATCH/READY/EXTREME signal.")
+          f"{result['stocks_with_signal']} with a WATCH/READY/EXTREME signal, "
+          f"{len(result.get('stale', []))} skipped for stale data.")
 
 
 if __name__ == "__main__":

@@ -130,7 +130,9 @@ def render(get, company_names):
         st.info(res.get("reason") or "Volatility engine unavailable right now.")
         return
     stats = get("/patterns/volatility-engine/stats")
-    rows = res.get("rows") or []
+    all_rows = res.get("rows") or []
+    # Stale rows (newest candle older than the session) are never ranked.
+    rows = [r for r in all_rows if not r.get("stale")]
     names = company_names() or {}
     age = res.get("_cache_age_seconds")
     reg = res.get("regime") or {}
@@ -145,6 +147,7 @@ def render(get, company_names):
                                            " — the historical engine has not been run yet, so every setup shows "
                                            "INSUFFICIENT HISTORICAL EVIDENCE."))
 
+    _coverage(res, all_rows)
     v1, v2, v3, v6, v4, v5 = st.tabs(["⚠️ Early Warning", "🟢 Bullish Expansion", "🔴 Bearish Expansion",
                                       "🧩 Wyckoff × Volatility", "🔔 Alerts", "🧪 Historical Validation"])
     with v6:
@@ -155,6 +158,7 @@ def render(get, company_names):
         f.sort(key=lambda r: -(r["compression_score"] or 0))
         df = pd.DataFrame([{
             "symbol": r["symbol"], "company": names.get(r["symbol"], ""), "price": r["close"],
+            "last_candle": r.get("last_bar_date") or r.get("date"),
             "compression": r["compression_score"], "bbw_pct": r["bbw_pct100"], "atr_pct": r["atr_pct100"],
             "squeeze_d": r["squeeze_run"], "dcw_pct": r["dc_width_pct200"], "vol_trend10": r["vol_trend10"],
             "bull": r["bull_score"], "bear": r["bear_score"], "stage": STAGES[r["stage"]],
@@ -171,6 +175,7 @@ def render(get, company_names):
                                    + (r["compression_score"] or 0) * 0.2))
             df = pd.DataFrame([{
                 "rank": i + 1, "symbol": r["symbol"], "company": names.get(r["symbol"], ""), "price": r["close"],
+                "last_candle": r.get("last_bar_date") or r.get("date"),
                 "compression": r["compression_score"], "evidence": r[f"{k}_score"],
                 "expansion": r[f"{k}_expansion_score"], "bbw_pct": r["bbw_pct100"], "atr_pct": r["atr_pct100"],
                 "rel_vol": r["rv20"], "break_level": r["break_level"] or (r["box_hi"] if sgn > 0 else r["box_lo"]),
@@ -259,6 +264,7 @@ def _wyckoff_view(get, names):
         return
     df = pd.DataFrame([{
         "symbol": r["symbol"], "company": names.get(r["symbol"], ""), "price": r.get("close"),
+        "last_candle": r.get("last_bar_date"), "stale": "⚠️ STALE" if r.get("stale") else "",
         "wyckoff_score": r.get("wyckoff_score"), "wyckoff": r.get("wyckoff_signal"),
         "4h_bb": r.get("wy_bb4h_compression"), "supply_exh": r.get("wy_supply_exhaustion"),
         "absorption": r.get("wy_absorption"), "obv_div": r.get("wy_obv_divergence"),
@@ -272,3 +278,23 @@ def _wyckoff_view(get, names):
     st.caption("Confluence = a Wyckoff signal while the volatility engine shows compression or upside expansion "
                "with bullish evidence ≥ bearish. Conflict = a Wyckoff signal while bearish evidence leads by "
                "15+ points or a bearish expansion/failed breakout is active — check before acting.")
+
+
+def _coverage(res, all_rows):
+    stale = [r for r in all_rows if r.get("stale")]
+    unav = res.get("unavailable") or []
+    exc = res.get("excluded") or []
+    st.caption(f"🗓️ Session {res.get('session', '—')} · {res.get('fresh', len(all_rows) - len(stale))} stocks with a "
+               f"current candle · {len(stale)} stale · {len(unav)} unavailable · {len(exc)} excluded by the "
+               f"configured exclusion list (universe {res.get('universe_size', '—')}).")
+    if stale or unav or exc:
+        with st.expander("Stocks not ranked today (stale, unavailable or excluded)"):
+            if stale:
+                st.markdown("**⚠️ Stale data** — newest candle older than the session; not ranked, no alerts:")
+                st.dataframe(pd.DataFrame([{"symbol": r["symbol"], "last_candle": r.get("last_bar_date")} for r in stale]),
+                             hide_index=True, key="vol_stale")
+            if unav:
+                st.markdown("**Unavailable** — no usable price data (not a negative signal):")
+                st.dataframe(pd.DataFrame(unav), hide_index=True, key="vol_unav")
+            if exc:
+                st.markdown("**Excluded** by the configured exclusion list: " + ", ".join(exc))
