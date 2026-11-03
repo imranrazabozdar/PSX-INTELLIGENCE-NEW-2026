@@ -592,6 +592,14 @@ def main():
                         f"(market: {ve_result['market_source']})")
             _save_to_analysis_cache("volatility_engine_scan", ve_result)
             _save_to_analysis_cache("volatility_engine_detail", ve_detail)
+            try:   # join with the latest stored Wyckoff batch (~150 row reads)
+                ve_saved = dict(ve_result, _cache_run_at=datetime.now(timezone.utc).isoformat())
+                wy_rows = _vol_engine.load_latest_wyckoff_rows(turso_db.get_connection())
+                combo = _vol_engine.combine_with_wyckoff(ve_saved, [dict(r) for r in wy_rows])
+                _save_to_analysis_cache("volatility_wyckoff_combined", combo)
+                logger.info(f"  Wyckoff merge: {combo['n_wyckoff']} Wyckoff rows ({combo['wyckoff_date']})")
+            except Exception as e:
+                logger.info(f"  Wyckoff merge skipped: {type(e).__name__}: {e}")
         except Exception as e:
             logger.error(f"  Volatility engine failed: {type(e).__name__}: {e}")
 

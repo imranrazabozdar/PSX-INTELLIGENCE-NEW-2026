@@ -116,6 +116,17 @@ jobs:
             python -m fire_engine.run_wyckoff_batch
           fi
 
+      # Downstream, read-only towards Wyckoff: joins today's Wyckoff rows with
+      # the Volatility Intelligence Engine's stored scan. continue-on-error so
+      # it can never fail the FIRE / Wyckoff job.
+      - name: 🔗 Merge Wyckoff with Volatility Intelligence Engine
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        continue-on-error: true
+        run: python -m fire_engine.run_volatility_wyckoff_merge
+
       - name: 🧹 Prune ohlcv_4h cache (keep last 35 days)
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}

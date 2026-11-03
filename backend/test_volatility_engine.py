@@ -267,3 +267,40 @@ def test_stop_checked_before_target_on_same_bar():
     df.loc[11, "low"] = 90
     d = ve.compute_frame(df)
     assert bt.forward(d, 9, atrp=2.0)["long_fix"][0] == "stop"
+
+
+# ---------------------------------------------------------------- Wyckoff extension
+def test_combine_with_wyckoff_keeps_scores_separate():
+    vol = {"rows": [
+        {"symbol": "A", "date": "2026-11-03", "close": 10, "compression_score": 70, "bull_score": 60, "bear_score": 20,
+         "bull_expansion_score": 0, "bear_expansion_score": 0, "stage": 2, "stage_dir": 0,
+         "stage_detail": "Advanced squeeze", "hist": {"available": False}},
+        {"symbol": "B", "date": "2026-11-03", "close": 5, "compression_score": 30, "bull_score": 10, "bear_score": 70,
+         "bull_expansion_score": 0, "bear_expansion_score": 60, "stage": 4, "stage_dir": -1,
+         "stage_detail": "Confirmed breakdown", "hist": {}},
+        {"symbol": "C", "date": "2026-11-03", "compression_score": 10, "stage": 0, "hist": {}}]}
+    wy = [{"symbol": "A", "scan_date": "2026-11-03", "accumulation_score": 80, "signal_type": "READY",
+           "components": '{"bb_compression": true, "supply_exhaustion": true, "absorption": false, "obv_divergence": true}',
+           "is_consolidating": 1, "macd_confirmation": 1},
+          {"symbol": "B", "scan_date": "2026-11-03", "accumulation_score": 60, "signal_type": "WATCH",
+           "components": "{}", "is_consolidating": 1, "macd_confirmation": 1}]
+    out = ve.combine_with_wyckoff(vol, wy)
+    by = {r["symbol"]: r for r in out["rows"]}
+    assert by["A"]["wyckoff_score"] == 80 and by["A"]["compression_score"] == 70   # untouched, not summed
+    assert by["A"]["wy_bb4h_compression"] and by["A"]["confluence"] and not by["A"]["conflict"]
+    assert by["B"]["conflict"] and not by["B"]["confluence"]
+    assert by["C"]["wyckoff_signal"] == "NOT IN WYCKOFF SCAN"
+    assert out["wyckoff_date"] == "2026-11-03"
+
+
+def test_wyckoff_detector_output_unchanged_by_extension():
+    """The extension only reads wyckoff_accumulation; the detector module
+    must still be byte-for-byte the audited version's behaviour."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from fire_engine.wyckoff_detector import WyckoffDetector, DEFAULT_CONFIG
+    assert (DEFAULT_CONFIG["watch_threshold"], DEFAULT_CONFIG["ready_threshold"],
+            DEFAULT_CONFIG["extreme_threshold"]) == (60, 70, 85)
+    assert (DEFAULT_CONFIG["bb_width_points"], DEFAULT_CONFIG["supply_exhaustion_points"],
+            DEFAULT_CONFIG["absorption_points"], DEFAULT_CONFIG["obv_divergence_points"]) == (20, 20, 30, 30)

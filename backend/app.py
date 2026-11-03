@@ -3865,6 +3865,18 @@ def patterns_volatility_engine_detail(symbol: str):
     return {"status": "ok", "symbol": symbol.upper(), "series": d}
 
 
+@app.get("/patterns/volatility-wyckoff")
+def patterns_volatility_wyckoff():
+    """Existing Wyckoff accumulation output (unchanged) side by side with the
+    Volatility Intelligence Engine. Built by the daily jobs and stored as
+    analysis_cache 'volatility_wyckoff_combined' -- one row read per view."""
+    cached = _scan_cache.latest("volatility_wyckoff_combined")
+    if cached is None:
+        return {"status": "running", "rows": [],
+                "reason": "Combined view not built yet -- it is written after the daily Wyckoff batch."}
+    return cached
+
+
 @app.get("/patterns/volatility-engine/stats")
 def patterns_volatility_engine_stats():
     """Measured historical outcomes (backend/run_volatility_backtest.py,
