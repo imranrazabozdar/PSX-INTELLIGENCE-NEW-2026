@@ -54,6 +54,7 @@ import psx_live as _psx_live
 import gp_evolved_detector as _gp_evolved
 import engulfing_star_detector as _engulfing_star
 import obv_mfi_scanner as _obv_mfi
+import volatility_engine as _vol_engine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -274,6 +275,40 @@ def run_obv_mfi_scan(all_data: dict) -> dict:
     # Strongest footprint first: most OBV kept, then the driest pullback.
     hits.sort(key=lambda r: (-(r.get("obv_retention_pct") or 0), r["vol_drought_pct"]))
     return {"status": "ok", "scanned": scanned, "hits": hits}
+
+
+# ---------------------------------------------------------------------------
+# 1d-3. Volatility Compression & Expansion Intelligence Engine
+#       (backend/volatility_engine.py). Needs ~600 bars for 200/252-session
+#       percentiles and weekly features, so it loads its own longer window --
+#       served by the local daily_ohlc snapshot, i.e. 0 Turso reads. Turso
+#       cost: 2 small reads (previous scan for change-only alerts, measured
+#       stats from run_volatility_backtest.py) + 2 writes.
+# ---------------------------------------------------------------------------
+
+def _vol_market_series():
+    try:
+        rows = _psx_live.index_history("KSE100", limit=1500)
+        if rows:
+            s = pd.Series({pd.to_datetime(r["timestamp"], unit="ms").normalize(): float(r["close"])
+                           for r in rows})
+            return s.sort_index()
+    except Exception as e:
+        logger.info(f"  KSE-100 history unavailable ({type(e).__name__}) -- using equal-weight proxy")
+    return None
+
+
+def run_volatility_engine_scan() -> tuple:
+    data = load_all_ohlcv(lookback_days=600)
+    try:
+        import names as _names
+        sectors = {k: (v or {}).get("sector") for k, v in _names.load().items()}
+    except Exception:
+        sectors = {}
+    stats = _read_analysis_cache("volatility_engine_stats")
+    prev = _read_analysis_cache("volatility_engine_scan")
+    return _vol_engine.analyze_universe(data, sectors, market_series=_vol_market_series(),
+                                        stats=stats, prev=prev)
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +591,20 @@ def main():
         logger.info(f"  Scanned {om_result['scanned']} symbols, {len(om_result['hits'])} hits")
         _save_to_analysis_cache("obv_mfi_scan", om_result)
 
+        # --- 1d-3. Volatility Intelligence Engine (isolated: a failure here
+        #     never stops the other scans) ---
+        logger.info("Running Volatility Intelligence Engine...")
+        ve_n = ve_alerts = 0
+        try:
+            ve_result, ve_detail = run_volatility_engine_scan()
+            ve_n, ve_alerts = ve_result["scanned"], len(ve_result["alerts"])
+            logger.info(f"  Analysed {ve_n} symbols, {ve_alerts} new alerts "
+                        f"(market: {ve_result['market_source']})")
+            _save_to_analysis_cache("volatility_engine_scan", ve_result)
+            _save_to_analysis_cache("volatility_engine_detail", ve_detail)
+        except Exception as e:
+            logger.error(f"  Volatility engine failed: {type(e).__name__}: {e}")
+
         # --- 1e. Level Break Out ---
         logger.info("Running Level Break Out scan...")
         lb_result = run_level_breakout_scan(all_data)
@@ -602,6 +651,7 @@ def main():
         logger.info(f"  Regression-Channel Triangle Squeeze: {len(tr_result['hits'])} signals")
         logger.info(f"  Level Break Out: {len(lb_result['hits'])} signals")
         logger.info(f"  OBV+MFI Setup with ATR Contraction: {len(om_result['hits'])} signals")
+        logger.info(f"  Volatility Intelligence Engine: {ve_n} symbols analysed, {ve_alerts} new alerts")
         logger.info(f"  GP-Evolved Formula: {len(gp_result['hits'])} signals (status={gp_result['status']})")
         logger.info(f"  Morning Star: {len(ms_result['hits'])} signals")
         logger.info(f"  Head & Shoulders Top: {len(hst_result['hits'])} signals")
