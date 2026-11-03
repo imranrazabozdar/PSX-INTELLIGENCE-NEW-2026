@@ -347,7 +347,7 @@ def main():
     t0 = time.time()
     uni = load_universe()
     sectors = load_sectors()
-    mkt_raw = load_market()
+    mkt_raw = None   # benchmark = equal-weight index of the loaded stocks (not KSE-100)
     market, sec_idx, msrc = ve.build_indices(uni, sectors, mkt_raw)
     regs = ve.regime_series(market).dropna()
     reg_by_date = {k.normalize(): v for k, v in regs.items()}

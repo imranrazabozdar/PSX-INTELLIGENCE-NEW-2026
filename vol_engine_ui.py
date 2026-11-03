@@ -138,7 +138,8 @@ def render(get, company_names):
                f"market: {res.get('market_source')} · regime {reg.get('trend')} "
                f"(index vol pct {reg.get('vol20_pct252')}, breadth {reg.get('breadth_above_sma50_pct')}% above SMA50"
                f"{', RISK-OFF' if reg.get('risk_off') else ''}) · 4-hour: not used (35-day cache too short).")
-    st.caption("Scores are configurable heuristics (0–100), **not probabilities**. Compression has no direction; "
+    st.caption("Universe = only the stocks loaded in your database; 'market' strength is measured against their equal-weight index. "
+               "Scores are configurable heuristics (0–100), **not probabilities**. Compression has no direction; "
                "bullish and bearish evidence are scored independently. Measured outcomes appear only where "
                f"enough history exists" + ("" if res.get("stats_available") else
                                            " — the historical engine has not been run yet, so every setup shows "

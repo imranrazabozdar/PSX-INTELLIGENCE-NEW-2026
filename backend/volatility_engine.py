@@ -816,7 +816,7 @@ def build_indices(frames: dict, sectors: dict, market_series=None):
     if market_series is not None and len(market_series) > 100:
         market, src = market_series, "KSE-100"
     else:
-        market, src = (1 + R.mean(axis=1, skipna=True).fillna(0)).cumprod(), "equal-weight universe proxy (KSE-100 unavailable)"
+        market, src = (1 + R.mean(axis=1, skipna=True).fillna(0)).cumprod(), f"equal-weight index of your {R.shape[1]} loaded stocks"
     by_sec = {}
     for s, sec in sectors.items():
         if sec and s in R:
