@@ -189,6 +189,21 @@ def main():
               f"- Stale rows in combined view: {[r['symbol'] for r in rows if r.get('stale')]}"]
     else:
         L.append("- No stored combined view")
+    # ---- Wyckoff 2.0 research row (one read)
+    wr, w2 = cache(c, "wyckoff2_research_scan")
+    L += ["", "## Wyckoff Accumulation 2.0 research scan (stored row)", ""]
+    if w2:
+        rows = w2.get("rows", [])
+        syms = [r["symbol"] for r in rows]
+        L += [f"- Saved {wr} · session {w2.get('session')} · label {w2.get('label')} · benchmark {w2.get('benchmark')}",
+              f"- Rows {len(rows)} · unique symbols {len(set(syms))} · duplicates: {len(syms) != len(set(syms))}",
+              f"- Rows outside the active universe: {sorted(set(syms) - set(active))}",
+              f"- Classes: {dict(Counter(r['enh_class'] for r in rows))}",
+              f"- Stale rows: {[r['symbol'] for r in rows if r.get('stale')]} · unavailable: {w2.get('unavailable')}",
+              f"- last_bar_date distribution: {dict(Counter(r.get('last_bar_date') for r in rows))}",
+              f"- Thresholds: {w2.get('thresholds')} ({w2.get('thresholds_source')})"]
+    else:
+        L.append("- No stored Wyckoff 2.0 research row")
     if a.intraday_dates:
         L += ["", "## 1-minute (FIRE) coverage sample vs the stored daily candle", "",
               "| Date | Symbol | 1-min bars | First | Last | Last 1-min close | Daily close | 1-min volume | Daily volume |",

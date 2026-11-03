@@ -12,7 +12,7 @@ import streamlit as st
 ENH = ["POTENTIAL BREAKOUT", "ADVANCED ACCUMULATION", "STRONG ACCUMULATION", "DEVELOPING ACCUMULATION",
        "FAILED ACCUMULATION", "NO CLEAR ACCUMULATION"]
 RANK = {k: i for i, k in enumerate(ENH)}
-SORTS = {"Enhanced class (strongest first)": None, "Original Wyckoff score": "orig_score",
+SORTS = {"Enhanced class (strongest first)": None, "Stock symbol (A→Z)": "symbol", "Original Wyckoff score": "orig_score",
          "Relative strength": "rs_q", "Absorption quality": "abs_q", "OBV divergence quality": "obv_q",
          "Accumulation structure": "struct_q", "Resistance proximity (closest first)": "dist_res_pct"}
 
@@ -25,7 +25,7 @@ def _agree(orig, enh):
 
 def render(get, company_names):
     st.markdown('<div class="psx-section-eyebrow">ACCUMULATION</div>'
-                '<div class="psx-section-title">🏛️ Wyckoff Institutional Accumulation — 1D</div>',
+                '<div class="psx-section-title">🏛️ Wyckoff Institutional Accumulation 2.0 (RESEARCH) — 1D</div>',
                 unsafe_allow_html=True)
     research = get("/patterns/wyckoff2-research")
     prod = get("/patterns/volatility-wyckoff")
@@ -38,8 +38,12 @@ def render(get, company_names):
         st.info(research.get("reason") or "Research scan unavailable.")
         return
     th = research.get("thresholds") or {}
-    st.caption(f"Research session {research.get('session')} · production Wyckoff batch {prod.get('wyckoff_date', '—')} · "
-               f"benchmark {research.get('benchmark')} · thresholds ({research.get('thresholds_source')}): {th}")
+    st.caption(f"Research scan for trading date **{research.get('session')}** · saved {str(research.get('run_at', '—'))[:19]} UTC · "
+               f"original Wyckoff 1.0 batch {prod.get('wyckoff_date', '—')} · benchmark {research.get('benchmark')} · "
+               f"thresholds ({research.get('thresholds_source')}): {th}")
+    if prod.get("wyckoff_date") and research.get("session") and str(research["session"]) < str(prod["wyckoff_date"]):
+        st.error(f"⚠️ OUTDATED: research results are for {research['session']}, older than the latest Wyckoff 1.0 batch "
+                 f"({prod['wyckoff_date']}). Do not treat them as current.")
     by_class = (stats or {}).get("by_class") or {}
     rows, stale = [], []
     for r in research.get("rows", []):
@@ -58,8 +62,12 @@ def render(get, company_names):
             "hist_test_10d": (f"{h.get('mean_10d')}% avg 10d, n={h.get('n')}" if h.get("n", 0) >= 30
                               else ("INSUFFICIENT EVIDENCE" if stats.get("status") == "ok" else "backtest not run")),
             "_raw": r, "_prod": p})
-    c1, c2, c3 = st.columns(3)
-    classes = c1.multiselect("Enhanced class", ENH, default=ENH[:4], key="w2_cls")
+    secmap = _sectors()
+    for x in rows:
+        x["sector"] = secmap.get(x["symbol"], "Unknown")
+    c1, c2, c3, c4 = st.columns(4)
+    classes = c1.multiselect("Enhanced class", ENH, default=ENH, key="w2_cls")
+    secs = c4.multiselect("Sector", sorted({x["sector"] for x in rows}), default=[], key="w2_sec", placeholder="All sectors")
     view = c2.selectbox("Show", ["All", "Original READY / EXTREME only", "Original and enhanced agree",
                                  "Enhanced differs from original"], key="w2_view")
     sort = c3.selectbox("Sort by", list(SORTS), key="w2_sort")
@@ -70,8 +78,12 @@ def render(get, company_names):
         f = [x for x in f if x["agreement"] == "both"]
     elif view.startswith("Enhanced differs"):
         f = [x for x in rows if x["agreement"] in ("original only", "enhanced only")]
+    if secs:
+        f = [x for x in f if x["sector"] in secs]
     key = SORTS[sort]
-    if key is None:
+    if key == "symbol":
+        f.sort(key=lambda x: x["symbol"])
+    elif key is None:
         f.sort(key=lambda x: (RANK.get(x["enh_class"], 9), -(x["confirming"] or 0)))
     elif key == "dist_res_pct":
         f.sort(key=lambda x: x[key] if x[key] is not None else 1e9)
@@ -109,6 +121,19 @@ def render(get, company_names):
             if research.get("excluded"):
                 st.markdown("**Excluded by configuration:** " + ", ".join(research["excluded"]))
     _backtest_summary(stats)
+
+
+def _sectors():
+    """Sector per symbol from the repository's cached PSX symbol directory
+    (backend/symbol_names.json) -- a local file, no network or database call."""
+    import json
+    import os
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend", "symbol_names.json")
+        m = json.load(open(p, encoding="utf-8")).get("map", {})
+        return {k: (v or {}).get("sector") or "Unknown" for k, v in m.items()}
+    except Exception:
+        return {}
 
 
 def _detail(x, th):
