@@ -1,0 +1,38 @@
+name: DIAGNOSTIC isolated recomputation (no database access)
+
+# DIAGNOSTIC ONLY. Deliberately has NO secrets / env: the Turso credentials
+# are never passed to this job, so it cannot connect to the production
+# database. All work happens in a temporary SQLite file on the runner; inputs
+# come from SCS; the only output is the report artifact.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r fire_engine/requirements.txt
+      - name: 🔒 Prove no database credentials are present
+        run: |
+          if [ -n "${LIBSQL_URL}${LIBSQL_AUTH_TOKEN}" ]; then echo "Turso credentials present -- aborting"; exit 1; fi
+          echo "No Turso credentials in this job's environment."
+      - name: 🧪 DIAGNOSTIC recomputation
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python -m fire_engine.run_isolated_diagnostic
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DIAGNOSTIC-isolated-recomputation-report
+          path: isolated_diagnostic_report.md

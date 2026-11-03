@@ -1,0 +1,1476 @@
+{
+ "source": "GitHub Actions job log of run 41627575171 (production FIRE+Wyckoff, 2026-11-03)",
+ "fire": {
+  "CNERGY": {
+   "status": "INCOMPLETE",
+   "events": 36,
+   "fire": 0,
+   "prefire": 11
+  },
+  "PRL": {
+   "status": "INCOMPLETE",
+   "events": 25,
+   "fire": 0,
+   "prefire": 12
+  },
+  "BOP": {
+   "status": "INCOMPLETE",
+   "events": 72,
+   "fire": 0,
+   "prefire": 37
+  },
+  "FNEL": {
+   "status": "INCOMPLETE",
+   "events": 56,
+   "fire": 2,
+   "prefire": 14
+  },
+  "KEL": {
+   "status": "INCOMPLETE",
+   "events": 35,
+   "fire": 0,
+   "prefire": 23
+  },
+  "SSGC": {
+   "status": "INCOMPLETE",
+   "events": 70,
+   "fire": 0,
+   "prefire": 29
+  },
+  "PACE": {
+   "status": "INCOMPLETE",
+   "events": 20,
+   "fire": 0,
+   "prefire": 1
+  },
+  "WAVESAPP": {
+   "status": "INCOMPLETE",
+   "events": 29,
+   "fire": 10,
+   "prefire": 14
+  },
+  "NBP": {
+   "status": "INCOMPLETE",
+   "events": 56,
+   "fire": 0,
+   "prefire": 19
+  },
+  "PIBTL": {
+   "status": "INCOMPLETE",
+   "events": 51,
+   "fire": 0,
+   "prefire": 36
+  },
+  "FCL": {
+   "status": "INCOMPLETE",
+   "events": 47,
+   "fire": 0,
+   "prefire": 18
+  },
+  "PPL": {
+   "status": "INCOMPLETE",
+   "events": 68,
+   "fire": 0,
+   "prefire": 49
+  },
+  "BLUEX": {
+   "status": "INCOMPLETE",
+   "events": 18,
+   "fire": 3,
+   "prefire": 4
+  },
+  "AKBL": {
+   "status": "INCOMPLETE",
+   "events": 40,
+   "fire": 0,
+   "prefire": 12
+  },
+  "PREMA": {
+   "status": "INCOMPLETE",
+   "events": 39,
+   "fire": 0,
+   "prefire": 23
+  },
+  "BECO": {
+   "status": "INCOMPLETE",
+   "events": 52,
+   "fire": 0,
+   "prefire": 6
+  },
+  "BAFL": {
+   "status": "INCOMPLETE",
+   "events": 96,
+   "fire": 6,
+   "prefire": 31
+  },
+  "LOTCHEM": {
+   "status": "INCOMPLETE",
+   "events": 66,
+   "fire": 0,
+   "prefire": 32
+  },
+  "NRL": {
+   "status": "INCOMPLETE",
+   "events": 27,
+   "fire": 1,
+   "prefire": 9
+  },
+  "SYS": {
+   "status": "INCOMPLETE",
+   "events": 84,
+   "fire": 0,
+   "prefire": 38
+  },
+  "HUBC": {
+   "status": "INCOMPLETE",
+   "events": 129,
+   "fire": 9,
+   "prefire": 31
+  },
+  "AICL": {
+   "status": "INCOMPLETE",
+   "events": 17,
+   "fire": 1,
+   "prefire": 9
+  },
+  "THCCL": {
+   "status": "INCOMPLETE",
+   "events": 35,
+   "fire": 0,
+   "prefire": 10
+  },
+  "FCCL": {
+   "status": "INCOMPLETE",
+   "events": 66,
+   "fire": 0,
+   "prefire": 25
+  },
+  "HASCOL": {
+   "status": "INCOMPLETE",
+   "events": 29,
+   "fire": 0,
+   "prefire": 16
+  },
+  "ABL": {
+   "status": "INCOMPLETE",
+   "events": 21,
+   "fire": 0,
+   "prefire": 7
+  },
+  "PSO": {
+   "status": "INCOMPLETE",
+   "events": 66,
+   "fire": 0,
+   "prefire": 55
+  },
+  "HBL": {
+   "status": "INCOMPLETE",
+   "events": 82,
+   "fire": 0,
+   "prefire": 37
+  },
+  "OGDC": {
+   "status": "INCOMPLETE",
+   "events": 99,
+   "fire": 15,
+   "prefire": 64
+  },
+  "AVN": {
+   "status": "INCOMPLETE",
+   "events": 13,
+   "fire": 0,
+   "prefire": 5
+  },
+  "SLGL": {
+   "status": "INCOMPLETE",
+   "events": 43,
+   "fire": 0,
+   "prefire": 13
+  },
+  "SPSL": {
+   "status": "INCOMPLETE",
+   "events": 41,
+   "fire": 1,
+   "prefire": 19
+  },
+  "POWER": {
+   "status": "INCOMPLETE",
+   "events": 10,
+   "fire": 0,
+   "prefire": 5
+  },
+  "UBL": {
+   "status": "INCOMPLETE",
+   "events": 77,
+   "fire": 0,
+   "prefire": 27
+  },
+  "TRG": {
+   "status": "INCOMPLETE",
+   "events": 61,
+   "fire": 0,
+   "prefire": 40
+  },
+  "TOMCL": {
+   "status": "INCOMPLETE",
+   "events": 32,
+   "fire": 0,
+   "prefire": 15
+  },
+  "AIRLINK": {
+   "status": "INCOMPLETE",
+   "events": 63,
+   "fire": 0,
+   "prefire": 19
+  },
+  "FFL": {
+   "status": "INCOMPLETE",
+   "events": 46,
+   "fire": 1,
+   "prefire": 17
+  },
+  "SEARL": {
+   "status": "INCOMPLETE",
+   "events": 60,
+   "fire": 0,
+   "prefire": 28
+  },
+  "CLOV": {
+   "status": "INCOMPLETE",
+   "events": 55,
+   "fire": 0,
+   "prefire": 8
+  },
+  "SNBL": {
+   "status": "INCOMPLETE",
+   "events": 8,
+   "fire": 0,
+   "prefire": 4
+  },
+  "SNGP": {
+   "status": "INCOMPLETE",
+   "events": 69,
+   "fire": 0,
+   "prefire": 33
+  },
+  "MDTL": {
+   "status": "INCOMPLETE",
+   "events": 32,
+   "fire": 0,
+   "prefire": 4
+  },
+  "BML": {
+   "status": "INCOMPLETE",
+   "events": 73,
+   "fire": 0,
+   "prefire": 0
+  },
+  "BNL": {
+   "status": "INCOMPLETE",
+   "events": 22,
+   "fire": 0,
+   "prefire": 7
+  },
+  "BAHL": {
+   "status": "INCOMPLETE",
+   "events": 26,
+   "fire": 0,
+   "prefire": 10
+  },
+  "SYM": {
+   "status": "INCOMPLETE",
+   "events": 22,
+   "fire": 0,
+   "prefire": 8
+  },
+  "WASL": {
+   "status": "INCOMPLETE",
+   "events": 27,
+   "fire": 10,
+   "prefire": 6
+  },
+  "CPHL": {
+   "status": "INCOMPLETE",
+   "events": 38,
+   "fire": 0,
+   "prefire": 8
+  },
+  "FFC": {
+   "status": "INCOMPLETE",
+   "events": 140,
+   "fire": 1,
+   "prefire": 20
+  },
+  "MARI": {
+   "status": "INCOMPLETE",
+   "events": 92,
+   "fire": 18,
+   "prefire": 31
+  },
+  "MUGHAL": {
+   "status": "INCOMPLETE",
+   "events": 51,
+   "fire": 0,
+   "prefire": 13
+  },
+  "BGL": {
+   "status": "INCOMPLETE",
+   "events": 5,
+   "fire": 0,
+   "prefire": 1
+  },
+  "GAL": {
+   "status": "INCOMPLETE",
+   "events": 77,
+   "fire": 2,
+   "prefire": 31
+  },
+  "GDL": {
+   "status": "INCOMPLETE",
+   "events": 26,
+   "fire": 3,
+   "prefire": 10
+  },
+  "YOUW": {
+   "status": "INCOMPLETE",
+   "events": 15,
+   "fire": 3,
+   "prefire": 4
+  },
+  "ZAL": {
+   "status": "INCOMPLETE",
+   "events": 16,
+   "fire": 0,
+   "prefire": 6
+  },
+  "AGP": {
+   "status": "INCOMPLETE",
+   "events": 87,
+   "fire": 36,
+   "prefire": 15
+  },
+  "LOADS": {
+   "status": "INCOMPLETE",
+   "events": 20,
+   "fire": 0,
+   "prefire": 10
+  },
+  "KOHC": {
+   "status": "INCOMPLETE",
+   "events": 56,
+   "fire": 9,
+   "prefire": 7
+  },
+  "SAZEW": {
+   "status": "INCOMPLETE",
+   "events": 38,
+   "fire": 0,
+   "prefire": 20
+  },
+  "WAHDAT": {
+   "status": "INCOMPLETE",
+   "events": 5,
+   "fire": 1,
+   "prefire": 4
+  },
+  "STCL": {
+   "status": "INCOMPLETE",
+   "events": 0,
+   "fire": 0,
+   "prefire": 0
+  },
+  "GLAXO": {
+   "status": "INCOMPLETE",
+   "events": 68,
+   "fire": 0,
+   "prefire": 29
+  },
+  "TGL": {
+   "status": "INCOMPLETE",
+   "events": 5,
+   "fire": 0,
+   "prefire": 1
+  },
+  "MCB": {
+   "status": "INCOMPLETE",
+   "events": 76,
+   "fire": 1,
+   "prefire": 28
+  },
+  "JSBL": {
+   "status": "INCOMPLETE",
+   "events": 11,
+   "fire": 0,
+   "prefire": 1
+  },
+  "IMAGE": {
+   "status": "INCOMPLETE",
+   "events": 2,
+   "fire": 0,
+   "prefire": 1
+  },
+  "SCBPL": {
+   "status": "INCOMPLETE",
+   "events": 2,
+   "fire": 0,
+   "prefire": 1
+  },
+  "BOK": {
+   "status": "INCOMPLETE",
+   "events": 0,
+   "fire": 0,
+   "prefire": 0
+  },
+  "AGTL": {
+   "status": "INCOMPLETE",
+   "events": 0,
+   "fire": 0,
+   "prefire": 0
+  },
+  "ECPL": {
+   "status": "NO_DATA",
+   "events": 0,
+   "fire": 0,
+   "prefire": 0
+  },
+  "BIPL": {
+   "status": "INCOMPLETE",
+   "events": 69,
+   "fire": 0,
+   "prefire": 21
+  },
+  "HMB": {
+   "status": "INCOMPLETE",
+   "events": 12,
+   "fire": 0,
+   "prefire": 9
+  },
+  "FABL": {
+   "status": "INCOMPLETE",
+   "events": 150,
+   "fire": 0,
+   "prefire": 52
+  },
+  "SBL": {
+   "status": "INCOMPLETE",
+   "events": 5,
+   "fire": 0,
+   "prefire": 3
+  },
+  "ASTL": {
+   "status": "INCOMPLETE",
+   "events": 13,
+   "fire": 0,
+   "prefire": 6
+  },
+  "EFERT": {
+   "status": "INCOMPLETE",
+   "events": 104,
+   "fire": 3,
+   "prefire": 21
+  },
+  "DGKC": {
+   "status": "INCOMPLETE",
+   "events": 69,
+   "fire": 0,
+   "prefire": 27
+  },
+  "LUCK": {
+   "status": "INCOMPLETE",
+   "events": 91,
+   "fire": 0,
+   "prefire": 33
+  },
+  "TBL": {
+   "status": "INCOMPLETE",
+   "events": 12,
+   "fire": 0,
+   "prefire": 6
+  },
+  "STL": {
+   "status": "INCOMPLETE",
+   "events": 26,
+   "fire": 0,
+   "prefire": 9
+  },
+  "STLR": {
+   "status": "NO_DATA",
+   "events": 0,
+   "fire": 0,
+   "prefire": 0
+  },
+  "MLCF": {
+   "status": "INCOMPLETE",
+   "events": 94,
+   "fire": 0,
+   "prefire": 27
+  },
+  "CHCC": {
+   "status": "INCOMPLETE",
+   "events": 37,
+   "fire": 11,
+   "prefire": 8
+  },
+  "WTL": {
+   "status": "INCOMPLETE",
+   "events": 92,
+   "fire": 0,
+   "prefire": 22
+  },
+  "PTC": {
+   "status": "INCOMPLETE",
+   "events": 63,
+   "fire": 10,
+   "prefire": 21
+  },
+  "QTECH": {
+   "status": "INCOMPLETE",
+   "events": 18,
+   "fire": 0,
+   "prefire": 12
+  },
+  "ITANZ": {
+   "status": "INCOMPLETE",
+   "events": 47,
+   "fire": 0,
+   "prefire": 32
+  },
+  "ASL": {
+   "status": "INCOMPLETE",
+   "events": 32,
+   "fire": 0,
+   "prefire": 24
+  },
+  "FPJM": {
+   "status": "INCOMPLETE",
+   "events": 14,
+   "fire": 0,
+   "prefire": 9
+  },
+  "TPL": {
+   "status": "INCOMPLETE",
+   "events": 16,
+   "fire": 0,
+   "prefire": 6
+  },
+  "DCL": {
+   "status": "INCOMPLETE",
+   "events": 8,
+   "fire": 0,
+   "prefire": 0
+  },
+  "ZUMA": {
+   "status": "INCOMPLETE",
+   "events": 7,
+   "fire": 0,
+   "prefire": 2
+  },
+  "DFML": {
+   "status": "INCOMPLETE",
+   "events": 28,
+   "fire": 0,
+   "prefire": 12
+  },
+  "ASC": {
+   "status": "INCOMPLETE",
+   "events": 10,
+   "fire": 0,
+   "prefire": 1
+  },
+  "FCSC": {
+   "status": "INCOMPLETE",
+   "events": 14,
+   "fire": 0,
+   "prefire": 3
+  },
+  "LSECL": {
+   "status": "INCOMPLETE",
+   "events": 13,
+   "fire": 0,
+   "prefire": 5
+  },
+  "TPLT": {
+   "status": "INCOMPLETE",
+   "events": 20,
+   "fire": 1,
+   "prefire": 5
+  },
+  "NETSOL": {
+   "status": "INCOMPLETE",
+   "events": 63,
+   "fire": 0,
+   "prefire": 15
+  },
+  "KAPCO": {
+   "status": "INCOMPLETE",
+   "events": 24,
+   "fire": 2,
+   "prefire": 6
+  },
+  "AHCL": {
+   "status": "INCOMPLETE",
+   "events": 69,
+   "fire": 1,
+   "prefire": 39
+  },
+  "ENGROH": {
+   "status": "INCOMPLETE",
+   "events": 107,
+   "fire": 28,
+   "prefire": 20
+  },
+  "CSIL": {
+   "status": "INCOMPLETE",
+   "events": 9,
+   "fire": 0,
+   "prefire": 3
+  },
+  "STPL": {
+   "status": "INCOMPLETE",
+   "events": 3,
+   "fire": 0,
+   "prefire": 0
+  },
+  "ILP": {
+   "status": "INCOMPLETE",
+   "events": 53,
+   "fire": 0,
+   "prefire": 17
+  },
+  "TREET": {
+   "status": "INCOMPLETE",
+   "events": 47,
+   "fire": 0,
+   "prefire": 24
+  },
+  "EPCL": {
+   "status": "INCOMPLETE",
+   "events": 3,
+   "fire": 0,
+   "prefire": 1
+  },
+  "DSL": {
+   "status": "INCOMPLETE",
+   "events": 16,
+   "fire": 0,
+   "prefire": 6
+  },
+  "MEBL": {
+   "status": "INCOMPLETE",
+   "events": 77,
+   "fire": 13,
+   "prefire": 31
+  },
+  "IMS": {
+   "status": "INCOMPLETE",
+   "events": 1,
+   "fire": 0,
+   "prefire": 1
+  },
+  "PSX": {
+   "status": "INCOMPLETE",
+   "events": 49,
+   "fire": 0,
+   "prefire": 20
+  },
+  "JVDC": {
+   "status": "INCOMPLETE",
+   "events": 38,
+   "fire": 0,
+   "prefire": 17
+  },
+  "ISL": {
+   "status": "INCOMPLETE",
+   "events": 30,
+   "fire": 1,
+   "prefire": 6
+  },
+  "GHGL": {
+   "status": "INCOMPLETE",
+   "events": 7,
+   "fire": 0,
+   "prefire": 3
+  },
+  "POL": {
+   "status": "INCOMPLETE",
+   "events": 87,
+   "fire": 0,
+   "prefire": 35
+  },
+  "NATF": {
+   "status": "INCOMPLETE",
+   "events": 93,
+   "fire": 0,
+   "prefire": 46
+  },
+  "DEL": {
+   "status": "INCOMPLETE",
+   "events": 1,
+   "fire": 0,
+   "prefire": 1
+  },
+  "786": {
+   "status": "INCOMPLETE",
+   "events": 7,
+   "fire": 0,
+   "prefire": 3
+  },
+  "DADX": {
+   "status": "INCOMPLETE",
+   "events": 6,
+   "fire": 0,
+   "prefire": 1
+  },
+  "SINDM": {
+   "status": "INCOMPLETE",
+   "events": 74,
+   "fire": 0,
+   "prefire": 6
+  },
+  "PNSC": {
+   "status": "INCOMPLETE",
+   "events": 6,
+   "fire": 0,
+   "prefire": 3
+  },
+  "HIFA": {
+   "status": "INCOMPLETE",
+   "events": 1,
+   "fire": 0,
+   "prefire": 0
+  },
+  "ALAC": {
+   "status": "INCOMPLETE",
+   "events": 0,
+   "fire": 0,
+   "prefire": 0
+  },
+  "HICL": {
+   "status": "INCOMPLETE",
+   "events": 1,
+   "fire": 0,
+   "prefire": 0
+  },
+  "FCEPL": {
+   "status": "INCOMPLETE",
+   "events": 83,
+   "fire": 0,
+   "prefire": 6
+  },
+  "BBFL": {
+   "status": "INCOMPLETE",
+   "events": 5,
+   "fire": 0,
+   "prefire": 2
+  },
+  "TSBL": {
+   "status": "INCOMPLETE",
+   "events": 30,
+   "fire": 0,
+   "prefire": 9
+  },
+  "PIAHCLA": {
+   "status": "INCOMPLETE",
+   "events": 77,
+   "fire": 0,
+   "prefire": 24
+  },
+  "LSEFSL": {
+   "status": "INCOMPLETE",
+   "events": 14,
+   "fire": 0,
+   "prefire": 5
+  },
+  "PASL": {
+   "status": "INCOMPLETE",
+   "events": 150,
+   "fire": 0,
+   "prefire": 0
+  },
+  "AKDSL": {
+   "status": "INCOMPLETE",
+   "events": 3,
+   "fire": 0,
+   "prefire": 1
+  },
+  "SPAC1": {
+   "status": "NO_DATA",
+   "events": 0,
+   "fire": 0,
+   "prefire": 0
+  },
+  "SPAC2": {
+   "status": "INCOMPLETE",
+   "events": 1,
+   "fire": 0,
+   "prefire": 1
+  },
+  "TRSM": {
+   "status": "INCOMPLETE",
+   "events": 14,
+   "fire": 0,
+   "prefire": 6
+  },
+  "FTSM": {
+   "status": "INCOMPLETE",
+   "events": 9,
+   "fire": 0,
+   "prefire": 6
+  },
+  "FFLM": {
+   "status": "INCOMPLETE",
+   "events": 8,
+   "fire": 0,
+   "prefire": 7
+  },
+  "FANM": {
+   "status": "INCOMPLETE",
+   "events": 2,
+   "fire": 0,
+   "prefire": 0
+  },
+  "UCAPM": {
+   "status": "INCOMPLETE",
+   "events": 20,
+   "fire": 0,
+   "prefire": 0
+  },
+  "PIM": {
+   "status": "INCOMPLETE",
+   "events": 28,
+   "fire": 0,
+   "prefire": 0
+  },
+  "FEM": {
+   "status": "INCOMPLETE",
+   "events": 7,
+   "fire": 2,
+   "prefire": 1
+  },
+  "BFMOD": {
+   "status": "INCOMPLETE",
+   "events": 3,
+   "fire": 0,
+   "prefire": 1
+  },
+  "OBOY": {
+   "status": "INCOMPLETE",
+   "events": 33,
+   "fire": 4,
+   "prefire": 5
+  },
+  "WAFI": {
+   "status": "INCOMPLETE",
+   "events": 8,
+   "fire": 0,
+   "prefire": 2
+  },
+  "APL": {
+   "status": "INCOMPLETE",
+   "events": 41,
+   "fire": 0,
+   "prefire": 17
+  },
+  "GWLC": {
+   "status": "INCOMPLETE",
+   "events": 5,
+   "fire": 0,
+   "prefire": 0
+  }
+ },
+ "wyckoff": {
+  "CNERGY": {
+   "score": 80,
+   "signal": "NO_SIGNAL"
+  },
+  "PRL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "BOP": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "FNEL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "KEL": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "SSGC": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "PACE": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "WAVESAPP": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "NBP": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "PIBTL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "FCL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "PPL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "BLUEX": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "AKBL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "PREMA": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "BECO": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "BAFL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "LOTCHEM": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "NRL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "SYS": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "HUBC": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "AICL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "THCCL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "FCCL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "HASCOL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "ABL": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "PSO": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "HBL": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "OGDC": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "AVN": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "SLGL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "SPSL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "POWER": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "UBL": {
+   "score": 100,
+   "signal": "NO_SIGNAL"
+  },
+  "TRG": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "TOMCL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "AIRLINK": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "FFL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "SEARL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "CLOV": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "SNBL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "SNGP": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "MDTL": {
+   "score": 80,
+   "signal": "NO_SIGNAL"
+  },
+  "BML": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "BNL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "BAHL": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "SYM": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "WASL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "CPHL": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "FFC": {
+   "score": 30,
+   "signal": "NO_SIGNAL"
+  },
+  "MARI": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "MUGHAL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "BGL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "GAL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "GDL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "YOUW": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "ZAL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "AGP": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "LOADS": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "KOHC": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "SAZEW": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "WAHDAT": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "STCL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "GLAXO": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "TGL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "MCB": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "JSBL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "IMAGE": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "SCBPL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "BOK": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "AGTL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "BIPL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "HMB": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "FABL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "SBL": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "ASTL": {
+   "score": 80,
+   "signal": "NO_SIGNAL"
+  },
+  "EFERT": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "DGKC": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "LUCK": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "TBL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "STL": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "MLCF": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "CHCC": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "WTL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "PTC": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "QTECH": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "ITANZ": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "ASL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "FPJM": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "TPL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "DCL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "ZUMA": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "DFML": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "ASC": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "FCSC": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "LSECL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "TPLT": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "NETSOL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "KAPCO": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "AHCL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "ENGROH": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "CSIL": {
+   "score": 80,
+   "signal": "READY"
+  },
+  "STPL": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "ILP": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "TREET": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "EPCL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "DSL": {
+   "score": 80,
+   "signal": "READY"
+  },
+  "MEBL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "IMS": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "PSX": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "JVDC": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "ISL": {
+   "score": 80,
+   "signal": "READY"
+  },
+  "GHGL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "POL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "NATF": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "DEL": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "786": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "DADX": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "SINDM": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "PNSC": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "HIFA": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "ALAC": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "HICL": {
+   "score": 70,
+   "signal": "READY"
+  },
+  "FCEPL": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "BBFL": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "TSBL": {
+   "score": 100,
+   "signal": "NO_SIGNAL"
+  },
+  "PIAHCLA": {
+   "score": 100,
+   "signal": "EXTREME"
+  },
+  "LSEFSL": {
+   "score": 30,
+   "signal": "NO_SIGNAL"
+  },
+  "PASL": {
+   "score": 30,
+   "signal": "NO_SIGNAL"
+  },
+  "AKDSL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "SPAC1": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "SPAC2": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "TRSM": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "FTSM": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "FFLM": {
+   "score": 40,
+   "signal": "NO_SIGNAL"
+  },
+  "FANM": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "UCAPM": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "PIM": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "FEM": {
+   "score": 20,
+   "signal": "NO_SIGNAL"
+  },
+  "BFMOD": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "OBOY": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "WAFI": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  },
+  "APL": {
+   "score": 70,
+   "signal": "NO_SIGNAL"
+  },
+  "GWLC": {
+   "score": 50,
+   "signal": "NO_SIGNAL"
+  }
+ },
+ "fire_sample": [
+  "AGP",
+  "ENGROH",
+  "MARI",
+  "OGDC",
+  "MEBL",
+  "FFC",
+  "EFERT",
+  "GAL",
+  "MCB",
+  "AHCL",
+  "FABL",
+  "PASL",
+  "MLCF",
+  "STCL",
+  "BOK"
+ ]
+}
