@@ -286,18 +286,6 @@ def run_obv_mfi_scan(all_data: dict) -> dict:
 #       stats from run_volatility_backtest.py) + 2 writes.
 # ---------------------------------------------------------------------------
 
-def _vol_market_series():
-    try:
-        rows = _psx_live.index_history("KSE100", limit=1500)
-        if rows:
-            s = pd.Series({pd.to_datetime(r["timestamp"], unit="ms").normalize(): float(r["close"])
-                           for r in rows})
-            return s.sort_index()
-    except Exception as e:
-        logger.info(f"  KSE-100 history unavailable ({type(e).__name__}) -- using equal-weight proxy")
-    return None
-
-
 def run_volatility_engine_scan() -> tuple:
     data = load_all_ohlcv(lookback_days=600)
     try:
@@ -307,7 +295,9 @@ def run_volatility_engine_scan() -> tuple:
         sectors = {}
     stats = _read_analysis_cache("volatility_engine_stats")
     prev = _read_analysis_cache("volatility_engine_scan")
-    return _vol_engine.analyze_universe(data, sectors, market_series=_vol_market_series(),
+    # Benchmark = equal-weight index of the stocks loaded in daily_ohlc (the
+    # user's own universe), not the external KSE-100 feed.
+    return _vol_engine.analyze_universe(data, sectors, market_series=None,
                                         stats=stats, prev=prev)
 
 
