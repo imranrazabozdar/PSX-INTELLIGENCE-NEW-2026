@@ -263,3 +263,17 @@ def test_live_variant_reproduces_production_scanner_on_260_bar_windows():
     import obv_mfi_scanner_experimental as ox
     fe = {t for t, _ in cmp.signals(d, "E-slope")}
     assert {t for t in range(300, n) if ox.scan_obv_mfi_setup(df.iloc[:t + 1])} == {t for t in fe if t >= 300}
+
+
+def test_stale_row_kept_for_audit_but_never_actionable():
+    vol = {"rows": [{"symbol": "SPAC1", "date": "2026-10-19", "stale": True, "last_bar_date": "2026-10-19", "stage": 1,
+                     "stage_dir": 0, "bull_score": 50, "bear_score": 10, "hist": {}},
+                    {"symbol": "A", "date": "2026-11-03", "stale": False, "stage": 2, "stage_dir": 0,
+                     "bull_score": 50, "bear_score": 10, "hist": {}}]}
+    wy = [{"symbol": s, "scan_date": "2026-11-03", "accumulation_score": 80, "signal_type": "READY",
+           "components": "{}"} for s in ("SPAC1", "A")]
+    out = {r["symbol"]: r for r in ve.combine_with_wyckoff(vol, wy)["rows"]}
+    assert out["SPAC1"]["wyckoff_score"] == 80                       # retained, unchanged
+    assert out["SPAC1"]["stale"] and not out["SPAC1"]["actionable"]
+    assert not out["SPAC1"]["confluence"] and not out["SPAC1"]["conflict"]
+    assert out["A"]["confluence"] and out["A"]["actionable"]

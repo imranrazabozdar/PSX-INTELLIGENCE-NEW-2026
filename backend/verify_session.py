@@ -53,6 +53,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", required=True)
     ap.add_argument("--prev", required=True)
+    ap.add_argument("--intraday-dates", default="", help="comma-separated dates for the 1-minute coverage sample")
+    ap.add_argument("--intraday-symbols", default="OGDC,LUCK,HUBC,ENGROH,MCB,PPL,FFC,SYS,UBL,PSO")
     a = ap.parse_args()
     D, P = a.date, a.prev
     c = turso_db.get_connection()
@@ -187,6 +189,19 @@ def main():
               f"- Stale rows in combined view: {[r['symbol'] for r in rows if r.get('stale')]}"]
     else:
         L.append("- No stored combined view")
+    if a.intraday_dates:
+        L += ["", "## 1-minute (FIRE) coverage sample vs the stored daily candle", "",
+              "| Date | Symbol | 1-min bars | First | Last | Last 1-min close | Daily close | 1-min volume | Daily volume |",
+              "|---|---|---|---|---|---|---|---|---|"]
+        for dd in a.intraday_dates.split(","):
+            for s in a.intraday_symbols.split(","):
+                r = q(c, "SELECT COUNT(*) AS n, MIN(time_of_day) AS a, MAX(time_of_day) AS b, SUM(volume) AS v "
+                         "FROM market_candles WHERE symbol=? AND date=?", (s, dd))
+                lc = q(c, "SELECT close FROM market_candles WHERE symbol=? AND date=? ORDER BY datetime DESC LIMIT 1", (s, dd))
+                dc = q(c, "SELECT close, volume FROM daily_ohlc WHERE symbol=? AND trade_date=?", (s, dd))
+                r = r[0] if r else {}
+                L.append(f"| {dd} | {s} | {r.get('n')} | {r.get('a')} | {r.get('b')} | {lc[0]['close'] if lc else None} | "
+                         f"{dc[0]['close'] if dc else None} | {r.get('v')} | {dc[0]['volume'] if dc else None} |")
     REPORT.write_text("\n".join(L))
     print("\n".join(L))
     if hasattr(turso_db, "print_usage_report"):
