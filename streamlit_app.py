@@ -3514,8 +3514,9 @@ with tab_patterns:
 
     st.divider()
 
-    tab_long, tab_short, tab_structural = st.tabs(
-        ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns"])
+    tab_long, tab_short, tab_structural, tab_volatility = st.tabs(
+        ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns",
+         "📊 Volatility Intelligence"])
 
     # ---------------------------------------------------- Long-Side tab ----
     with tab_long:
@@ -3955,6 +3956,14 @@ with tab_patterns:
         # Ascending Triangle suspended — see CALIBRATION_LOG. Insufficient PSX
         # signal density (5 signals in 5yr universe scan). Re-enable when
         # market structure supports the pattern.
+
+    # ------------------------------------------- Volatility Intelligence ----
+    with tab_volatility:
+        try:
+            import vol_engine_ui as _vol_ui
+            _vol_ui.render(_get, _company_names)
+        except Exception as _e:
+            st.warning(f"Volatility Intelligence Engine unavailable: {type(_e).__name__}: {_e}")
 
     st.caption("More patterns (Hammer, Piercing Pattern, Harami, Three White Soldiers) will be added to "
                "this tab as separate detectors, each scanned the same way.")

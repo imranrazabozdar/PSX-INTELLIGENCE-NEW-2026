@@ -3831,6 +3831,52 @@ def _run_triangle_regression_scan():
     return {"status": "ok", "scanned": len(coverage), "hits": hits}
 
 
+_VOL_DETAIL_MEM = {"run_at": None, "data": None, "ts": 0.0}
+
+
+@app.get("/patterns/volatility-engine")
+def patterns_volatility_engine():
+    """Volatility Compression & Expansion Intelligence Engine
+    (backend/volatility_engine.py) -- every symbol's compression score,
+    separate bullish/bearish evidence scores, five-stage label and alerts.
+    Computed only by the daily GitHub Actions job from its local daily_ohlc
+    snapshot; this endpoint serves analysis_cache 'volatility_engine_scan'
+    (one Turso row read per view)."""
+    cached = _scan_cache.latest("volatility_engine_scan")
+    if cached is None:
+        return {"status": "running", "scanned": 0, "rows": [], "alerts": [],
+                "reason": "No volatility-engine scan stored yet -- it runs with the daily "
+                          "4:30 PM PKT pattern refresh."}
+    return cached
+
+
+@app.get("/patterns/volatility-engine/detail")
+def patterns_volatility_engine_detail(symbol: str):
+    """Last ~120 daily bars of BBW/ATR percentiles, squeeze, range box and
+    money-flow series for one symbol. The whole-universe row is read once
+    per daily run and kept in memory, so repeated clicks cost no reads."""
+    now = time.time()
+    if _VOL_DETAIL_MEM["data"] is None or now - _VOL_DETAIL_MEM["ts"] > 3600:
+        cached = _scan_cache.latest("volatility_engine_detail")
+        _VOL_DETAIL_MEM.update(data=cached or {}, ts=now)
+    d = (_VOL_DETAIL_MEM["data"] or {}).get(symbol.upper())
+    if not d:
+        return {"status": "not_found", "symbol": symbol.upper()}
+    return {"status": "ok", "symbol": symbol.upper(), "series": d}
+
+
+@app.get("/patterns/volatility-engine/stats")
+def patterns_volatility_engine_stats():
+    """Measured historical outcomes (backend/run_volatility_backtest.py,
+    manual workflow) -- separate from the heuristic scores by design."""
+    cached = _scan_cache.latest("volatility_engine_stats")
+    if cached is None:
+        return {"status": "not_run",
+                "reason": "Historical probability engine not run yet (Actions -> "
+                          "'Volatility engine backtest (manual)')."}
+    return cached
+
+
 @app.get("/patterns/obv-mfi-scan")
 def patterns_obv_mfi_scan():
     """OBV+MFI Setup with ATR Contraction (backend/obv_mfi_scanner.py) --

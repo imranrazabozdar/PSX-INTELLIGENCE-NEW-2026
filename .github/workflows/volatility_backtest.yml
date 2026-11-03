@@ -1,0 +1,42 @@
+name: Volatility engine backtest (manual)
+
+# Stage B of the Volatility Intelligence Engine: historical outcomes,
+# out-of-sample split, walk-forward, calibration. Reads one local daily_ohlc
+# snapshot (~165K Turso reads, once per manual run) and writes one
+# analysis_cache row ('volatility_engine_stats') that the daily scan then
+# attaches to its rows.
+on:
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PSX_DAILY_OHLC_SNAPSHOT: ${{ github.workspace }}/daily_ohlc_snapshot.db
+      LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+      LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest
+      - name: 🧪 Unit tests
+        working-directory: backend
+        run: python -m pytest -q test_volatility_engine.py
+      - name: 💾 Snapshot daily_ohlc
+        working-directory: backend
+        run: python snapshot_daily_ohlc.py
+      - name: 📊 Run volatility engine backtest
+        working-directory: backend
+        run: python run_volatility_backtest.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: volatility-backtest-report
+          path: volatility_backtest_report.md
