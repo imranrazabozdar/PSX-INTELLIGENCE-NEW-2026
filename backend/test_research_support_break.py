@@ -76,3 +76,17 @@ def test_bh_and_cluster_effect():
     x = np.r_[np.ones(50, bool), np.zeros(50, bool)]
     eff, se, t, p = rsb.ols_effect(y, x, np.arange(100))
     assert eff == pytest.approx(y[:50].mean() - y[50:].mean()) and p < 1e-6
+
+
+def test_bh_q_values_and_two_way_clustering():
+    q = rsb.bh_q([0.01, 0.04, 0.03, 0.5])
+    assert list(np.round(q, 4)) == [0.04, 0.0533, 0.0533, 0.5]
+    rng = np.random.default_rng(4)
+    # 20 dates x 10 stocks with a strong common date shock: two-way SE must exceed naive iid SE
+    dates = np.repeat(np.arange(20), 10)
+    stocks = np.tile(np.arange(10), 20)
+    x = (dates % 2 == 0)
+    y = np.repeat(rng.normal(0, 3, 20), 10) + rng.normal(0, 1, 200) + x * 0.5
+    eff, se2, t, p = rsb.ols_effect(y, x, dates, stocks)
+    iid = math.sqrt(y[x].var(ddof=1) / x.sum() + y[~x].var(ddof=1) / (~x).sum())
+    assert se2 > 1.5 * iid
