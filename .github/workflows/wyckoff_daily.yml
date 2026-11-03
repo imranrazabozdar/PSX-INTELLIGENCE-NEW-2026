@@ -1,0 +1,115 @@
+name: Original Wyckoff 1.0 daily (after pattern refresh)
+
+# Standalone home for the Original Wyckoff Institutional Accumulation 1.0
+# batch, the Wyckoff x Volatility combined view and the ohlcv_4h cleanup --
+# the same three steps that used to run after FIRE inside
+# fire_engine_daily_batch.yml. PSX FIRE 1.0 is suspended: this workflow
+# never runs fire_engine.run_daily_batch or anything that writes FIRE tables
+# (market_candles, fire_events, volume_baseline, trading_sessions,
+# daily_reports).
+#
+# Sequence (explicit completion checks, never timers):
+#   refresh_chart_patterns.yml  -> OHLC refresh, daily_ohlc snapshot,
+#                                  calendar check, Volatility, chart_refresh marker
+#   (workflow_run: completed + success)
+#   1. gate: chart_refresh marker for the session exists, wyckoff_batch does not
+#   2. Wyckoff 1.0 batch (unchanged runner; daily_ohlc reads from the refresh
+#      run's snapshot artifact) -> writes the wyckoff_batch marker itself
+#   3. gate: wyckoff_batch marker + Wyckoff scan_date + Volatility session all
+#      equal the session -> combined view (unchanged merge)
+#   4. ohlcv_4h prune (35 days), only after a successful Wyckoff step
+#
+# No schedule of its own: it is chained to the refresh workflow, which already
+# has GitHub's cron plus the 11:26 UTC backstop. Duplicate refresh runs give
+# duplicate triggers here; the queue + markers make the later ones no-ops.
+on:
+  workflow_run:
+    workflows: ["Refresh pattern scans (daily after market close)"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'YYYY-MM-DD backfill (bypasses the guard and market check, as the old FIRE-workflow step did). Empty = normal gated run for today.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  actions: read   # download the refresh run's daily_ohlc snapshot artifact
+
+concurrency:
+  group: wyckoff-daily
+  cancel-in-progress: false
+
+jobs:
+  wyckoff:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PSX_DAILY_OHLC_SNAPSHOT: ${{ github.workspace }}/daily_ohlc_snapshot.db
+      LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+      LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r fire_engine/requirements.txt
+
+      - name: 🚦 Gate -- prices refreshed for this session, Wyckoff not yet done
+        id: gate
+        if: ${{ github.event.inputs.date == '' }}
+        run: python -m fire_engine.wyckoff_pipeline_gate wyckoff
+
+      # Same snapshot the refresh run's own scans used (built once there from
+      # Turso right after the OHLC refresh). Missing -> daily_ohlc reads fall
+      # back to Turso (~90 rows per stock), results identical.
+      - name: 💾 Reuse the refresh run's daily_ohlc snapshot
+        if: ${{ github.event_name == 'workflow_run' && steps.gate.outputs.run == 'true' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: daily-ohlc-snapshot
+          path: ${{ github.workspace }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: 📊 Run Wyckoff Institutional Accumulation 1.0 scan
+        id: wyckoff
+        if: ${{ github.event.inputs.date != '' || steps.gate.outputs.run == 'true' }}
+        run: |
+          ls -l "$PSX_DAILY_OHLC_SNAPSHOT" 2>/dev/null || echo "no snapshot -- daily_ohlc reads go to Turso"
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python -m fire_engine.run_wyckoff_batch --date "${{ github.event.inputs.date }}" --skip-market-check
+          else
+            python -m fire_engine.run_wyckoff_batch
+          fi
+
+      - name: 🚦 Gate -- fresh Wyckoff and Volatility for the same session
+        id: merge_gate
+        if: ${{ steps.wyckoff.outcome == 'success' && github.event.inputs.date == '' }}
+        run: python -m fire_engine.wyckoff_pipeline_gate merge
+
+      # continue-on-error: a merge failure never invalidates the price,
+      # Volatility or Wyckoff results already stored.
+      - name: 🔗 Merge Wyckoff with Volatility Intelligence Engine
+        if: ${{ steps.merge_gate.outputs.run == 'true' }}
+        continue-on-error: true
+        run: python -m fire_engine.run_volatility_wyckoff_merge
+
+      - name: 🧹 Prune ohlcv_4h cache (keep last 35 days)
+        if: ${{ steps.wyckoff.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m fire_engine.db_prune_cache --retention-days 35

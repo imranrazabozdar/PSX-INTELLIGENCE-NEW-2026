@@ -91,6 +91,19 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python batch_guard.py calendar --snapshot "$PSX_DAILY_OHLC_SNAPSHOT" --date "${{ steps.guard.outputs.session }}"
 
+      # Hand the same snapshot to wyckoff_daily.yml (chained via workflow_run)
+      # so Original Wyckoff 1.0 reads its daily bars from it instead of Turso.
+      # GitHub artifact storage only -- 0 Turso reads/writes. Never fails the job.
+      - name: 📦 Share the snapshot with the Wyckoff 1.0 workflow
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-ohlc-snapshot
+          path: ${{ github.workspace }}/daily_ohlc_snapshot.db
+          retention-days: 1
+          if-no-files-found: ignore
+
       - name: 🔍 Detect all pattern families (latest bar only)
         if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
