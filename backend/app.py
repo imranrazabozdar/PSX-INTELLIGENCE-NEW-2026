@@ -3877,6 +3877,27 @@ def patterns_volatility_wyckoff():
     return cached
 
 
+@app.get("/patterns/wyckoff2-research")
+def patterns_wyckoff2_research():
+    """Wyckoff Accumulation 2.0 -- RESEARCH / NOT PRODUCTION. Serves the daily
+    research scan row (analysis_cache 'wyckoff2_research_scan'); never
+    computes, never touches the production Wyckoff tables."""
+    cached = _scan_cache.latest("wyckoff2_research_scan")
+    if cached is None:
+        return {"status": "running", "rows": [], "reason": "No Wyckoff 2.0 research scan stored yet -- it runs "
+                "with the daily pattern refresh."}
+    return cached
+
+
+@app.get("/patterns/wyckoff2-research/stats")
+def patterns_wyckoff2_research_stats():
+    """Historical RESEARCH backtest results (run_wyckoff2_backtest.py, manual)."""
+    cached = _scan_cache.latest("wyckoff2_research_stats")
+    if cached is None:
+        return {"status": "not_run", "reason": "Wyckoff 2.0 research backtest not run yet."}
+    return cached
+
+
 @app.get("/patterns/volatility-engine/stats")
 def patterns_volatility_engine_stats():
     """Measured historical outcomes (backend/run_volatility_backtest.py,

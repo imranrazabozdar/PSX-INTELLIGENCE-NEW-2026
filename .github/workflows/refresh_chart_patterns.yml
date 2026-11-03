@@ -100,6 +100,19 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_chart_pattern_refresh.py
 
+      # RESEARCH / NOT PRODUCTION: Wyckoff Accumulation 2.0 daily scan. Reads the
+      # local snapshot (0 Turso reads for prices), writes one research row.
+      # continue-on-error: it can never fail the production job or its marker.
+      - name: 🔬 Wyckoff 2.0 research scan (RESEARCH / NOT PRODUCTION)
+        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
+        continue-on-error: true
+        working-directory: backend
+        env:
+          PSX_SESSION_DATE: ${{ steps.guard.outputs.session }}
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python run_wyckoff2_research.py
+
       - name: 📈 Backtest intraday signal accuracy
         if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
         working-directory: backend
