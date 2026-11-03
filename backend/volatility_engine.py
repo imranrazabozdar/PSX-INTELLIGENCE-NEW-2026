@@ -1036,17 +1036,27 @@ def combine_with_wyckoff(vol_scan: dict, wyckoff_rows: list) -> dict:
                                                                  "p_up_10d", "p_up_10d_ci", "p_down_10d")}
         if w:
             row.update(w)
+            # A stale volatility row (newest candle older than the session)
+            # means this stock's stored Wyckoff row for the session was also
+            # computed from old data. Keep it visible for audit, but it is
+            # never actionable: no confluence / conflict, flagged in the UI.
+            if v.get("stale"):
+                row.update({"confluence": False, "conflict": False, "actionable": False,
+                            "stale_note": f"STALE: newest candle {v.get('last_bar_date')} -- kept for audit only"})
+                out.append(row)
+                continue
             # Confluence = both engines independently describe the same quiet,
             # supported base. A flag for reading, never added to either score.
             row["confluence"] = bool(w["wyckoff_signal"] not in (None, "NO_SIGNAL")
                                      and v.get("stage") in (1, 2, 3, 4) and v.get("stage_dir", 0) >= 0
                                      and (v.get("bull_score") or 0) >= (v.get("bear_score") or 0))
+            row["actionable"] = True
             row["conflict"] = bool(w["wyckoff_signal"] not in (None, "NO_SIGNAL")
                                    and ((v.get("bear_score") or 0) - (v.get("bull_score") or 0) >= 15
                                         or (v.get("stage") in (4, 5) and v.get("stage_dir") == -1)))
         else:
             row.update({"wyckoff_score": None, "wyckoff_signal": "NOT IN WYCKOFF SCAN",
-                        "confluence": False, "conflict": False})
+                        "confluence": False, "conflict": False, "actionable": not v.get("stale")})
         out.append(row)
     out.sort(key=lambda r: (-(r["wyckoff_score"] or -1), -(r["compression_score"] or 0)))
     return {"status": "ok", "wyckoff_date": wdate, "volatility_date": (vol_scan or {}).get("_cache_run_at"),

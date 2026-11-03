@@ -255,16 +255,18 @@ def _wyckoff_view(get, names):
     only = st.radio("Show", ["Wyckoff signals only (WATCH/READY/EXTREME)", "Confluence only", "All stocks"],
                     horizontal=True, key="vw_show")
     rows = res.get("rows") or []
+    # Stale rows (kept for audit) never appear in the actionable views.
     if only.startswith("Wyckoff"):
-        rows = [r for r in rows if r.get("wyckoff_signal") in ("WATCH", "READY", "EXTREME")]
+        rows = [r for r in rows if r.get("wyckoff_signal") in ("WATCH", "READY", "EXTREME") and not r.get("stale")]
     elif only.startswith("Confluence"):
-        rows = [r for r in rows if r.get("confluence")]
+        rows = [r for r in rows if r.get("confluence") and not r.get("stale")]
     if not rows:
         st.info("No stock matches this view today.")
         return
     df = pd.DataFrame([{
         "symbol": r["symbol"], "company": names.get(r["symbol"], ""), "price": r.get("close"),
-        "last_candle": r.get("last_bar_date"), "stale": "⚠️ STALE" if r.get("stale") else "",
+        "last_candle": r.get("last_bar_date"),
+        "stale": "⚠️ STALE — audit only, not actionable" if r.get("stale") else "",
         "wyckoff_score": r.get("wyckoff_score"), "wyckoff": r.get("wyckoff_signal"),
         "4h_bb": r.get("wy_bb4h_compression"), "supply_exh": r.get("wy_supply_exhaustion"),
         "absorption": r.get("wy_absorption"), "obv_div": r.get("wy_obv_divergence"),
