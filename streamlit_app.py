@@ -3514,9 +3514,9 @@ with tab_patterns:
 
     st.divider()
 
-    tab_long, tab_short, tab_structural, tab_volatility = st.tabs(
+    tab_long, tab_short, tab_structural, tab_volatility, tab_wyckoff2 = st.tabs(
         ["🟢 Long-Side (Bullish)", "🔴 Short-Side (Bearish)", "📐 Structural Patterns",
-         "📊 Volatility Intelligence"])
+         "📊 Volatility Intelligence", "🏛️ Wyckoff Institutional Accumulation"])
 
     # ---------------------------------------------------- Long-Side tab ----
     with tab_long:
@@ -3956,6 +3956,14 @@ with tab_patterns:
         # Ascending Triangle suspended — see CALIBRATION_LOG. Insufficient PSX
         # signal density (5 signals in 5yr universe scan). Re-enable when
         # market structure supports the pattern.
+
+    # ------------------------- Wyckoff Institutional Accumulation (2.0 research) ----
+    with tab_wyckoff2:
+        try:
+            import wyckoff2_ui as _w2_ui
+            _w2_ui.render(_get, _company_names)
+        except Exception as _e:
+            st.warning(f"Wyckoff Institutional Accumulation section unavailable: {type(_e).__name__}: {_e}")
 
     # ------------------------------------------- Volatility Intelligence ----
     with tab_volatility:

@@ -1,0 +1,76 @@
+name: Wyckoff 2.0 RESEARCH backtest (manual)
+
+# RESEARCH / NOT PRODUCTION. The backtest step has NO database credentials:
+# daily bars come from SCS and KSE-100 from the public index API (0 Turso
+# reads). Only the final, separate step stores the stats JSON as ONE
+# analysis_cache row ('wyckoff2_research_stats') for the research dashboard
+# (skippable with save=false).
+on:
+  workflow_dispatch:
+    inputs:
+      save:
+        description: "Store the stats row for the research dashboard (1 write)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r fire_engine/requirements.txt pytest
+      - name: 🧪 Tests
+        working-directory: backend
+        run: python -m pytest -q test_wyckoff2_research.py
+      - name: 📊 Backtest (no database credentials)
+        working-directory: backend
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          if [ -n "${LIBSQL_URL}${LIBSQL_AUTH_TOKEN}" ]; then echo "credentials present -- aborting"; exit 1; fi
+          python run_wyckoff2_backtest.py
+      - name: 💾 Store stats row (1 write)
+        if: ${{ inputs.save }}
+        working-directory: backend
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PSX_TURSO_USAGE_REPORT: "1"
+        run: |
+          python - <<'PY'
+          import json, time, turso_db
+          from pathlib import Path
+          res = json.loads(Path("../wyckoff2_research_stats.json").read_text())
+          c = turso_db.get_connection()
+          c.execute("INSERT INTO analysis_cache(cache_key, run_at, run_at_epoch, result_json) VALUES(?,?,?,?) "
+                    "ON CONFLICT(cache_key) DO UPDATE SET run_at=excluded.run_at, run_at_epoch=excluded.run_at_epoch, "
+                    "result_json=excluded.result_json", ("wyckoff2_research_stats", res["run_at"], time.time(), json.dumps(res)))
+          c.commit()
+          turso_db.print_usage_report(label="wyckoff2 stats save")
+          PY
+      - name: 🔬 Populate today's research scan from SCS (1 read + 1 write)
+        if: ${{ inputs.save }}
+        working-directory: backend
+        env:
+          W2_SOURCE: scs
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PSX_TURSO_USAGE_REPORT: "1"
+        run: python run_wyckoff2_research.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wyckoff2-research-backtest
+          path: |
+            wyckoff2_backtest_report.md
+            wyckoff2_research_stats.json
