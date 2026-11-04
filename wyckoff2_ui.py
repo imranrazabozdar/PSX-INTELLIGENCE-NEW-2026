@@ -24,6 +24,8 @@ def _agree(orig, enh):
 
 
 ENH_FLAG = ("STRONG ACCUMULATION", "ADVANCED ACCUMULATION", "POTENTIAL BREAKOUT")   # same set as _agree()
+FLAG_NOTE = ("Overview flags for Wyckoff 2.0 include only Strong Accumulation, Advanced Accumulation and "
+             "Potential Breakout.")
 
 
 def _rows(research, prod, stats, names):
@@ -56,7 +58,7 @@ def summary(get, company_names):
     research = get("/patterns/wyckoff2-research")
     base = {"id": "w2", "group": "Wyckoff 2.0", "category": "Research / Experimental",
             "name": "Wyckoff Institutional Accumulation 2.0", "timeframe": "1D", "status": "RESEARCH",
-            "status_variant": "research", "count_label": "research flags"}
+            "status_variant": "research", "count_label": "research flags", "note": FLAG_NOTE}
     if research.get("status") != "ok":
         return dict(base, count=0, flags=[], state_msg=("info", research.get("reason") or "Research scan unavailable."))
     rows, _ = _rows(research, get("/patterns/volatility-wyckoff"), get("/patterns/wyckoff2-research/stats"),
@@ -86,6 +88,7 @@ def render(get, company_names):
                          "status_variant": "research",
                          "updated": (f"Trading date {research.get('session')} · "
                                      + U.friendly_age(iso=research.get("run_at"))) if research.get("status") == "ok" else None})
+        st.caption(FLAG_NOTE)
         st.warning("🧪 **Wyckoff Accumulation 2.0 is EXPERIMENTAL / NOT PRODUCTION.** The *Original Wyckoff* columns are "
                    "the unchanged production engine. Research scores are heuristics (0–100), not probabilities.")
         if research.get("status") != "ok":

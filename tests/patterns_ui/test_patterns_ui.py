@@ -45,7 +45,7 @@ def test_every_view_renders(fx, view, layout):
 def test_overview_counts_and_open_navigates(fx):
     at = capture.run(fx, {"pui_view": "Overview"})
     txt = _texts(at)
-    assert "Active modules" in txt and "Stocks flagged" in txt
+    assert "Signal modules active" in txt and "Stocks flagged" in txt
     btn = next(b for b in at.button if b.key == "pui_open_triangle_regression")
     btn.click().run()
     assert at.session_state["pui_view"] == "Short"
@@ -129,3 +129,155 @@ def test_volatility_and_w2_detail_paths_still_open(fx):
     at = capture.run(fx, {"pui_view": "Wyckoff 2.0", "pui_layout": "Cards"})
     next(b for b in at.button if b.key == "w2_table__open_0").click().run()
     assert "Why it is classified this way" in _texts(at)
+
+
+# ---------------------------------------------------------------- Overview == module outputs --
+# Module (Overview name) -> the table key(s) its own view renders. Ground truth is
+# what each module view actually shows (Table layout, every row expanded).
+MODULE_TABLES = {
+    "PSX FIRE Engine — Priority Setups": ["fire_scan_table_FIRE", "fire_scan_table_PRE-FIRE"],
+    "Wyckoff Institutional Accumulation": ["wyckoff_scan_table"],
+    "OBV+MFI Setup with ATR Contraction": ["obv_mfi_scan_table"],
+    "Bullish Engulfing": ["patterns_scan_table"],
+    "Morning Star": ["morning_star_scan_table"],
+    "Bullish Three-Line Strike": ["three_line_strike_scan_table"],
+    "MHarris 5-Bar Reversal (Bullish)": ["mharris_bull_scan_table"],
+    "Engulfing + Star Confirmed Reversal (Bullish)": ["engulfing_star_bull_scan_table"],
+    "MACD+EMA200 Trend Resumption (Bullish)": ["macdema_bull_scan_table"],
+    "Level Break Out (Resistance Breakout)": ["level_breakout_bull_scan_table"],
+    "GP-Evolved Formula (Long Bias)": ["gp_evolved_bull_scan_table"],
+    "Bearish Engulfing": ["bearish_engulfing_scan_table"],
+    "Evening Star": ["evening_star_scan_table"],
+    "MHarris 5-Bar Reversal (Bearish)": ["mharris_bear_scan_table"],
+    "Engulfing + Star Confirmed Reversal (Bearish)": ["engulfing_star_bear_scan_table"],
+    "MACD+EMA200 Trend Resumption (Bearish)": ["macdema_bear_scan_table"],
+    "Regression-Channel Triangle Squeeze": ["triangle_regression_scan_table"],
+    "Level Break Out (Support Breakdown)": ["level_breakout_bear_scan_table"],
+    "GP-Evolved Formula (Short Bias)": ["gp_evolved_bear_scan_table"],
+    "Chart Patterns (IHS, Double Bottom & Head/Shoulders)": ["advanced_pattern_scan_table"],
+    "Early Warning": ["vol_ew"], "Bullish Expansion": ["vol_bull"], "Bearish Expansion": ["vol_bear"],
+    "Wyckoff × Volatility": ["vw_table"], "Alerts": ["vol_alerts"],
+}
+W2_NAME = "Wyckoff Institutional Accumulation 2.0"
+W2_FLAG = {"STRONG ACCUMULATION", "ADVANCED ACCUMULATION", "POTENTIAL BREAKOUT"}
+TRADE_ACTION = {"bull": ("BUY",), "bear": ("SHORT", "SELL")}
+
+
+@pytest.fixture(scope="module")
+def module_tables(fx):
+    import capture_views
+    shown = {f"{k}__shown": 100000 for k in capture_views.KEYS}
+    out = {}
+    for v in ["Market Behaviour", "Long", "Short", "Structural", "Wyckoff 2.0"]:
+        out.update({k: t[0] for k, t in capture.dump(capture.run(fx, dict(shown, pui_view=v, pui_layout="Table")))["tables"].items()})
+    for sub in capture_views.VOL_SUBS[:5]:
+        out.update({k: t[0] for k, t in capture.dump(capture.run(
+            fx, dict(shown, pui_view="Volatility", vol_subview=sub, pui_layout="Table")))["tables"].items()})
+    return out
+
+
+def _rows(t):
+    return [dict(zip(t["columns"], r)) for r in t["rows"]]
+
+
+def _expected(module_tables):
+    """{module name: [(symbol, direction or None)]} from the modules' own rendered rows."""
+    exp = {}
+    for name, keys in MODULE_TABLES.items():
+        rows = [r for k in keys if k in module_tables for r in _rows(module_tables[k])]
+        out = []
+        for r in rows:
+            sym = r.get("symbol") or r.get("Symbol")
+            act = str(r.get("action") or r.get("Action") or "").upper()
+            d = ("bull" if any(w in act for w in TRADE_ACTION["bull"]) else
+                 "bear" if any(w in act for w in TRADE_ACTION["bear"]) else None)
+            if name == "OBV+MFI Setup with ATR Contraction" or name == "Bullish Expansion":
+                d = "bull"
+            if name == "Bearish Expansion":
+                d = "bear"
+            out.append((sym, d))
+        exp[name] = out
+    w2 = _rows(module_tables["w2_table"])
+    exp[W2_NAME] = [(r["symbol"], None) for r in w2 if r["enh_class"] in W2_FLAG]
+    return exp
+
+
+def test_overview_by_module_counts_match_module_outputs(fx, module_tables):
+    import re
+    at = capture.run(fx, {"pui_view": "Overview"})
+    md = [str(m.value) for m in at.markdown]
+    exp = _expected(module_tables)
+    seen = 0
+    for name, rows in exp.items():
+        line = next(x for x in md if x.startswith(f"**{name}**"))
+        n = int(re.search(r">(\d+) (?:signals?|alerts|research flags)<", line).group(1))
+        assert n == len(rows), (name, n, len(rows))
+        seen += 1
+    assert seen == len(MODULE_TABLES) + 1
+    hv = next(x for x in md if x.startswith("**Historical Validation**"))
+    assert "Information view" in hv
+    w2 = next(x for x in md if x.startswith(f"**{W2_NAME}**"))
+    assert "include only Strong Accumulation, Advanced Accumulation and Potential Breakout" in w2
+
+
+def test_overview_by_stock_flags_and_mixed_match_module_outputs(fx, module_tables):
+    exp = _expected(module_tables)
+    flagging = {k: v for k, v in exp.items() if k not in ("Wyckoff × Volatility", "Alerts")}  # list views, no flags
+    want = {}
+    for name, rows in flagging.items():
+        for sym, d in rows:
+            want.setdefault(sym, []).append((name, d))
+    at = capture.run(fx, {"pui_view": "Overview", "pui_ov_mode": "By stock", "pui_layout": "Table",
+                          "pui_overview_stocks__shown": 100000})
+    got = {r["symbol"]: r for r in _rows(capture.dump(at)["tables"]["pui_overview_stocks"][0])}
+    assert set(got) == set(want)
+    for sym, fl in want.items():
+        mods = got[sym]["modules"]
+        for name in {n for n, _ in fl}:
+            assert mods.count(f"{name}: ") == sum(1 for n, _ in fl if n == name), (sym, name, mods)
+        dirs = {d for _, d in fl if d}
+        expect_dir = ("Mixed" if dirs == {"bull", "bear"} else "Bullish" if dirs == {"bull"}
+                      else "Bearish" if dirs == {"bear"} else "")
+        assert got[sym]["direction"] == expect_dir, (sym, fl)
+    assert any(r["direction"] == "Mixed" for r in got.values())      # fixture exercises Mixed
+
+
+def test_overview_tiles_separate_info_views(fx):
+    at = capture.run(fx, {"pui_view": "Overview"})
+    txt = _texts(at)
+    assert "Signal modules active" in txt
+    assert "Not counted: 2 information views (Volatility Alerts and Historical Validation)" in txt
+
+
+# ------------------------------------------------------------- trade fields on cards --
+TRADE_LABELS = {"entry": "Entry", "Entry": "Entry", "stop": None, "Stop": "Stop-Loss (Risk)",
+                "target 1": None, "Target": "Target (Reward)", "date": "Date", "Date": "Date", "R:R": "R:R"}
+
+
+def test_cards_show_entry_stop_target_date_rr_wherever_they_exist(fx, module_tables):
+    import html as _h
+    import patterns_ui as U
+    for v in ["Long", "Short", "Structural"]:
+        at = capture.run(fx, {"pui_view": v, "pui_layout": "Cards",
+                              **{f"{k}__shown": 100000 for k in MODULE_TABLES_KEYS()}})
+        cards = [_h.unescape(str(m.value)) for m in at.markdown if 'class="pui-card"' in str(m.value)]
+        for key in [k for ks in MODULE_TABLES.values() for k in ks]:
+            if key not in module_tables or not key.endswith("scan_table"):
+                continue
+            for r in _rows(module_tables[key]):
+                sym = r.get("symbol") or r.get("Symbol")
+                mine = [c for c in cards if f'pui-sym">{sym}<' in c]
+                if not mine:
+                    continue
+                for col in ("entry", "Entry", "stop", "Stop", "target 1", "Target", "date", "Date", "R:R"):
+                    if col in r and not U.is_blank(r[col]):
+                        lab = {"entry": "Entry", "Entry": "Entry", "stop": ("Stop-Loss (Risk)", "Initial Stop (ATR trail)"),
+                               "Stop": "Stop-Loss (Risk)", "target 1": ("Target (Reward)", "Target"),
+                               "Target": "Target (Reward)", "date": "Date", "Date": "Date", "R:R": "R:R"}[col]
+                        labs = lab if isinstance(lab, tuple) else (lab,)
+                        assert any(f"<span>{l}</span>" in c for c in mine for l in labs), (key, sym, col)
+
+
+def MODULE_TABLES_KEYS():
+    import capture_views
+    return capture_views.KEYS

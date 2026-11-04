@@ -309,8 +309,10 @@ def summaries(get, company_names):
         dict(base, id="vol_bear", name="Bearish Expansion", sub=SUBVIEWS[2], count=len(be),
              flags=[(r["symbol"], "bear", f"Bearish expansion · {r['stage_detail']}") for r in be]),
         dict(base, id="vol_wv", name="Wyckoff × Volatility", sub=SUBVIEWS[3], count=len(wvr), flags=[]),
-        dict(base, id="vol_alerts", name="Alerts", sub=SUBVIEWS[4], count=len(al), flags=[]),
-        dict(base, id="vol_val", name="Historical Validation", sub=SUBVIEWS[5], count=None, flags=[]),
+        dict(base, id="vol_alerts", name="Alerts", sub=SUBVIEWS[4], count=len(al), flags=[],
+             kind="info", count_label="alerts"),
+        dict(base, id="vol_val", name="Historical Validation", sub=SUBVIEWS[5], count=None, flags=[],
+             kind="info"),
     ]
 
 
@@ -345,7 +347,7 @@ def render(get, company_names):
                                                    " — the historical engine has not been run yet, so every setup shows "
                                                    "INSUFFICIENT HISTORICAL EVIDENCE."))
             _coverage_detail(res, all_rows)
-    sub = st.pills("Volatility view", SUBVIEWS, default=SUBVIEWS[0], key=SUBVIEW_KEY, required=True, wrap=True,
+    sub = st.pills("Volatility view", SUBVIEWS, default=SUBVIEWS[0], key=SUBVIEW_KEY, required=True,
                    label_visibility="collapsed", width="stretch")
     if sub in SUBVIEWS[:3]:
         _filter_panel()

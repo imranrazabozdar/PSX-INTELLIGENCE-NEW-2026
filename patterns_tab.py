@@ -652,20 +652,35 @@ def _goto(view, sub=None):
         st.session_state["vol_subview"] = sub
 
 
-def _overview(mods, extra, names):
-    allm = mods + extra
-    live = [m for m in allm if not m.get("state_msg")]
-    zero = [m for m in live if (m.get("count") or 0) == 0 and m.get("count") is not None]
+def overview_data(allm):
+    """Pure summary of the module records: no engine call, nothing re-scored.
+    Signal modules = every module/sub-view that lists flagged stocks; Alerts and
+    Historical Validation (kind='info') are reported separately."""
+    signal = [m for m in allm if m.get("kind") != "info"]
+    info = [m for m in allm if m.get("kind") == "info"]
+    active = [m for m in signal if not m.get("state_msg")]
+    zero = [m for m in active if (m.get("count") or 0) == 0]
     flags = {}
     for m in allm:
         for sym, direction, label in m.get("flags", []):
             flags.setdefault(sym, []).append((m, direction, label))
+    mixed = {s for s, fl in flags.items() if {d for _, d, _ in fl if d} == {"bull", "bear"}}
     ages = [m.get("age") for m in allm if isinstance(m.get("age"), (int, float))]
-    U.summary_tiles([("Active modules", len(live)), ("No current signal", len(zero)),
+    return {"signal_active": len(active), "signal_unavailable": len(signal) - len(active), "no_signal": len(zero),
+            "info_views": len(info), "flags": flags, "mixed": mixed, "min_age": min(ages) if ages else None}
+
+
+def _overview(mods, extra, names):
+    allm = mods + extra
+    d = overview_data(allm)
+    flags = d["flags"]
+    U.summary_tiles([("Signal modules active", d["signal_active"]), ("…with no current signal", d["no_signal"]),
                      ("Stocks flagged", len(flags)),
-                     ("Latest update", U.friendly_age(min(ages)).replace("Updated ", "") if ages else "—")])
-    st.caption("Counts list what each existing module shows today. Flags are never added together, and a stock "
-               "with more flags is not ranked higher.")
+                     ("Latest update", U.friendly_age(d["min_age"]).replace("Updated ", "") if d["min_age"] is not None else "—")])
+    unav = f" ({d['signal_unavailable']} unavailable right now)" if d["signal_unavailable"] else ""
+    st.caption(f"Signal modules = every pattern module and Volatility sub-view that lists stocks{unav}. "
+               f"Not counted: {d['info_views']} information views (Volatility Alerts and Historical Validation). "
+               "Flags are never added together, and a stock with more flags is not ranked higher.")
     tab = st.segmented_control("Overview list", ["By module", "By stock"], default="By module", key="pui_ov_mode",
                                label_visibility="collapsed") or "By module"
     if tab == "By module":
@@ -680,6 +695,8 @@ def _overview(mods, extra, names):
                 tags = []
                 if m.get("status"):
                     tags.append((m["status"], m.get("status_variant") or "neutral"))
+                if m.get("kind") == "info":
+                    tags.append(("Information view — not counted as a signal module", "neutral"))
                 if m.get("state_msg"):
                     tags.append(("Unavailable", "caution"))
                 elif m.get("count") is not None:
@@ -687,7 +704,8 @@ def _overview(mods, extra, names):
                     tags.append((f"{n} {m.get('count_label', 'signal' if n == 1 else 'signals')}",
                                  "info" if n else "neutral"))
                 c1.markdown(f"**{U.esc(m['name'])}** {U.badges(tags)}<br><span class='pui-meta'>"
-                            f"{U.esc(m.get('updated') or U.friendly_age(m.get('age')))}</span>",
+                            f"{U.esc(m.get('updated') or U.friendly_age(m.get('age')))}</span>"
+                            + (f"<br><span class='pui-meta'>{U.esc(m['note'])}</span>" if m.get("note") else ""),
                             unsafe_allow_html=True)
                 c2.button("Open", key=f"pui_open_{m['id']}", on_click=_goto, args=(g, m.get("sub")),
                           use_container_width=True)
@@ -705,7 +723,8 @@ def _overview(mods, extra, names):
                                       ("Bullish" if dirs == {"bull"} else "Bearish" if dirs == {"bear"} else ""),
                          "modules": " · ".join(f"{m['name']}: {lab}" for m, _, lab in fl),
                          "_fl": fl})
-        st.caption(f"{len(recs)} stock(s), A→Z.")
+        st.caption(f"{len(recs)} stock(s), A→Z. Mixed = at least one bullish and one bearish flag. "
+                   "Wyckoff 2.0 flags include only Strong Accumulation, Advanced Accumulation and Potential Breakout.")
         df = pd.DataFrame([{k: v for k, v in r.items() if k != "_fl"} for r in recs])
         badge_by = {r["symbol"]: r["_fl"] for r in recs}
 
@@ -745,7 +764,7 @@ def render(get, company_names, rr_label, refresh_params):
                       "count": 0, "flags": [], "status": "RESEARCH", "status_variant": "research",
                       "state_msg": ("warning", f"Wyckoff Institutional Accumulation section unavailable: {type(e).__name__}: {e}")})
 
-    view = st.pills("Patterns view", VIEWS, default="Overview", key=U.VIEW_KEY, required=True, wrap=True,
+    view = st.pills("Patterns view", VIEWS, default="Overview", key=U.VIEW_KEY, required=True,
                     format_func=lambda v: f"{VIEW_ICONS[v]} {v}", label_visibility="collapsed", width="stretch")
     st.segmented_control("Layout", ["Cards", "Table"], default="Cards", key=U.LAYOUT_KEY, required=True,
                          label_visibility="collapsed", help="Cards suit phones; Table shows columns")
