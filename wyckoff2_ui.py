@@ -23,27 +23,13 @@ def _agree(orig, enh):
     return "both" if o and e else "original only" if o else "enhanced only" if e else "neither"
 
 
-def render(get, company_names):
-    st.markdown('<div class="psx-section-eyebrow">ACCUMULATION</div>'
-                '<div class="psx-section-title">🏛️ Wyckoff Institutional Accumulation 2.0 (RESEARCH) — 1D</div>',
-                unsafe_allow_html=True)
-    research = get("/patterns/wyckoff2-research")
-    prod = get("/patterns/volatility-wyckoff")
-    stats = get("/patterns/wyckoff2-research/stats")
-    names = company_names() or {}
+ENH_FLAG = ("STRONG ACCUMULATION", "ADVANCED ACCUMULATION", "POTENTIAL BREAKOUT")   # same set as _agree()
+FLAG_NOTE = ("Overview flags for Wyckoff 2.0 include only Strong Accumulation, Advanced Accumulation and "
+             "Potential Breakout.")
+
+
+def _rows(research, prod, stats, names):
     prod_rows = {r["symbol"]: r for r in (prod.get("rows") or [])} if prod.get("status") == "ok" else {}
-    st.warning("🧪 **Wyckoff Accumulation 2.0 is EXPERIMENTAL / NOT PRODUCTION.** The *Original Wyckoff* columns are "
-               "the unchanged production engine. Research scores are heuristics (0–100), not probabilities.")
-    if research.get("status") != "ok":
-        st.info(research.get("reason") or "Research scan unavailable.")
-        return
-    th = research.get("thresholds") or {}
-    st.caption(f"Research scan for trading date **{research.get('session')}** · saved {str(research.get('run_at', '—'))[:19]} UTC · "
-               f"original Wyckoff 1.0 batch {prod.get('wyckoff_date', '—')} · benchmark {research.get('benchmark')} · "
-               f"thresholds ({research.get('thresholds_source')}): {th}")
-    if prod.get("wyckoff_date") and research.get("session") and str(research["session"]) < str(prod["wyckoff_date"]):
-        st.error(f"⚠️ OUTDATED: research results are for {research['session']}, older than the latest Wyckoff 1.0 batch "
-                 f"({prod['wyckoff_date']}). Do not treat them as current.")
     by_class = (stats or {}).get("by_class") or {}
     rows, stale = [], []
     for r in research.get("rows", []):
@@ -65,62 +51,131 @@ def render(get, company_names):
     secmap = _sectors()
     for x in rows:
         x["sector"] = secmap.get(x["symbol"], "Unknown")
-    c1, c2, c3, c4 = st.columns(4)
-    classes = c1.multiselect("Enhanced class", ENH, default=ENH, key="w2_cls")
-    secs = c4.multiselect("Sector", sorted({x["sector"] for x in rows}), default=[], key="w2_sec", placeholder="All sectors")
-    view = c2.selectbox("Show", ["All", "Original READY / EXTREME only", "Original and enhanced agree",
-                                 "Enhanced differs from original"], key="w2_view")
-    sort = c3.selectbox("Sort by", list(SORTS), key="w2_sort")
-    f = [x for x in rows if x["enh_class"] in classes] if classes else rows
-    if view.startswith("Original READY"):
-        f = [x for x in rows if x["orig_class"] in ("READY", "EXTREME")]
-    elif view.startswith("Original and enhanced agree"):
-        f = [x for x in f if x["agreement"] == "both"]
-    elif view.startswith("Enhanced differs"):
-        f = [x for x in rows if x["agreement"] in ("original only", "enhanced only")]
-    if secs:
-        f = [x for x in f if x["sector"] in secs]
-    key = SORTS[sort]
-    if key == "symbol":
-        f.sort(key=lambda x: x["symbol"])
-    elif key is None:
-        f.sort(key=lambda x: (RANK.get(x["enh_class"], 9), -(x["confirming"] or 0)))
-    elif key == "dist_res_pct":
-        f.sort(key=lambda x: x[key] if x[key] is not None else 1e9)
-    else:
-        f.sort(key=lambda x: -(x[key] if x[key] is not None else -1))
-    if not f:
-        st.info("No stock matches these filters.")
-    else:
-        df = pd.DataFrame([{k: v for k, v in x.items() if not k.startswith("_")} for x in f])
-        ev = st.dataframe(df, hide_index=True, use_container_width=True, key="w2_table", on_select="rerun",
-                          selection_mode="single-row", column_config={
-            "price": st.column_config.NumberColumn("Price", format="Rs %.2f"),
-            "chg_pct": st.column_config.NumberColumn("Day %", format="%.2f%%"),
-            "orig_score": st.column_config.NumberColumn("Original score", format="%d"),
-            "orig_class": "Original class", "enh_class": "Enhanced class (RESEARCH)",
-            "abs_q": st.column_config.NumberColumn("Absorption", format="%.0f"),
-            "obv_q": st.column_config.NumberColumn("OBV div.", format="%.0f"),
-            "struct_q": st.column_config.NumberColumn("Structure", format="%.0f"),
-            "rs_q": st.column_config.NumberColumn("RS vs KSE-100", format="%.0f"),
-            "dist_res_pct": st.column_config.NumberColumn("To resistance", format="%.1f%%"),
-            "confirming": "Confirming", "signal_date": "Class since", "hist_test_10d": "Out-of-sample history"})
-        st.caption("Select a row for the stock-level explanation.")
-        sel = getattr(getattr(ev, "selection", None), "rows", None) or []
-        if sel:
-            _detail(f[sel[0]], th)
-    if stale or research.get("unavailable") or research.get("excluded"):
-        with st.expander(f"Not shown as candidates: {len(stale)} stale, {len(research.get('unavailable') or [])} "
-                         f"unavailable, {len(research.get('excluded') or [])} excluded"):
-            if stale:
-                st.markdown("**⚠️ Stale data — not actionable:**")
-                st.dataframe(pd.DataFrame(stale), hide_index=True, key="w2_stale")
-            if research.get("unavailable"):
-                st.markdown("**Unavailable (missing price data):**")
-                st.dataframe(pd.DataFrame(research["unavailable"]), hide_index=True, key="w2_unav")
-            if research.get("excluded"):
-                st.markdown("**Excluded by configuration:** " + ", ".join(research["excluded"]))
-    _backtest_summary(stats)
+    return rows, stale
+
+
+def summary(get, company_names):
+    research = get("/patterns/wyckoff2-research")
+    base = {"id": "w2", "group": "Wyckoff 2.0", "category": "Research / Experimental",
+            "name": "Wyckoff Institutional Accumulation 2.0", "timeframe": "1D", "status": "RESEARCH",
+            "status_variant": "research", "count_label": "research flags", "note": FLAG_NOTE}
+    if research.get("status") != "ok":
+        return dict(base, count=0, flags=[], state_msg=("info", research.get("reason") or "Research scan unavailable."))
+    rows, _ = _rows(research, get("/patterns/volatility-wyckoff"), get("/patterns/wyckoff2-research/stats"),
+                    company_names() or {})
+    fl = [x for x in rows if x["enh_class"] in ENH_FLAG]
+    import patterns_ui as U
+    return dict(base, count=len(fl), updated=U.friendly_age(iso=research.get("run_at")),
+                flags=[(x["symbol"], None, f"Research: {x['enh_class'].title()}") for x in fl])
+
+
+def _badges(x):
+    out = [(x["enh_class"], "research")]
+    if x.get("orig_class") and x["orig_class"] != "NO_SIGNAL":
+        out.append((f"Original {x['orig_class']}", "info"))
+    return out
+
+
+def render(get, company_names):
+    import patterns_ui as U
+    research = get("/patterns/wyckoff2-research")
+    prod = get("/patterns/volatility-wyckoff")
+    stats = get("/patterns/wyckoff2-research/stats")
+    names = company_names() or {}
+    with st.container(border=True):
+        U.module_header({"category": "Research / Experimental", "name": "Wyckoff Institutional Accumulation 2.0",
+                         "timeframe": "1D", "status": "RESEARCH · EXPERIMENTAL / NOT PRODUCTION",
+                         "status_variant": "research",
+                         "updated": (f"Trading date {research.get('session')} · "
+                                     + U.friendly_age(iso=research.get("run_at"))) if research.get("status") == "ok" else None})
+        st.caption(FLAG_NOTE)
+        st.warning("🧪 **Wyckoff Accumulation 2.0 is EXPERIMENTAL / NOT PRODUCTION.** The *Original Wyckoff* columns are "
+                   "the unchanged production engine. Research scores are heuristics (0–100), not probabilities.")
+        if research.get("status") != "ok":
+            st.info(research.get("reason") or "Research scan unavailable.")
+            return
+        th = research.get("thresholds") or {}
+        if prod.get("wyckoff_date") and research.get("session") and str(research["session"]) < str(prod["wyckoff_date"]):
+            st.error(f"⚠️ OUTDATED: research results are for {research['session']}, older than the latest Wyckoff 1.0 batch "
+                     f"({prod['wyckoff_date']}). Do not treat them as current.")
+        rows, stale = _rows(research, prod, stats, names)
+        cls_sel = st.session_state.get("w2_cls", ENH)
+        with st.expander("Filter and sort — " + (
+                f"{st.session_state.get('w2_view', 'All')} · {st.session_state.get('w2_sort', list(SORTS)[0])}"
+                + (f" · {len(cls_sel)} of {len(ENH)} classes" if cls_sel != ENH else "")
+                + (f" · sectors: {', '.join(st.session_state.get('w2_sec'))}" if st.session_state.get("w2_sec") else ""))):
+            c1, c2 = st.columns(2)
+            classes = c1.multiselect("Enhanced class", ENH, default=ENH, key="w2_cls",
+                                     help="Wyckoff 2.0 research class")
+            view = c2.selectbox("Show", ["All", "Original READY / EXTREME only", "Original and enhanced agree",
+                                         "Enhanced differs from original"], key="w2_view")
+            c3, c4 = st.columns(2)
+            sort = c3.selectbox("Sort by", list(SORTS), key="w2_sort")
+            secs = c4.multiselect("Sector", sorted({x["sector"] for x in rows}), default=[], key="w2_sec",
+                                  placeholder="All sectors")
+        f = [x for x in rows if x["enh_class"] in classes] if classes else rows
+        if view.startswith("Original READY"):
+            f = [x for x in rows if x["orig_class"] in ("READY", "EXTREME")]
+        elif view.startswith("Original and enhanced agree"):
+            f = [x for x in f if x["agreement"] == "both"]
+        elif view.startswith("Enhanced differs"):
+            f = [x for x in rows if x["agreement"] in ("original only", "enhanced only")]
+        if secs:
+            f = [x for x in f if x["sector"] in secs]
+        key = SORTS[sort]
+        if key == "symbol":
+            f.sort(key=lambda x: x["symbol"])
+        elif key is None:
+            f.sort(key=lambda x: (RANK.get(x["enh_class"], 9), -(x["confirming"] or 0)))
+        elif key == "dist_res_pct":
+            f.sort(key=lambda x: x[key] if x[key] is not None else 1e9)
+        else:
+            f.sort(key=lambda x: -(x[key] if x[key] is not None else -1))
+        if not f:
+            st.info("No stock matches these filters.")
+        else:
+            df = pd.DataFrame([{k: v for k, v in x.items() if not k.startswith("_")} for x in f])
+            F = U.F
+            fields = [F("symbol", "Symbol"), F("enh_class", "Enhanced class (RESEARCH)", card=False),
+                      F("company", "Company"), F("orig_class", "Original class", card=False,
+                                                 help="Wyckoff 1.0 production class, unchanged"),
+                      F("orig_score", "Original score", "%d", "num"), F("price", "Price", "Rs %.2f", "num"),
+                      F("chg_pct", "Day %", "%.2f%%", "num"),
+                      F("abs_q", "Absorption", "%.0f", "num", help="Research absorption quality 0–100"),
+                      F("obv_q", "OBV div.", "%.0f", "num", help="Research OBV divergence quality 0–100"),
+                      F("struct_q", "Structure", "%.0f", "num", help="Research accumulation-structure quality 0–100"),
+                      F("rs_q", "RS vs KSE-100", "%.0f", "num", help="Research relative-strength quality 0–100"),
+                      F("dist_res_pct", "To resistance", "%.1f%%", "num"),
+                      F("confirming", "Confirming", "%g", "num", primary=False),
+                      F("signal_date", "Class since", kind="date", primary=False),
+                      F("agreement", "Original vs research", primary=False),
+                      F("sector", "Sector", primary=False), F("timeframe", "Timeframe", primary=False),
+                      F("hist_test_10d", "Out-of-sample history", primary=False)]
+            picked = []
+            U.results(df, "w2_table", fields, badge_fn=_badges, on_open=picked.append,
+                      open_label="🔎 Explain {sym}")
+            st.caption("Select a row (or Open on a card) for the stock-level explanation.")
+            sym = picked[0] if picked else (st.session_state.get("w2_table__card_open")
+                                            if st.session_state.get("pui_layout", "Cards") == "Cards" else None)
+            x = next((x for x in f if x["symbol"] == sym), None) if sym else None
+            if x is not None:
+                _detail(x, th)
+        with st.expander("Details — thresholds, batch and stocks not shown"):
+            st.caption(f"Research scan for trading date **{research.get('session')}** · saved {str(research.get('run_at', '—'))[:19]} UTC · "
+                       f"original Wyckoff 1.0 batch {prod.get('wyckoff_date', '—')} · benchmark {research.get('benchmark')} · "
+                       f"thresholds ({research.get('thresholds_source')}): {th}")
+            if stale or research.get("unavailable") or research.get("excluded"):
+                st.markdown(f"**Not shown as candidates: {len(stale)} stale, {len(research.get('unavailable') or [])} "
+                            f"unavailable, {len(research.get('excluded') or [])} excluded**")
+                if stale:
+                    st.markdown("**⚠️ Stale data — not actionable:**")
+                    st.dataframe(pd.DataFrame(stale), hide_index=True, key="w2_stale")
+                if research.get("unavailable"):
+                    st.markdown("**Unavailable (missing price data):**")
+                    st.dataframe(pd.DataFrame(research["unavailable"]), hide_index=True, key="w2_unav")
+                if research.get("excluded"):
+                    st.markdown("**Excluded by configuration:** " + ", ".join(research["excluded"]))
+        _backtest_summary(stats)
 
 
 def _sectors():
