@@ -55,3 +55,19 @@ at ~4,950 rows written, so apply in **chunks of <=100 companies per run**, each 
 2. **Defaults approved:** invalid ISINs dropped (company kept); master's sector labels win; unknown sectors leave the company unclassified; no sectors created.
 3. **Full file:** NOT yet received (the message announcing it contained no attachment or JSON; `data/psx_profiles.json` is not in the repo). No real counts exist yet and nothing has been written to Turso.
 4. **Apply path built and tested offline** (`--apply`, <=100 new companies per run, resumable, idempotent, never touches existing companies); 7 tests against the production DDL. Not run against Turso.
+
+## Stub mode (owner decision 2026-11-09: iterative, verified-only; no fabricated profiles)
+`python backend/company_master_loader.py --stubs [--names names.json] [--apply --chunk N]`
+- **Candidates:** tickers present in `source_items.source_metadata_json.ticker` (source `investify`) but missing from `company_identifiers`.
+- **Stub = ticker + legal name only:** `companies(listing_status='unknown', fiscal_year_end_month NULL, profile_source_item_id=<first announcement item>)`, a `psx_ticker` identifier, `ticker` and `legal_name` aliases marked `candidate`. No ISIN, no classification.
+- **A name is mandatory** (`companies.legal_name NOT NULL`) and must be verified: either `source_metadata_json.company_name` on the item, or an owner-supplied `--names` entry that carries an `evidence` note. Otherwise the ticker is reported as `needs_name`. Names are never derived from filing titles.
+- **Resolution of announcements:** no update to `source_items` (append-only). Announcements link by ticker through `company_identifiers`; once a stub exists the existing join resolves automatically (`resolution_coverage()` reports linked-now vs linked-after).
+- **Idempotent and chunked**, one `collector_runs` row (`company_master_stub_load`) per apply; existing companies never touched.
+
+### Dry run against Turso (2026-11-09, read-only)
+16 unlinked tickers, **0 creatable**, 16 `needs_name`; announcement coverage 4/21 linked now, 4/21 after stubs. Reason: the 21 ingested items store only ticker/category/title, no company name.
+
+### Ways to obtain verified names (decision needed)
+1. Extend the Investify parser/mapping to capture the card's company-name attribute (a public fact shown in the approved DOM map but outside the five approved fields) into `source_metadata_json`; backfill the 21 existing items requires one more fetch (2 requests) and an UPDATE of that JSON column (not blocked by the immutability triggers).
+2. Owner supplies a `names.json` (`symbol`, `company_name`, `evidence`).
+3. SCS chart `/symbols` (existing approved source for OHLCV; a name read would need a new approval entry).

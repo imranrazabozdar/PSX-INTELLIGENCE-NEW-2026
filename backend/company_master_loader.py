@@ -8,6 +8,13 @@ sectors are ever created.
 
     python backend/company_master_loader.py data/psx_profiles.json [--no-db]          # dry run
     python backend/company_master_loader.py data/psx_profiles.json --apply [--chunk N] # write one chunk
+
+STUB MODE (iterative, minimal; owner decision 2026-11-09: no fabricated profiles):
+    python backend/company_master_loader.py --stubs [--names names.json] [--apply --chunk N]
+Registers ONLY tickers that already appear in verified `source_items` (e.g. Investify announcements) and are missing
+from the master, and only when a verified company name exists (source_metadata_json.company_name, or an owner-supplied
+--names file with an `evidence` note). Stub = ticker + legal name + listing_status 'unknown'; ISIN, sector, fiscal-year
+month stay NULL/absent. Tickers without a verified name are listed as `needs_name`, never guessed.
 """
 import hashlib
 import json
@@ -236,7 +243,118 @@ def apply_chunk(conn, records, sha, chunk=100, now=None):
             "overlap_conflicts_untouched": len(p["overlap_conflict"])}
 
 
+# ------------------------------------------------------------------ STUB MODE (iterative, verified-only)
+STUB_SOURCES = ("investify",)  # sources whose items may seed stubs (owner-approved facts-only ingestion)
+
+
+def stub_candidates(conn, sources=STUB_SOURCES):
+    """Read-only: tickers present in source_items metadata but missing from company_identifiers.
+    Returns {ticker: {"items": n, "first_item_id": id, "name": str|None, "sample_title": str}}."""
+    ph = ",".join("?" * len(sources))
+    rows = conn.execute(
+        f"SELECT json_extract(source_metadata_json,'$.ticker') t, json_extract(source_metadata_json,'$.company_name') nm, "
+        f"source_item_id, title FROM source_items WHERE source_id IN ({ph}) AND json_extract(source_metadata_json,'$.ticker') IS NOT NULL "
+        f"AND json_extract(source_metadata_json,'$.ticker') NOT IN (SELECT value FROM company_identifiers WHERE id_type='psx_ticker') "
+        f"ORDER BY source_item_id", tuple(sources)).fetchall()
+    out = {}
+    for r in rows:
+        t = (r["t"] or "").strip().upper()
+        if not TICKER_RE.match(t):
+            continue
+        d = out.setdefault(t, {"items": 0, "first_item_id": r["source_item_id"], "name": None, "sample_title": r["title"]})
+        d["items"] += 1
+        if r["nm"] and not d["name"]:
+            d["name"] = re.sub(r"\s+", " ", r["nm"]).strip() or None
+    return out
+
+
+def plan_stubs(cands, names=None):
+    """names = {TICKER: {"company_name":..., "evidence":...}} (owner-verified, optional). Nothing is guessed."""
+    names = {k.upper(): v for k, v in (names or {}).items()}
+    out = {"creatable": [], "needs_name": []}
+    for t, d in sorted(cands.items()):
+        nm, ev = d["name"], "source_item metadata"
+        if not nm and t in names and (names[t].get("company_name") or "").strip() and (names[t].get("evidence") or "").strip():
+            nm, ev = re.sub(r"\s+", " ", names[t]["company_name"]).strip(), names[t]["evidence"].strip()
+        if nm:
+            out["creatable"].append({"ticker": t, "company_id": f"cmp-{t.lower()}", "legal_name": nm, "evidence": ev,
+                                     "source_item_id": d["first_item_id"], "items": d["items"]})
+        else:
+            out["needs_name"].append({"ticker": t, "items": d["items"], "sample_title": d["sample_title"]})
+    return out
+
+
+def resolution_coverage(conn, add_tickers=()):
+    """How many ingested announcements resolve to a company now, and after the planned stubs."""
+    total = conn.execute("SELECT COUNT(*) n FROM source_items WHERE source_id='investify'").fetchone()["n"]
+    linked = conn.execute(
+        "SELECT COUNT(*) n FROM source_items s JOIN company_identifiers ci ON ci.id_type='psx_ticker' "
+        "AND ci.value=json_extract(s.source_metadata_json,'$.ticker') WHERE s.source_id='investify'").fetchone()["n"]
+    extra = 0
+    if add_tickers:
+        ph = ",".join("?" * len(add_tickers))
+        extra = conn.execute(f"SELECT COUNT(*) n FROM source_items WHERE source_id='investify' AND "
+                             f"json_extract(source_metadata_json,'$.ticker') IN ({ph})", tuple(add_tickers)).fetchone()["n"]
+    return {"announcements": total, "linked_now": linked, "linked_after_stubs": linked + extra}
+
+
+def apply_stubs(conn, sp, chunk=100, now=None):
+    """Write up to `chunk` creatable stubs. Idempotent; existing companies never touched."""
+    now = now or _now()
+    batch = sp["creatable"][:chunk]
+    run_id = conn.execute("INSERT INTO collector_runs(job,source_id,started_at_utc,status,log_reference) VALUES(?,?,?,'running',?)",
+                          ("company_master_stub_load", "investify", now, "stubs")).lastrowid
+    done = 0
+    for c in batch:
+        if conn.execute("SELECT 1 FROM company_identifiers WHERE id_type='psx_ticker' AND value=? AND valid_to IS NULL",
+                        (c["ticker"],)).fetchone():
+            continue
+        conn.execute("INSERT OR IGNORE INTO companies(company_id,legal_name,listing_status,profile_source_item_id,"
+                     "created_at_utc,updated_at_utc) VALUES(?,?,'unknown',?,?,?)",
+                     (c["company_id"], c["legal_name"], c["source_item_id"], now, now))
+        conn.execute("INSERT INTO company_identifiers(company_id,id_type,value,verified_at_utc,source_item_id) "
+                     "VALUES(?,'psx_ticker',?,?,?)", (c["company_id"], c["ticker"], now, c["source_item_id"]))
+        for alias, atype in ((c["ticker"], "ticker"), (c["legal_name"], "legal_name")):
+            conn.execute("INSERT OR IGNORE INTO company_aliases(company_id,alias,alias_normalized,alias_type,confidence,"
+                         "source_item_id,evidence) VALUES(?,?,?,?,'candidate',?,?)",
+                         (c["company_id"], alias, alias.casefold(), atype, c["source_item_id"], f"stub: {c['evidence']}"))
+        done += 1
+    remaining = len(sp["creatable"]) - len(batch)
+    conn.execute("UPDATE collector_runs SET finished_at_utc=?,status=?,items_fetched=?,items_accepted=? WHERE run_id=?",
+                 (_now(), "succeeded" if remaining == 0 else "partial", len(sp["creatable"]), done, run_id))
+    conn.commit()
+    return {"stubs_created": done, "remaining_creatable": remaining, "needs_name": len(sp["needs_name"]), "run_id": run_id}
+
+
+def stub_main(argv):
+    try:
+        from backend import turso_db
+    except ImportError:
+        import turso_db
+    import sqlite3
+    conn = turso_db.get_connection()
+    names = json.load(open(argv[argv.index("--names") + 1])) if "--names" in argv else None
+    if isinstance(names, list):
+        names = {r["symbol"].upper(): r for r in names}
+    cands = stub_candidates(conn)
+    sp = plan_stubs(cands, names)
+    cov = resolution_coverage(conn, [c["ticker"] for c in sp["creatable"]])
+    print(f"unlinked tickers in verified source_items: {len(cands)} | creatable stubs: {len(sp['creatable'])} | needs_name: {len(sp['needs_name'])}")
+    print("announcement resolution coverage:", json.dumps(cov))
+    for c in sp["creatable"][:20]:
+        print(f"  WOULD CREATE {c['ticker']}: {c['legal_name']!r} (listing_status unknown; no ISIN/sector) <- item {c['source_item_id']}, {c['evidence'][:60]}")
+    for c in sp["needs_name"][:30]:
+        print(f"  needs verified name: {c['ticker']} ({c['items']} announcement(s)); e.g. {c['sample_title'][:70]!r}")
+    if "--apply" in argv:
+        if isinstance(conn, sqlite3.Connection):
+            sys.exit("refusing --apply: Turso connection failed (local SQLite fallback)")
+        chunk = int(argv[argv.index("--chunk") + 1]) if "--chunk" in argv else 100
+        print("APPLIED:", apply_stubs(conn, sp, chunk))
+
+
 def main(argv):
+    if "--stubs" in argv:
+        return stub_main(argv)
     path = next((a for a in argv if not a.startswith("--")), "data/psx_profiles.json")
     raw = open(path, "rb").read()
     records = json.loads(raw)

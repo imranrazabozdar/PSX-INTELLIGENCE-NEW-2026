@@ -102,3 +102,48 @@ def test_seed_source_disabled_with_owner_origin_note():
     i = c.execute("select retrieval_method,document_type,content_sha256 from source_items where source_id='owner_psx_profiles'").fetchone()
     assert tuple(i) == ("seed", "dataset", "b" * 64)
     assert c.execute("select count(distinct profile_source_item_id) from companies where company_id<>'cmp-ogdc'").fetchone()[0] == 1
+
+
+# ------------------------------------------------------------------ stub mode
+def seed_investify(c, rows):
+    c.execute("INSERT INTO sources(source_id,name,source_type,created_at_utc,updated_at_utc) VALUES('investify','Investify','news_media','t','t')")
+    for i, (t, nm) in enumerate(rows, 1):
+        meta = {"ticker": t, **({"company_name": nm} if nm else {})}
+        c.execute("INSERT INTO source_items(source_id,external_id,title,collected_at_utc,content_sha256,source_metadata_json) "
+                  "VALUES('investify',?,?,'t',?,?)", (f"psx_filing:{i}", f"{t} filing {i}", f"{i:064d}", json.dumps(meta)))
+
+
+import json
+
+
+def test_stub_candidates_exclude_known_tickers_and_never_guess_names():
+    c = db()
+    seed_investify(c, [("OGDC", None), ("TPLP", "TPL Properties Ltd"), ("CTM", None), ("CTM", None), ("bad sym", None)])
+    cands = m.stub_candidates(c)
+    assert sorted(cands) == ["CTM", "TPLP"] and cands["CTM"]["items"] == 2
+    sp = m.plan_stubs(cands)
+    assert [x["ticker"] for x in sp["creatable"]] == ["TPLP"] and [x["ticker"] for x in sp["needs_name"]] == ["CTM"]
+
+
+def test_names_file_requires_evidence():
+    c = db(); seed_investify(c, [("CTM", None)])
+    cands = m.stub_candidates(c)
+    assert m.plan_stubs(cands, {"CTM": {"company_name": "Colony Textile Mills Ltd"}})["creatable"] == []
+    ok = m.plan_stubs(cands, {"CTM": {"company_name": "Colony Textile Mills Ltd", "evidence": "owner-verified PSX listing"}})
+    assert ok["creatable"][0]["legal_name"] == "Colony Textile Mills Ltd"
+
+
+def test_apply_stubs_minimal_idempotent_and_resolves_announcements():
+    c = db()
+    seed_investify(c, [("OGDC", None), ("TPLP", "TPL Properties Ltd"), ("TPLP", "TPL Properties Ltd"), ("CTM", None)])
+    sp = m.plan_stubs(m.stub_candidates(c))
+    cov = m.resolution_coverage(c, [x["ticker"] for x in sp["creatable"]])
+    assert cov == {"announcements": 4, "linked_now": 1, "linked_after_stubs": 3}
+    assert m.apply_stubs(c, sp)["stubs_created"] == 1
+    assert m.apply_stubs(c, m.plan_stubs(m.stub_candidates(c)))["stubs_created"] == 0   # re-run: nothing new
+    row = c.execute("select listing_status,fiscal_year_end_month,profile_source_item_id from companies where company_id='cmp-tplp'").fetchone()
+    assert tuple(row)[:2] == ("unknown", None) and row[2] is not None
+    assert c.execute("select count(*) from company_identifiers where id_type='isin'").fetchone()[0] == 0
+    assert c.execute("select count(*) from company_classifications").fetchone()[0] == 0
+    assert m.resolution_coverage(c)["linked_now"] == 3        # announcements now resolve with NO source_items update
+    assert c.execute("select count(*) from companies").fetchone()[0] == 2   # OGDC (existing) + TPLP; CTM still unnamed
