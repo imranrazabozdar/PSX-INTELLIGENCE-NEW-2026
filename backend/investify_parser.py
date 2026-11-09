@@ -42,8 +42,19 @@ def _category(card):
     return None
 
 
+def _company_name(card):
+    """Company name from the card's `<span title="...">` next to the ticker (owner-approved 2026-11-09).
+    Accepted only when the span's visible text equals its title attribute; otherwise None (never guessed)."""
+    for sp in card.find_all("span", title=True):
+        title = re.sub(r"\s+", " ", sp["title"]).strip()
+        text = re.sub(r"\s+", " ", sp.get_text(" ", strip=True)).strip()
+        if title and title == text and 2 <= len(title) <= 200:
+            return title
+    return None
+
+
 def parse_announcements(html):
-    """Return a list of dicts: ticker, timestamp_utc, category, title, psx_id (+ deep_link).
+    """Return a list of dicts: ticker, timestamp_utc, category, title, psx_id, company_name (or None) (+ deep_link).
     Malformed cards (any required field missing/invalid) are skipped, never guessed."""
     soup = BeautifulSoup(html, "lxml")
     items, seen = [], set()
@@ -67,7 +78,8 @@ def parse_announcements(html):
             continue
         seen.add(psx_id)
         items.append({"ticker": ticker, "timestamp_utc": ts, "category": category, "title": title,
-                      "psx_id": psx_id, "deep_link": urljoin(BASE_URL, h3a["href"])})
+                      "psx_id": psx_id, "company_name": _company_name(card),
+                      "deep_link": urljoin(BASE_URL, h3a["href"])})
     return items
 
 
@@ -83,6 +95,14 @@ def facts_sha256(item):
     canon = json.dumps([item["ticker"], item["timestamp_utc"], item["category"], item["title"], item["psx_id"]],
                        ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def metadata_json(item):
+    meta = {"ticker": item["ticker"], "category": item["category"], "psx_filing_id": item["psx_id"],
+            "via": "investify.pk/announcements"}
+    if item.get("company_name"):
+        meta["company_name"] = item["company_name"]  # public fact from the card's span title (owner-approved)
+    return json.dumps(meta, sort_keys=True)
 
 
 def to_source_item(item, collected_at_utc, collection_run_id=None):
@@ -105,7 +125,5 @@ def to_source_item(item, collected_at_utc, collection_run_id=None):
         "collection_run_id": collection_run_id,
         "document_type": DOCUMENT_TYPE,
         "publication_time_status": "known",
-        "source_metadata_json": json.dumps(
-            {"ticker": item["ticker"], "category": item["category"], "psx_filing_id": item["psx_id"],
-             "via": "investify.pk/announcements"}, sort_keys=True),
+        "source_metadata_json": metadata_json(item),
     }

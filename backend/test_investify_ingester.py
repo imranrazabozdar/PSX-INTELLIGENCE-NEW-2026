@@ -61,3 +61,31 @@ def test_guards():
     with pytest.raises(ing.IngestError): ing.ingest(db(), [{}] * 61)
     c = db(); c.execute("delete from sources")
     with pytest.raises(ing.IngestError): ing.ingest(c, [])
+
+
+def test_backfill_names_updates_only_metadata_and_logs_exception():
+    c = db(); items = parser.parse_announcements(HTML)
+    nameless = [dict(i, company_name=None) for i in items]
+    ing.ingest(c, nameless)                                  # simulate the original 21 name-less rows
+    before = {r[0]: r[1:] for r in c.execute("select source_item_id,content_sha256,title,external_id,collected_at_utc from source_items")}
+    d = ing.backfill_names(c, items, dry_run=True)
+    assert len(d["updated"]) == 2 and c.execute("select count(*) from collector_runs where job='investify_name_backfill'").fetchone()[0] == 0
+    r = ing.backfill_names(c, items)
+    assert len(r["updated"]) == 2
+    assert {x[0]: x[1:] for x in c.execute("select source_item_id,content_sha256,title,external_id,collected_at_utc from source_items")} == before
+    assert c.execute("select json_extract(source_metadata_json,'$.company_name') from source_items where external_id='psx_filing:288838'").fetchone()[0] == "TPL Properties Ltd"
+    run = c.execute("select status,items_accepted,errors from collector_runs where job='investify_name_backfill'").fetchone()
+    assert run[0] == "succeeded" and run[1] == 2 and "append-only exception" in run[2]
+    again = ing.backfill_names(c, items)
+    assert len(again["updated"]) == 0 and again["already_set"] == 2
+    assert c.execute("select count(*) from source_items").fetchone()[0] == 2          # never inserts
+
+
+def test_backfill_skips_conflicts_and_unmatched():
+    c = db(); items = parser.parse_announcements(HTML)
+    ing.ingest(c, items)                                     # rows already carry the names
+    items[0]["company_name"] = "Different Name Ltd"
+    r = ing.backfill_names(c, items)
+    assert len(r["conflict"]) == 1 and len(r["updated"]) == 0
+    items[1]["psx_id"] = "999"
+    assert len(ing.backfill_names(c, items)["unmatched"]) == 1
