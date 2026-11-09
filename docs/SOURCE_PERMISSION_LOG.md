@@ -25,7 +25,7 @@ Finding: production Turso has no `daily_ohlc`; the real table is `market_bars` (
 
 ### Decision D1 (owner, 2026-11-09): ingest target
 
-Ingest into existing `market_bars` (`timeframe='1d'`, `bar_start_utc` = `YYYY-MM-DDT00:00:00Z`, `INSERT OR IGNORE`), reuse an existing `psx_dps` source row or create one (disabled), and one `collector_runs` row linked to every inserted bar. No `psx_dps`/DPS source existed at 2026-11-09 (only `scs_chart`).
+Ingest into existing `market_bars` (`timeframe='1d'`, `bar_start_utc` = `YYYY-MM-DDT00:00:00Z`, `INSERT OR IGNORE`), reuse an existing `psx_dps` source row or create one (disabled), and one `collector_runs` row linked to every inserted bar. CORRECTION (2026-11-09 audit): this was wrong. A `psx_dps` source row DOES exist (RESTRICTED, `prohibits_automation`, `access_method=not_permitted`, disabled; PSX Terms of Use prohibit automated retrieval; announcements sit behind reCAPTCHA). My check had errored on a bad column name and I misread it. The -02 requests (5 to dps.psx.com.pk, none produced data) were made under owner approval but against that registered restriction. No `psx_dps` row was created or modified by this pilot.
 
 ### Run record
 
@@ -64,4 +64,4 @@ Turso: token renewed, `SELECT 1` HTTP 200; no writes made by this pilot.
 | Provenance | `collector_runs.run_id=38`, job `PILOT-2026-11-09-03`, status `succeeded`, linked to all 120 bars; source `scs_chart` (existing row, unchanged) |
 | Independent verification | Turso query: APL/BAHL/DFML/PACE = 30 `1d` bars each; `market_bars` total 13,228 -> 13,348 |
 
-No `psx_dps` source row was created (the -02 route never ran). No Referer or spoofed headers were sent.
+No `psx_dps` source row was created or modified (it pre-exists, restricted). No Referer or spoofed headers were sent.
