@@ -56,8 +56,11 @@ def apply(db, dry_run=False):
         sql = path.read_text()
         if hasattr(db, "script"):
             db.script(sql)
-        else:  # Turso: statement-by-statement is unsafe for triggers; require a tool-run for the baseline
+        elif ver == BASELINE_VERSION:  # the baseline contains hundreds of triggers: apply it to a fresh Turso DB with the libsql shell
             raise RuntimeError("apply the baseline to a fresh Turso DB with the libsql CLI/shell, then re-run")
+        else:  # later migrations are split on the explicit marker line, one statement per request
+            parts = [x.strip() for x in re.split(r"^-- statement-break\s*$", sql, flags=re.M) if x.strip()]
+            db.batch([(x, ()) for x in parts])
         db.execute("INSERT OR IGNORE INTO schema_migrations(version,name,checksum,applied_at_utc,result) VALUES(?,?,?,?,?)",
                    (ver, name, sha, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "applied"))
         db.commit()
