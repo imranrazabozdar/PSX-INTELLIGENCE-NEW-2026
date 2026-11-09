@@ -17,7 +17,7 @@ Status: **no provider is enabled or connected yet.** `llm/providers_config.json`
 |---|---|---|---|---|---|
 | groq | https://api.groq.com/openai/v1 | openai/gpt-oss-20b | `GROQ_API_KEY` | 2026-11-09, owner attestation | **enabled** (model confirmed via /models) |
 | gemini | https://generativelanguage.googleapis.com/v1beta/openai | gemini-3.5-flash-lite, gemini-3.1-flash-lite (verified); gemini-3.8-flash (listed, unverified) | `GEMINI_API_KEY` | 2026-11-09, owner attestation | **enabled** |
-| openrouter | https://openrouter.ai/api/v1 | meta-llama/llama-3.3-70b-instruct:free | `OPENROUTER_API_KEY` | not yet | disabled |
+| openrouter | https://openrouter.ai/api/v1 | google/gemma-4-26b-a4b-it:free, nvidia/nemotron-3-ultra-550b-a55b:free, openrouter/free (all verified by real calls); google/gemma-4-31b-it:free (unverified) | `OPENROUTER_API_KEY` | 2026-11-09, owner attestation | **enabled** |
 
 Base URLs are the providers' documented OpenAI-compatible endpoints. Model ids and free-tier limits were written without
 consulting the provider's current docs and may be out of date: verify, then set `model_verified`, `terms_reviewed_utc`
@@ -82,3 +82,17 @@ schema-valid rate, grounded-quote rate and ticker precision.
 - Fallback order: news = groq -> gemini -> openrouter; long documents = gemini -> openrouter; financial line items = gemini.
 - Live verification: `check_providers.py --live` ok; live pytest (structured JSON + financial line items) 2/2; synthetic 3-chunk statement (known values): recall 9/9, 0 wrong, numbers parsed by Python.
 - Privacy: free-tier Gemini terms commonly allow Google to use prompts to improve products. Only public text from verified_permitted sources may be sent; restricted-source documents (e.g. PSX filings in the vault) remain blocked by the eligibility gate.
+
+### OpenRouter go-live notes (2026-11-09)
+- Key: saved on the Default environment via the secure credential form (host `openrouter.ai`); key info endpoint confirmed a free-tier key. Run with `OPENROUTER_API_KEY=proxy-injected` in this sandbox.
+- Free models listed: 16 of 425. Listing is not proof of use; each was tried with a real call: `gemma-4-26b-a4b-it:free` OK, `nemotron-3-ultra-550b-a55b:free` OK, `openrouter/free` OK, `gemma-4-31b-it:free` HTTP 429 (upstream rate limit, not verified), `nemotron-3.5-lightning:free` HTTP 200 but EMPTY content (excluded).
+- `openrouter/free` is an auto-router: it picked `cohere/north-mini-code:free` in one probe and `nvidia/nemotron-3-ultra-550b-a55b:free` in another. It is therefore the LAST route, and the adapter records the model that actually answered as `served_model` in `event_extractions.provenance_json`.
+- Free routes are served by third parties with their own logging/training policies: public text from verified_permitted sources only.
+- Our cap is 40 calls/day (shared by all OpenRouter routes), deliberately below the commonly documented free-tier daily cap; verify the current limit on your account.
+- Empty completions (HTTP 200, no content) are treated as errors and fall through to the next route.
+
+### Fallback cascade (final)
+- news: groq/gpt-oss-20b -> gemini/3.5-flash-lite -> gemini/3.1-flash-lite -> openrouter/gemma-4-26b -> openrouter/nemotron-3-ultra -> openrouter/free
+- long documents: gemini (2 routes) -> openrouter (3 routes); financial line items: gemini (2 routes)
+- Failover triggers: 429 (cooldown = Retry-After), 502/503/504 (30 s cooldown), 401/403 (logged as not_connected), timeouts/other errors, empty answers, invalid model output (retried once on the same route first).
+- Verified live 2026-11-09: forced Groq 404 + Gemini 404 -> OpenRouter gemma 429 -> OpenRouter nemotron ok. `check_providers.py --live` tests every verified route: groq ok; gemini lite routes 503 (transient overload at that moment; ok minutes earlier and later); openrouter gemma 429, nemotron ok, openrouter/free ok.

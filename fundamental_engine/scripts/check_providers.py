@@ -21,15 +21,18 @@ if __name__ == "__main__":
         print(json.dumps(s))
     if "--live" in sys.argv and os.environ.get("RUN_LIVE_LLM_TESTS") == "1":
         root = Path(__file__).resolve().parent.parent
-        for p in cfgmod.load_config()["providers"]:
-            if not os.environ.get(p["api_key_env"]):
-                print(p["name"], "SKIPPED (no key in environment)")
+        task = sys.argv[sys.argv.index("--task") + 1] if "--task" in sys.argv else "news_event_extraction"
+        routes, budgets = cfgmod.build(task)            # production routing rules: enabled + verified + reviewed only
+        for prov in routes:
+            if not os.environ.get(next(p["api_key_env"] for p in cfgmod.load_config()["providers"] if p["name"] == prov.name)):
+                print(prov.name, prov.model, "SKIPPED (no key in environment)")
                 continue
             db = sqlite_connect(); db.script((root / "migrations" / "0010_baseline_snapshot.sql").read_text())
             db.execute("INSERT INTO sources(source_id,name,source_type,access_status,created_at_utc,updated_at_utc) VALUES('s','s','exchange','verified_permitted','t','t')")
             db.execute("INSERT INTO companies(company_id,legal_name,listing_status,created_at_utc,updated_at_utc) VALUES('cmp-ogdc','OGDC','listed','t','t')")
             db.execute("INSERT INTO company_identifiers(company_id,id_type,value,verified_at_utc) VALUES('cmp-ogdc','psx_ticker','OGDC','t')")
             item = db.execute("INSERT INTO source_items(source_id,external_id,collected_at_utc,content_sha256) VALUES('s','e','t',?)", ("a" * 64,)).lastrowid
-            prov = OpenAICompatProvider(p["name"], p["base_url"], p["model"], p["api_key_env"], p.get("max_output_tokens", 800),
-                                        p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), None, p.get("extra_body"))
-            print(p["name"], Router(db, [prov], {p["name"]: Budget(max_calls_per_day=2)}).extract(item, SAMPLE))
+            res = Router(db, [prov], {prov.name: Budget(max_calls_per_day=2)}).extract(item, SAMPLE)
+            served = db.execute("select provenance_json from event_extractions").one()
+            served = json.loads(served["provenance_json"]).get("served_model") if served else None
+            print(prov.name, prov.model, res["outcome"], res.get("detail", ""), f"(served_model={served})" if served else "")

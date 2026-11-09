@@ -78,7 +78,7 @@ def env(db):
 
 
 # ------------------------------------------------------------------ config
-def test_config_valid_and_only_groq_gemini_unlocked():
+def test_config_valid_and_all_three_providers_unlocked():
     assert set(NAMES) >= {"groq", "gemini", "openrouter"}
     by = {p["name"]: p for p in CFG["providers"]}
     g = by["groq"]
@@ -86,14 +86,20 @@ def test_config_valid_and_only_groq_gemini_unlocked():
     gm = by["gemini"]
     assert gm["enabled"] and gm["model_verified"] and gm["terms_reviewed_utc"] == "2026-11-09" and gm["model"] == "gemini-3.5-flash-lite" and [m["id"] for m in gm["models"] if m["verified"]] == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
     assert gm["extra_body"] == {"reasoning_effort": "low"} and gm["max_output_tokens"] >= 4000 and gm["timeout_s"] >= 120
-    assert by["openrouter"]["enabled"] is False and by["openrouter"]["terms_reviewed_utc"] is None   # rollout order: still locked
-    assert all(m["enabled"] is False and m["verified"] is False for m in by["openrouter"]["models"])
+    orr = by["openrouter"]
+    assert orr["enabled"] and orr["model_verified"] and orr["terms_reviewed_utc"] == "2026-11-09" and orr["max_calls_per_day"] <= 40
+    assert [m["id"] for m in orr["models"] if m["verified"]] == ["google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "openrouter/free"]
+    assert "nvidia/nemotron-3.5-lightning:free" not in [m["id"] for m in orr["models"]]   # returned empty content in the probe
+    assert [m["id"] for m in orr["models"] if not m["verified"]] == ["google/gemma-4-31b-it:free"]
     raw = (Path(cfgmod.DEFAULT_PATH)).read_text()
     assert not cfgmod._SECRET_VALUE.search(raw)
     providers, budgets = cfgmod.build()                      # production rules: only the reviewed+verified provider is usable
-    assert [(p.name, p.model) for p in providers] == [("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-3.5-flash-lite"), ("gemini", "gemini-3.1-flash-lite")]
-    assert list(budgets) == ["groq", "gemini"]                # gemini routes share ONE provider budget
-    assert [(p.name, p.model) for p in cfgmod.build("long_document_extraction")[0]] == [("gemini", "gemini-3.5-flash-lite"), ("gemini", "gemini-3.1-flash-lite")]
+    assert [(p.name, p.model) for p in providers] == [
+        ("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-3.5-flash-lite"), ("gemini", "gemini-3.1-flash-lite"),
+        ("openrouter", "google/gemma-4-26b-a4b-it:free"), ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("openrouter", "openrouter/free")]
+    assert providers[-1].model == "openrouter/free"            # the auto-router (unpredictable identity) is the LAST resort
+    assert list(budgets) == ["groq", "gemini", "openrouter"]    # routes of one provider share ONE budget
+    assert order(cfgmod.build("long_document_extraction")[0]) == ["gemini", "openrouter"]
     assert order(cfgmod.build("financial_line_items")[0]) == ["gemini"]
 
 
@@ -346,3 +352,69 @@ def test_live_gemini_financial_line_items(db):
     j = json.loads(db.execute("select extracted_json from event_extractions").one()["extracted_json"])
     got = {(i["label"], i["period"]): i["value_parsed"] for i in j["items"]}
     assert got.get(("Revenue", "2026")) == "12345678" and got.get(("Profit after tax", "2026")) == "-1250", got
+
+
+# ------------------------------------------------------------------ Phase 3: the full cascade, built from the real config
+class HostSession:
+    """Dispatches by URL host so one session can stand in for all three providers."""
+    def __init__(self, **by_host):
+        self.by_host, self.calls = {k: list(v) for k, v in by_host.items()}, []
+
+    def post(self, url, **kw):
+        host = next(h for h in self.by_host if h in url)
+        self.calls.append((host, kw["json"]["model"]))
+        q = self.by_host[host]
+        r = q.pop(0) if q else FakeResp()
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+@pytest.mark.parametrize("groq_fail,gemini_fail", [
+    (FakeResp(429, headers={"Retry-After": "60"}), FakeResp(503)),       # rate limit then capacity overload
+    (FakeResp(503), FakeResp(502)),
+    (requests.Timeout("t"), FakeResp(429)),
+    (FakeResp(401), FakeResp(504)),
+])
+def test_full_cascade_fails_over_to_openrouter(env, keys, groq_fail, gemini_fail):
+    db, item = env
+    sess = HostSession(**{"groq.com": [groq_fail], "googleapis.com": [gemini_fail, gemini_fail], "openrouter.ai": [FakeResp()]})
+    provs, budgets = cfgmod.build("news_event_extraction", session=sess)
+    r = Router(db, provs, budgets, mono=lambda: 0.0).extract(item, TEXT)
+    assert r["outcome"] == "ok"
+    assert [h for h, _ in sess.calls] == ["groq.com", "googleapis.com", "googleapis.com", "openrouter.ai"]   # every earlier route tried once, in order
+    assert sess.calls[-1][1] == "google/gemma-4-26b-a4b-it:free"
+    assert db.execute("select model from event_extractions").one()["model"] == "google/gemma-4-26b-a4b-it:free"
+
+
+def test_cascade_continues_through_openrouter_models_then_gives_up(env, keys):
+    db, item = env
+    sess = HostSession(**{"groq.com": [FakeResp(429)], "googleapis.com": [FakeResp(503)] * 2, "openrouter.ai": [FakeResp(429), FakeResp(503), FakeResp(500)]})
+    provs, budgets = cfgmod.build("news_event_extraction", session=sess)
+    r = Router(db, provs, budgets, mono=lambda: 0.0).extract(item, TEXT)
+    assert r["outcome"] == "error" and db.execute("select count(*) n from event_extractions").one()["n"] == 0
+    assert [m for h, m in sess.calls if h == "openrouter.ai"] == ["google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "openrouter/free"]
+    assert db.execute("select count(*) n from llm_calls where outcome='error'").one()["n"] == 6       # each failed route logged once
+
+
+def test_served_model_recorded_for_auto_router(env, keys):
+    db, item = env
+    body = {"model": "cohere/north-mini-code:free", "choices": [{"message": {"content": GOOD}}], "usage": {"prompt_tokens": 90, "completion_tokens": 30}}
+    prov = OpenAICompatProvider("openrouter", "https://openrouter.ai/api/v1", "openrouter/free", "OPENROUTER_API_KEY", session=FakeSession(FakeResp(body=body)))
+    assert Router(db, [prov]).extract(item, TEXT)["outcome"] == "ok"
+    row = db.execute("select model,provenance_json from event_extractions").one()
+    assert row["model"] == "openrouter/free" and json.loads(row["provenance_json"])["served_model"] == "cohere/north-mini-code:free"
+    # a normal model whose served id equals the configured id adds no noise
+    prov2 = OpenAICompatProvider("openrouter", "https://openrouter.ai/api/v1", "google/gemma-4-26b-a4b-it:free", "OPENROUTER_API_KEY",
+                                 session=FakeSession(FakeResp(body={**body, "model": "google/gemma-4-26b-a4b-it:free"})))
+    item2 = add_item(db, ext="x2")
+    Router(db, [prov2]).extract(item2, TEXT)
+    pj = json.loads(db.execute("select provenance_json from event_extractions where source_item_id=?", (item2,)).one()["provenance_json"])
+    assert "served_model" not in pj
+
+
+def test_empty_completion_from_free_model_counts_as_error_not_success(env, keys):
+    db, item = env
+    empty = FakeResp(body={"model": "nvidia/nemotron-3.5-lightning:free", "choices": [{"message": {"content": ""}}]})
+    prov = OpenAICompatProvider("openrouter", "https://openrouter.ai/api/v1", "nvidia/nemotron-3.5-lightning:free", "OPENROUTER_API_KEY", session=FakeSession(empty))
+    assert Router(db, [prov]).extract(item, TEXT)["outcome"] == "error"

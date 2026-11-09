@@ -89,27 +89,44 @@
       "name": "openrouter",
       "base_url": "https://openrouter.ai/api/v1",
       "api_key_env": "OPENROUTER_API_KEY",
-      "model": "meta-llama/llama-3.3-70b-instruct:free",
-      "model_verified": false,
-      "enabled": false,
-      "terms_reviewed_utc": null,
+      "model": "google/gemma-4-26b-a4b-it:free",
+      "model_verified": true,
+      "enabled": true,
+      "terms_reviewed_utc": "2026-11-09",
       "json_mode": false,
       "timeout_s": 90,
-      "max_output_tokens": 800,
-      "max_calls_per_day": 50,
-      "max_tokens_per_day": 100000,
+      "max_output_tokens": 2000,
+      "max_calls_per_day": 40,
+      "max_tokens_per_day": 80000,
       "max_attempts_per_item": 2,
       "extra_headers": {
         "X-Title": "PSX Fundamental Engine"
       },
-      "data_use_notes": "unreviewed: free routes may be served by third parties with their own logging/training policies; verify per model",
+      "data_use_notes": "owner attested terms review on 2026-11-09. Free routes are served by third-party providers with their own logging/training policies: send only public text from verified_permitted sources",
       "models": [
         {
-          "id": "meta-llama/llama-3.3-70b-instruct:free",
+          "id": "google/gemma-4-26b-a4b-it:free",
+          "verified": true,
+          "enabled": true
+        },
+        {
+          "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+          "verified": true,
+          "enabled": true
+        },
+        {
+          "id": "openrouter/free",
+          "verified": true,
+          "enabled": true
+        },
+        {
+          "id": "google/gemma-4-31b-it:free",
           "verified": false,
-          "enabled": false
+          "enabled": true
         }
-      ]
+      ],
+      "terms_reviewed_by": "owner attestation (not an assistant review)",
+      "model_verified_note": "2026-11-09 real minimal calls on the owner's account: gemma-4-26b-a4b-it:free OK; nemotron-3-ultra-550b-a55b:free OK; openrouter/free OK but served by an arbitrary model (cohere/north-mini-code:free in the probe) so its identity is unpredictable: it is the LAST route, and the model that actually answered is recorded as provenance 'served_model'; gemma-4-31b-it:free returned HTTP 429 upstream rate limit (not verified yet); nemotron-3.5-lightning:free returned HTTP 200 with EMPTY content (excluded). Free route limits are the owner's account limits; our cap (40 calls/day) is deliberately below the commonly documented free-tier daily cap."
     }
   ],
   "task_settings": {
