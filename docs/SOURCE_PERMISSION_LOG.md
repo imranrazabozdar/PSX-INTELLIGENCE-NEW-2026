@@ -65,3 +65,42 @@ Turso: token renewed, `SELECT 1` HTTP 200; no writes made by this pilot.
 | Independent verification | Turso query: APL/BAHL/DFML/PACE = 30 `1d` bars each; `market_bars` total 13,228 -> 13,348 |
 
 No `psx_dps` source row was created or modified (it pre-exists, restricted). No Referer or spoofed headers were sent.
+
+## PILOT-2026-11-09-04 — Investify public-page read test (OWNER OVERRIDE)
+
+- **Decision:** OWNER OVERRIDE, 2026-11-09, in-session. The `investify` source row is `RESTRICTED` / `prohibits_automation` / `permission_required` (terms reviewed 2026-11-07, `docs/INVESTIFY_SCS_TRADE_ASSESSMENT.md`, PR #6): automated access needs Investify's prior written permission. **No such permission exists.** The owner explicitly accepts the legal/terms risk, under the same risk-acceptance protocol as the SCS pilot, to test Investify's public pages for text-based announcement metadata.
+- **Scope:** read-only, public pages only; console output only; **no database writes** (Turso untouched); no `sources` row change (it stays RESTRICTED).
+- **Conditions:** honest User-Agent only — `Mozilla/5.0 (compatible; PSX-NEWS-INTELLIGENCE research bot, contact owner)`; no spoofed browser headers (no Sec-Fetch-*, no Referer); a browser-mimicking header set was proposed and **declined**; 4.5-9.5 s jitter before every request; robots.txt checked first and respected; no auth, no CAPTCHA/WAF bypass — on a block (403/429/503, CAPTCHA or challenge page) the script exits and reports it; hard cap of 3 requests per run.
+- **Code:** `backend/investify_pilot.py`, tests `backend/test_investify_pilot.py` (offline). Run locally by the owner; not run by the assistant (no network access to the host from the sandbox).
+- **Not an approval for collection:** stored data, scheduled collection or enabling the source would each need a separate decision.
+
+### Run record
+
+| Step | Status |
+|------|--------|
+| Override recorded | done |
+| Offline tests | 11/11 passed |
+| Live run | Run by the assistant in the sandbox at owner's request, 2026-11-09. `python backend/investify_pilot.py https://investify.pk/` -> robots.txt (404/allowed path) + 1 page GET, 2/3 requests, HTTP 200, 837,406 bytes, exit 0. No block, no CAPTCHA. Page lists homepage news plus a "Company Announcements" block (e.g. SSGC Annual Report 2026, OGDC corporate briefing recording link, EFU Life right-issue allotment, AGM notices). Console only: nothing stored, no DB writes. |
+| Network | `investify.pk` and `www.investify.pk` (redirect target) added to Default environment allowlist. A first attempt (exit 4) failed only at the sandbox proxy for the www host; it never reached Investify. |
+
+### Extension E1 to PILOT-2026-11-09-04 — structure probe (owner override, 2026-11-09)
+
+Owner authorised a read-only probe for the dedicated announcements page and its HTML structure. Same conditions (honest UA, 4.5-9.5 s jitter, robots.txt first, no bypass, console only, no DB writes). `backend/investify_pilot.py --probe`, 14 offline tests.
+
+- Homepage link finder initially picked an unrelated "See all" (`/tools#tax`); the homepage nav exposed `/announcements` ("Company filings"), which the owner had listed as a candidate path.
+- `https://www.investify.pk/announcements`: HTTP 200, server-rendered (~485 KB), title "Company Announcements | Investify", 30 results, no CAPTCHA/WAF block.
+- Requests to investify.pk / www.investify.pk this session: about 11 across 5 runs (each run: robots.txt + 1-2 pages; every request jittered). Nothing stored.
+- Findings for a future parser (cards = `div[data-announcement-row="true"]`): ticker in `a[href^="/company/<TICKER>/quote"]`; company name in the span `title` attribute; category chip span; timestamp in `<time datetime="2026-11-06T12:45:00.000Z">` (ISO, visible text is PKT); title in `h3 > a[href="/announcements/<TICKER>/dps-pdf-<id>"]`; summary in `p` (Investify-generated); "Original PDF" link to `https://dps.psx.com.pk/download/document|attachment/<id>.pdf`.
+- **Compliance flags (no action taken):** (1) the PDF links point at `dps.psx.com.pk`, a RESTRICTED / prohibits_automation source: they must not be fetched automatically; (2) Investify's summaries/highlights are its own derived content and its terms prohibit reuse; (3) the `investify` source row remains RESTRICTED and this override does not authorise storage or scheduled collection.
+
+### Ingestion approval I1 to PILOT-2026-11-09-04 — OWNER OVERRIDE for factual metadata (2026-11-09)
+
+- **Decision (owner, in-session):** authorises storing facts-only rows extracted from Investify's public announcements page into Turso `source_items`, overriding the `investify` source's `prohibits_automation` flag **for this specific script only**. The owner's stated basis is that only public facts are stored (ticker, timestamp, category, title, PSX filing id) and Investify's summaries/sentiment are dropped; this is the owner's risk acceptance, **not a legal determination by the assistant**.
+- **Mapping approved as designed** (`docs/INVESTIFY_ANNOUNCEMENT_MAPPING.md`): `source_id='investify'`, `access_status='restricted'`, `retrieval_method='html'`, `external_id='psx_filing:<psx_id>'`, `document_type='announcement'`, `permitted_excerpt` and `content_location` NULL; `INSERT OR IGNORE`; append-only `source_item_versions` (v1 on insert, next version on a changed hash).
+- **Company links:** none forced. Tickers outside the 51-company master (e.g. TPLP, CTM) are stored unlinked; master expansion is a separate, planned step.
+- **Unchanged limits:** the source row stays RESTRICTED/disabled and is not modified; PDFs and linked pages are never fetched (manual ingester only); honest UA, 4.5-9.5 s jitter, robots.txt, hard exit on CAPTCHA/WAF; <=2 requests per run; <=60 rows per run (Turso free-tier guard); no scheduled collection authorised.
+- **Code:** `backend/investify_ingester.py` (`--dry-run`, `--live`, `--html-file`), tests `backend/test_investify_ingester.py`.
+- **Verification so far (no writes to Turso):** 40/40 offline tests incl. duplicate rejection and changed-title versioning; read-only dry-run against live Turso with the offline fixture: 2 would-insert, 0 duplicates; 0 `investify` rows exist in Turso. No Investify requests made for this step.
+- **Live ingest: RUN 2026-11-09** (`python backend/investify_ingester.py --live`): 2 requests to Investify (robots.txt + `/announcements`), HTTP 200, no block. Parsed **21** announcements; **21 rows inserted** into Turso `source_items` (480 total, was 459) with 21 `source_item_versions` v1 rows; `collector_runs.run_id=39` (job `investify_announcements`). No constraint or budget errors. Verified by query: 21 unique `psx_filing:` ids, all `retrieval_method='html'`, `access_status='restricted'`, no excerpts, no `content_location`; timestamps 2026-11-06T10:48Z..12:45Z; 4 of 21 tickers resolve to the 51-company master, the rest stored unlinked.
+- **Run-record correction:** the first run wrote `items_accepted=0` because the before/after row count was unreliable over Turso's HTTP connection (data itself was correct). The run row was corrected to 21 by the assistant and the code now counts by `collection_run_id`.
+- **Open point:** the page showed ~25 candidate cards in the earlier structure probe but 21 parsed; cause not yet determined (skipped cards or non-card `<time>` elements). No data was guessed for skipped cards.
