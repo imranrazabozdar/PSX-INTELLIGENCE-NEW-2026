@@ -55,3 +55,6 @@ Thumbs.db
 # Backtest results (too large for GitHub)
 backend/*backtest*.csv
 backend/tools/cloudflared.exe
+
+# Document vault (binary source documents; never committed)
+psx_document_vault/
