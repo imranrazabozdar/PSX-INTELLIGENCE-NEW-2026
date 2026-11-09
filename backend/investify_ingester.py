@@ -70,7 +70,6 @@ def ingest(conn, items, http_requests=0, now=None):
     run_id = conn.execute(
         "INSERT INTO collector_runs(job,source_id,started_at_utc,status,http_requests,log_reference) VALUES(?,?,?,?,?,?)",
         (JOB, parser.SOURCE_ID, stamp, "running", http_requests, pilot.APPROVAL_ID)).lastrowid
-    before = _count(conn)
     cols = None
     batch = []
     for it in p["new"]:
@@ -79,7 +78,9 @@ def ingest(conn, items, http_requests=0, now=None):
         batch.append([row[c] for c in cols])
     if batch:
         conn.executemany(f"INSERT OR IGNORE INTO source_items({','.join(cols)}) VALUES({','.join('?' * len(cols))})", batch)
-    inserted = _count(conn) - before
+    # count by run id (a before/after COUNT(*) is unreliable over Turso's HTTP connection)
+    inserted = _v(conn.execute("SELECT COUNT(*) AS n FROM source_items WHERE source_id=? AND collection_run_id=?",
+                               (parser.SOURCE_ID, run_id)).fetchone(), "n")
     # version 1 for each newly inserted item, appended; a changed hash appends the next version
     for it in p["new"]:
         row = parser.to_source_item(it, stamp, run_id)
