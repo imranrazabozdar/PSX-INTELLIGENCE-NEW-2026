@@ -32,7 +32,7 @@ Controlled synthetic sample (hand-labelled; `tests/fixtures/eval_sample.json`) a
 |---|---|---|
 | Dedup precision / recall | 1.00 / 0.83 (misses the reworded pair) | - |
 | Stored headlines / exact duplicates | - | 407 / 19 (4.7%); 2 near-duplicate pairs reported |
-| Duplicates among relevance-passing items | - | see report (`relevant_duplicate_*`) |
+| Duplicates among relevance-passing items (would otherwise cost model calls) | - | 5 of 52 = 9.6% (5 model calls avoidable if all were extracted) |
 | Candidates / headline-only | - | 15 / 15 |
 | Grounded-quote rate (re-verified against the stored headline) | validator agreement 8/8, 0 false accepts | 5/5 = 1.00; candidates with a quote 5/15 = 0.33 |
 | Inferences containing digits | rejected by validator | 0 of 1 |
