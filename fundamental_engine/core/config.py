@@ -14,3 +14,7 @@ def env(name, default=None):
 
 def kill_switch_on():
     return env("LLM_KILL_SWITCH", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+# Honest, identifying client string for any automated fetch (never a browser look-alike).
+USER_AGENT = "Mozilla/5.0 (compatible; PSX-NEWS-INTELLIGENCE research bot, contact owner)"

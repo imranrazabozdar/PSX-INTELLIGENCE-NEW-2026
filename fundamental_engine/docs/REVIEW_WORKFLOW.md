@@ -35,3 +35,10 @@ All 5 are non-market headlines from the first test run.
 ## Approvals (owner, 2026-11-09)
 Approved: apply migration 0011; the accept mapping above; reviewer name `Imran Raza`; `apply` with mandatory `--confirm`.
 Decisions on the 5 stored candidates are NOT made by the assistant; they await the reviewer's calls.
+
+## Execution log (2026-11-09)
+- **Migration 0011 applied to production Turso** (via `core.migrate`, one statement per request): `extraction_reviews`, `ix_extraction_reviews_extraction`, two append-only triggers, `v_review_queue`; `schema_migrations` version 11 recorded. 56 -> 57 tables; no other table touched.
+- **First prefiltered production run** (`run_extraction.py --task news_event_extraction --limit 10 --live`, prefilter `relevance@v2`): scanned 300 pending items, skipped 185, sent 10 headlines. All 10 answered by Groq `openai/gpt-oss-20b` on the first attempt (no fallback needed); 15 Groq calls total to date (5,634 input / 1,453 output tokens, cost 0). 10 new candidates stored (queue now 15), all `needs_human_review=1`; `events`, `event_evidence`, `extraction_reviews` still empty. Independent re-check of the 10: 0 ungrounded quotes, 0 digits in inferences.
+- Yield on headline-only input is low: 3 of the 10 candidates have a grounded quote, 0 have inferences, 0 resolved a company ticker.
+- Observed waste: the same wire story appears in two feeds (e.g. "Gold rises over 1% as softer oil prices ease inflation worries" in `brecorder` and `brecorder_markets`; "China's factory-gate inflation ..." likewise) and each copy was sent to the model. A cross-source normalised-title cache would avoid the second call.
+- No review decisions have been made. Reviewer of record: Imran Raza (decisions to be given by the reviewer).

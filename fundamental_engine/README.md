@@ -14,7 +14,10 @@ whether the market has priced it in. Event-centered schema, provenance on every 
 | `core/` | `db.py` (Turso HTTP + SQLite, same interface), `config.py`, `migrate.py`, `watchlist.py` | Phase 0 done |
 | `llm/` | `router.py`, `providers.py`, `budget.py`, `validate.py` | Phase 1 done (no live provider wired) |
 | `extract/` | prompt + JSON-schema registry (`prompts/`, `schemas/`), `claims.py` | Phase 1 done |
-| `sources/` `events/` `exposure/` `calc/` `market/` `app/` | module boundaries reserved | later phases |
+| `extract/` also: `dedup.py`, `entities.py`, `evaluate.py` | de-duplication, entity resolution, evaluation | see `docs/EXTRACTION_QUALITY.md` |
+| `sources/acquire.py` | permission-gated content acquisition (zero eligible sources today) | framework only |
+| `review/` | candidate review queue + confirmed apply | see `docs/REVIEW_WORKFLOW.md` |
+| `events/` `exposure/` `calc/` `market/` `app/` | module boundaries reserved | later phases |
 | `scripts/` | `init_watchlist.py`, `regulator_review_tracking.py` (dry-run by default) | |
 | `docs/` | `REGULATOR_TERMS_REVIEW.md`, `LLM_PROVIDERS.md` | |
 
