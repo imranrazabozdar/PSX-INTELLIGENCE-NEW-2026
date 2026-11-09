@@ -158,6 +158,61 @@ def test_reject_and_needs_more_evidence_write_only_a_decision(rv):
     assert rv.execute("select count(*) n from events").one()["n"] == 0
 
 
-def test_cli_cannot_write():
+# ------------------------------------------------------------------ runner (apply with --confirm)
+from review import runner
+
+
+def test_default_reviewer_is_imran_raza():
+    assert runner.DEFAULT_REVIEWER == "Imran Raza"
+
+
+def test_nothing_written_without_confirm(rv):
+    ex = candidate(rv)
+    r = runner.decide(rv, ex, "accept", "headline matches the source")
+    assert r["applied"] is False and "plan only" in r["message"]
+    assert [rv.execute(f"select count(*) n from {t}").one()["n"] for t in ("events", "event_evidence", "extraction_reviews")] == [0, 0, 0]
+
+
+def test_confirm_applies_atomically_with_default_reviewer(rv):
+    ex = candidate(rv)
+    assert runner.decide(rv, ex, "accept", "headline matches the source", confirm=True)["applied"] is True
+    assert rv.execute("select reviewer from extraction_reviews").one()["reviewer"] == "Imran Raza"
+    assert rv.execute("select recorded_by from event_evidence").one()["recorded_by"] == "Imran Raza"
+    assert rv.execute("select changed_by from event_revisions").one()["changed_by"] == "Imran Raza"
+
+
+def test_cannot_decide_twice_or_on_unknown_candidate(rv):
+    ex = candidate(rv)
+    runner.decide(rv, ex, "reject", "not relevant", confirm=True)
+    with pytest.raises(runner.RunnerError, match="not awaiting review"):
+        runner.decide(rv, ex, "accept", "changed my mind", confirm=True)
+    with pytest.raises(runner.RunnerError, match="not awaiting review"):
+        runner.decide(rv, 9999, "reject", "x", confirm=True)
+    assert rv.execute("select count(*) n from events").one()["n"] == 0
+
+
+def test_needs_more_evidence_can_be_decided_again(rv):
+    ex = candidate(rv)
+    runner.decide(rv, ex, "needs_more_evidence", "check the filing", confirm=True)
+    runner.decide(rv, ex, "accept", "filing confirms", confirm=True)
+    assert rv.execute("select count(*) n from extraction_reviews").one()["n"] == 2 and rv.execute("select count(*) n from events").one()["n"] == 1
+
+
+def test_refuses_without_migration(db):
+    add_source(db, "news", stype="news_media"); add_company(db, "OGDC")
+    ex = candidate(db)
+    with pytest.raises(runner.RunnerError, match="migration 0011"):
+        runner.decide(db, ex, "reject", "x", confirm=True)
+
+
+def test_runner_still_enforces_grounded_quote_and_notes(rv):
+    ex = candidate(rv, NO_QUOTE, title="Pindi courts acquit most accused", ext="z")
+    with pytest.raises(accept.ReviewError, match="no grounded quote"):
+        runner.decide(rv, ex, "accept", "ok", confirm=True)
+    with pytest.raises(accept.ReviewError, match="notes"):
+        runner.decide(rv, candidate(rv), "reject", "  ", confirm=True)
+
+
+def test_cli_writes_only_through_confirmed_runner():
     src = open(__import__("pathlib").Path(__file__).resolve().parent.parent / "scripts" / "review_queue.py").read()
-    assert "apply_plan" not in src and "INSERT" not in src
+    assert "apply_plan" not in src and "INSERT" not in src and 'confirm="--confirm" in a' in src

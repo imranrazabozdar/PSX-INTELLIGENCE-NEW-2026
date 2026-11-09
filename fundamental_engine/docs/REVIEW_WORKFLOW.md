@@ -24,15 +24,14 @@ Accept mapping (all enforced in `review/accept.py` and by the schema's triggers)
 - **model inferences never become evidence or part of the event**; a candidate without a grounded quote cannot be accepted
 - company links cannot be `accepted` from here (the schema requires a confirmed exposure candidate): that is a later workflow
 
-## Tooling (read-only / plan-only)
+## Tooling
 `python fundamental_engine/scripts/review_queue.py list | show ID | plan ID --decision ... --reviewer ... --notes ...`
-`plan` prints the exact statements an approved apply step would run. The CLI contains no write path; `review.accept.apply_plan` is exercised only by tests.
+`plan` prints the exact statements. `apply ID --decision ... --notes "..." [--rationale TICKER=text] --confirm` runs ONE decision atomically (`review/runner.py`): nothing is written without `--confirm`; the candidate must still be pending (no double decisions; needs_more_evidence can be decided again); migration 0011 must exist. Default reviewer: **Imran Raza** (owner-named). The tool never decides anything by itself: every decision is a person's call, passed in by that person.
 
 ## State today (live Turso, read-only)
 5 candidates: #1, #2, #5 have no claims (not reviewable: would be rejected/closed), #3 and #4 have one grounded `news_report` quote each (#4 also one inference).
 All 5 are non-market headlines from the first test run.
 
-## Approvals needed before any write
-1. Apply migration 0011 to Turso.
-2. Confirm the accept mapping above (especially headline = source title, no summary, `single_source`, evidence `unverified`).
-3. Name the reviewer(s), and approve an `apply` command (with explicit `--confirm`) in the CLI.
+## Approvals (owner, 2026-11-09)
+Approved: apply migration 0011; the accept mapping above; reviewer name `Imran Raza`; `apply` with mandatory `--confirm`.
+Decisions on the 5 stored candidates are NOT made by the assistant; they await the reviewer's calls.
