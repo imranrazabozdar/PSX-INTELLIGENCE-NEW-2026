@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["statement", "unit_text", "items", "confidence_band"],
+  "properties": {
+    "statement": {"enum": ["income_statement", "balance_sheet", "cash_flow", "notes", "other"]},
+    "unit_text": {"type": "string", "maxLength": 80},
+    "items": {"type": "array", "maxItems": 40, "items": {
+      "type": "object", "additionalProperties": false, "required": ["label", "period", "value"],
+      "properties": {"label": {"type": "string", "maxLength": 200}, "period": {"type": "string", "maxLength": 80},
+                     "value": {"type": "string", "maxLength": 40}}}},
+    "confidence_band": {"enum": ["low", "medium", "high"]}
+  }
+}

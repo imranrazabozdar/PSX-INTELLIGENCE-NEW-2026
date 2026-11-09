@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_type", "tickers", "claims", "confidence_band"],
+  "properties": {
+    "event_type": {"enum": ["corporate_action","dividend","financial_results","governance_meeting","trading_activity","policy_regulation","macro_commodity","other"]},
+    "tickers": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 16}},
+    "claims": {"type": "array", "maxItems": 10, "items": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "text"],
+      "properties": {"kind": {"enum": ["quote", "inference"]}, "text": {"type": "string", "maxLength": 400}}}},
+    "confidence_band": {"enum": ["low", "medium", "high"]}
+  }
+}

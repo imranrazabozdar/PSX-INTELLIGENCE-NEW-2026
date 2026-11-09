@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "_notes": [
+    "NO secrets here: api_key_env names an environment variable; the key itself lives only in the environment / host secret store.",
+    "Every provider ships DISABLED. A provider may only be used in production when enabled=true AND terms_reviewed_utc is set AND model_verified=true.",
+    "base_url values are the providers' documented OpenAI-compatible endpoints; model ids and free-tier limits change often and MUST be verified against the provider's current docs/terms before enabling (record the date in terms_reviewed_utc and docs/LLM_PROVIDERS.md).",
+    "max_calls_per_day / max_tokens_per_day are OUR conservative self-imposed caps (counted from llm_calls), not the provider's published limits.",
+    "Only content from verified_permitted sources may be sent to any provider (llm/router.py eligibility gate).",
+    "Rollout order (owner, contingent on verification + terms review + secure credential injection): 1 groq, 2 gemini, 3 openrouter.",
+    "A provider with a 'models' list expands to one route per usable model, in order (fallback within the provider); each model needs its own verified=true and enabled=true. Budgets are shared per provider; cooldowns are per provider/model route."
+  ],
+  "tasks": {
+    "news_event_extraction": [
+      "groq",
+      "openrouter"
+    ],
+    "long_document_extraction": [
+      "gemini",
+      "openrouter"
+    ],
+    "financial_line_items": [
+      "gemini"
+    ]
+  },
+  "providers": [
+    {
+      "name": "groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key_env": "GROQ_API_KEY",
+      "model": "openai/gpt-oss-20b",
+      "model_verified": true,
+      "enabled": true,
+      "terms_reviewed_utc": "2026-11-09",
+      "json_mode": true,
+      "timeout_s": 60,
+      "max_output_tokens": 2000,
+      "max_calls_per_day": 100,
+      "max_tokens_per_day": 150000,
+      "max_attempts_per_item": 2,
+      "extra_headers": {},
+      "data_use_notes": "owner attested terms review on 2026-11-09; send only public text from verified_permitted sources",
+      "terms_reviewed_by": "owner attestation (not an assistant review)",
+      "model_verified_note": "id confirmed present on the owner's account via GET /models on 2026-11-09 (llama-3.3-70b-versatile and llama-3.1-8b-instant are NOT available there); gpt-oss is a reasoning model: hidden reasoning tokens count against max_output_tokens, so 800 caused empty generations (json_validate_failed) - raised to 2000 with reasoning_effort=low",
+      "extra_body": {
+        "reasoning_effort": "low"
+      }
+    },
+    {
+      "name": "gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "api_key_env": "GEMINI_API_KEY",
+      "model": "gemini-2.0-flash",
+      "model_verified": false,
+      "enabled": false,
+      "terms_reviewed_utc": null,
+      "json_mode": true,
+      "timeout_s": 60,
+      "max_output_tokens": 800,
+      "max_calls_per_day": 100,
+      "max_tokens_per_day": 150000,
+      "max_attempts_per_item": 2,
+      "extra_headers": {},
+      "data_use_notes": "unreviewed: free-tier terms commonly allow use of prompts to improve products; verify before use"
+    },
+    {
+      "name": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "model": "meta-llama/llama-3.3-70b-instruct:free",
+      "model_verified": false,
+      "enabled": false,
+      "terms_reviewed_utc": null,
+      "json_mode": false,
+      "timeout_s": 90,
+      "max_output_tokens": 800,
+      "max_calls_per_day": 50,
+      "max_tokens_per_day": 100000,
+      "max_attempts_per_item": 2,
+      "extra_headers": {
+        "X-Title": "PSX Fundamental Engine"
+      },
+      "data_use_notes": "unreviewed: free routes may be served by third parties with their own logging/training policies; verify per model",
+      "models": [
+        {
+          "id": "meta-llama/llama-3.3-70b-instruct:free",
+          "verified": false,
+          "enabled": false
+        }
+      ]
+    }
+  ],
+  "task_settings": {
+    "news_event_extraction": {
+      "batch_limit_default": 10
+    },
+    "long_document_extraction": {
+      "max_chars": 20000,
+      "overlap_chars": 500,
+      "max_chunks_per_run": 5
+    },
+    "financial_line_items": {
+      "max_chars": 20000,
+      "overlap_chars": 500,
+      "max_chunks_per_run": 5
+    }
+  }
+}
