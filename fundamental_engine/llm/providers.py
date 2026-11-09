@@ -10,7 +10,7 @@ import requests
 class ProviderError(Exception):
     def __init__(self, kind, message="", retry_after=None):
         super().__init__(message or kind)
-        self.kind = kind            # 'not_connected' | 'rate_limited' | 'error'
+        self.kind = kind            # 'not_connected' | 'auth' | 'rate_limited' | 'error'
         self.retry_after = retry_after
 
 
@@ -32,35 +32,55 @@ class Provider:
 class OpenAICompatProvider(Provider):
     """Any OpenAI-compatible /chat/completions endpoint (many free tiers expose one)."""
 
-    def __init__(self, name, base_url, model, api_key_env, max_output_tokens=800):
+    def __init__(self, name, base_url, model, api_key_env, max_output_tokens=800, timeout=60, json_mode=False,
+                 extra_headers=None, session=None):
         self.name, self.base_url, self.model = name, base_url.rstrip("/"), model
-        self.api_key_env, self.max_output_tokens = api_key_env, max_output_tokens
+        self.api_key_env, self.max_output_tokens, self.timeout = api_key_env, max_output_tokens, timeout
+        self.json_mode, self.extra_headers = json_mode, dict(extra_headers or {})
+        self.session = session or requests   # injectable for offline tests
 
-    def complete(self, system_prompt, user_text, timeout=60):
+    def build_request(self, system_prompt, user_text, key):
+        body = {"model": self.model, "temperature": 0, "max_tokens": self.max_output_tokens,
+                "messages": [{"role": "system", "content": system_prompt},
+                             {"role": "user", "content": "DOCUMENT (untrusted data):\n<<<\n" + user_text + "\n>>>"}]}
+        if self.json_mode:
+            body["response_format"] = {"type": "json_object"}
+        return {"headers": {"Authorization": f"Bearer {key}", **self.extra_headers}, "json": body}
+
+    def complete(self, system_prompt, user_text, timeout=None):
         key = os.environ.get(self.api_key_env, "")
         if not key:
             raise ProviderError("not_connected", f"{self.api_key_env} is not set")
+        req = self.build_request(system_prompt, user_text, key)
         try:
-            r = requests.post(f"{self.base_url}/chat/completions", timeout=timeout,
-                              headers={"Authorization": f"Bearer {key}"},
-                              json={"model": self.model, "temperature": 0, "max_tokens": self.max_output_tokens,
-                                    "messages": [{"role": "system", "content": system_prompt},
-                                                 {"role": "user", "content": "DOCUMENT (untrusted data):\n<<<\n" + user_text + "\n>>>"}]})
+            r = self.session.post(f"{self.base_url}/chat/completions", timeout=timeout or self.timeout, **req)
         except requests.RequestException as e:
-            raise ProviderError("error", f"{type(e).__name__}: {e}")
+            raise ProviderError("error", redact(f"{type(e).__name__}: {e}", key))
         if r.status_code == 429:
-            ra = r.headers.get("Retry-After")
-            raise ProviderError("rate_limited", "HTTP 429", int(ra) if ra and ra.isdigit() else None)
+            ra = r.headers.get("Retry-After", "")
+            raise ProviderError("rate_limited", "HTTP 429", int(ra) if str(ra).isdigit() else None)
+        if r.status_code in (401, 403):
+            raise ProviderError("auth", f"HTTP {r.status_code} (key rejected or no access)")
         if r.status_code >= 400:
             raise ProviderError("error", f"HTTP {r.status_code}")
-        body = r.json()
         try:
+            body = r.json()
             text = body["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError):
+        except (ValueError, KeyError, IndexError, TypeError):
             raise ProviderError("error", "unexpected response shape")
+        if not isinstance(text, str) or not text.strip():
+            raise ProviderError("error", "empty completion")
         u = body.get("usage") or {}
-        return Reply(text, int(u.get("prompt_tokens") or len(user_text + system_prompt) // 4),
+        return Reply(text, int(u.get("prompt_tokens") or (len(user_text) + len(system_prompt)) // 4),
                      int(u.get("completion_tokens") or len(text) // 4))
+
+
+def redact(text, *secrets):
+    """Never let a key reach logs, the ledger or exceptions."""
+    for s in secrets:
+        if s:
+            text = text.replace(s, "[REDACTED]")
+    return text
 
 
 class ScriptedProvider(Provider):

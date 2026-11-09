@@ -3,6 +3,7 @@
 """
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 
 from core.config import LLM_ELIGIBLE_ACCESS_STATUS
@@ -25,12 +26,19 @@ def sha(text):
 
 
 class Router:
-    def __init__(self, db, providers, budgets=None, spec=registry.EVENT_CANDIDATE, now=_now):
+    def __init__(self, db, providers, budgets=None, spec=registry.EVENT_CANDIDATE, now=_now, mono=time.monotonic):
         """providers: ordered list (primary first). budgets: {provider_name: Budget}."""
-        self.db, self.providers, self.spec, self.now = db, providers, spec, now
+        self.db, self.providers, self.spec, self.now, self.mono = db, providers, spec, now, mono
+        self.cooldown_until = {}   # provider name -> monotonic time; set after a rate limit, never hammer a limited provider
         self.budgets = budgets or {}
         self.prompt, self.prompt_sha = registry.load_prompt(spec["prompt_id"], spec["prompt_version"])
         self.schema = registry.load_schema(spec["schema_id"], spec["schema_version"])
+
+    @classmethod
+    def from_config(cls, db, task="extraction", path=None, require_review=True, **kw):
+        from llm import config as cfg
+        providers, budgets = cfg.build(task, path or cfg.DEFAULT_PATH, require_review)
+        return cls(db, providers, budgets, **kw)
 
     # ------------------------------------------------------------ ledger
     def _log(self, provider, model, input_sha, outcome, in_tok=0, out_tok=0, attempts=1, error=None):
@@ -70,6 +78,9 @@ class Router:
         # 3-5. providers in order
         last = {"outcome": "not_connected", "detail": "no provider available"}
         for prov in self.providers:
+            if self.cooldown_until.get(prov.name, 0) > self.mono():
+                last = {"outcome": "rate_limited", "provider": prov.name, "detail": "cooling down"}
+                continue
             b = self.budgets.get(prov.name, bud.Budget())
             ok, why = bud.allowed(self.db, prov.name, b, est_tokens=(len(text) + len(self.prompt)) // 4, now=None)
             if not ok:
@@ -82,8 +93,10 @@ class Router:
                 try:
                     reply = prov.complete(self.prompt, text)
                 except ProviderError as e:
-                    outcome = "not_connected" if e.kind == "not_connected" else "error"
-                    self._log(prov.name, prov.model, in_sha, outcome, attempts=attempt, error=f"{e.kind}: {e}")
+                    outcome = "not_connected" if e.kind in ("not_connected", "auth") else "error"
+                    if e.kind == "rate_limited":
+                        self.cooldown_until[prov.name] = self.mono() + (e.retry_after or 60)
+                    self._log(prov.name, prov.model, in_sha, outcome, attempts=attempt, error=f"{e.kind}: {e}"[:300])
                     last = {"outcome": outcome, "provider": prov.name, "detail": str(e)}
                     break  # next provider (never hammer a provider that is rate limiting or down)
                 try:

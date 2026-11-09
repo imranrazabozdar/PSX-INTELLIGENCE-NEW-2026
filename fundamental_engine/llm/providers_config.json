@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "_notes": [
+    "NO secrets here: api_key_env names an environment variable; the key itself lives only in the environment / host secret store.",
+    "Every provider ships DISABLED. A provider may only be used in production when enabled=true AND terms_reviewed_utc is set AND model_verified=true.",
+    "base_url values are the providers' documented OpenAI-compatible endpoints; model ids and free-tier limits change often and MUST be verified against the provider's current docs/terms before enabling (record the date in terms_reviewed_utc and docs/LLM_PROVIDERS.md).",
+    "max_calls_per_day / max_tokens_per_day are OUR conservative self-imposed caps (counted from llm_calls), not the provider's published limits.",
+    "Only content from verified_permitted sources may be sent to any provider (llm/router.py eligibility gate)."
+  ],
+  "tasks": {
+    "extraction": ["groq", "gemini", "openrouter"]
+  },
+  "providers": [
+    {
+      "name": "groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key_env": "GROQ_API_KEY",
+      "model": "llama-3.3-70b-versatile",
+      "model_verified": false,
+      "enabled": false,
+      "terms_reviewed_utc": null,
+      "json_mode": true,
+      "timeout_s": 60,
+      "max_output_tokens": 800,
+      "max_calls_per_day": 100,
+      "max_tokens_per_day": 150000,
+      "max_attempts_per_item": 2,
+      "extra_headers": {},
+      "data_use_notes": "unreviewed: check whether prompts are logged or used for training before sending any text"
+    },
+    {
+      "name": "gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "api_key_env": "GEMINI_API_KEY",
+      "model": "gemini-2.0-flash",
+      "model_verified": false,
+      "enabled": false,
+      "terms_reviewed_utc": null,
+      "json_mode": true,
+      "timeout_s": 60,
+      "max_output_tokens": 800,
+      "max_calls_per_day": 100,
+      "max_tokens_per_day": 150000,
+      "max_attempts_per_item": 2,
+      "extra_headers": {},
+      "data_use_notes": "unreviewed: free-tier terms commonly allow use of prompts to improve products; verify before use"
+    },
+    {
+      "name": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "model": "meta-llama/llama-3.3-70b-instruct:free",
+      "model_verified": false,
+      "enabled": false,
+      "terms_reviewed_utc": null,
+      "json_mode": false,
+      "timeout_s": 90,
+      "max_output_tokens": 800,
+      "max_calls_per_day": 50,
+      "max_tokens_per_day": 100000,
+      "max_attempts_per_item": 2,
+      "extra_headers": {"X-Title": "PSX Fundamental Engine"},
+      "data_use_notes": "unreviewed: free routes may be served by third parties with their own logging/training policies; verify per model"
+    }
+  ]
+}
