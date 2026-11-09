@@ -1,9 +1,10 @@
-"""PILOT-2026-11-09-02: capped, polite OHLCV fetch from dps.psx.com.pk into market_bars.
+"""PILOT-2026-11-09-02: capped, polite OHLCV fetch from dps.psx.com.pk into daily_ohlc.
 
 Usage: python -m backend.ohlcv_pilot --dry-run | --live
 Dry run touches neither network nor database.
 """
 import argparse
+import sqlite3
 import random
 import sys
 import time
@@ -24,11 +25,8 @@ USER_AGENT = "PSX-NEWS-INTELLIGENCE research bot, contact owner"
 EXCHANGE_DELAY = timedelta(minutes=15)
 PKT = timezone(timedelta(hours=5))
 
-SCHEMA = """CREATE TABLE IF NOT EXISTS market_bars(
-    symbol TEXT NOT NULL, date TEXT NOT NULL,
-    open REAL, high REAL, low REAL, close REAL, volume REAL,
-    source TEXT, approval_id TEXT, fetched_at TEXT,
-    PRIMARY KEY(symbol, date))"""
+TABLE = "daily_ohlc"  # existing table: symbol, trade_date, o, h, l, c, volume, source
+SOURCE = "psx_dps"
 
 
 class RequestBudget:
@@ -58,23 +56,22 @@ def fetch_symbol(symbol, budget, session=None, timeout=20):
     return _parse_historical_table(resp.text, symbol)
 
 
-def ingest(conn, rows, fetched_at=None):
-    conn.execute(SCHEMA)
-    ts = fetched_at or datetime.now(timezone.utc).isoformat()
+def ingest(conn, rows):
+    """INSERT OR IGNORE into daily_ohlc: fills gaps, never overwrites existing rows."""
+    before = conn.execute("SELECT COUNT(*) FROM daily_ohlc").fetchone()[0]
     conn.executemany(
-        "INSERT OR REPLACE INTO market_bars(symbol,date,open,high,low,close,volume,"
-        "source,approval_id,fetched_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-        [(r["symbol"], r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"],
-          "dps.psx.com.pk", APPROVAL_ID, ts) for r in rows])
+        "INSERT OR IGNORE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)",
+        [(r["symbol"], r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"], SOURCE)
+         for r in rows])
     conn.commit()
-    return len(rows)
+    return conn.execute("SELECT COUNT(*) FROM daily_ohlc").fetchone()[0] - before
 
 
 def run(live, conn=None, sleep=time.sleep, rng=random.uniform):
     plan = [f"{APPROVAL_ID}: {len(SYMBOLS)} requests (cap {REQUEST_CAP}), jitter {JITTER_MIN}-{JITTER_MAX}s, UA={USER_AGENT!r}"]
     if not live:
         plan += [f"  would POST {DPS_HISTORICAL_URL} symbol={s}" for s in SYMBOLS]
-        plan.append("  would upsert into market_bars (dry run: no network, no DB)")
+        plan.append("  would upsert into daily_ohlc (dry run: no network, no DB)")
         print("\n".join(plan))
         return {"mode": "dry", "requests": 0, "rows": 0}
     budget, allrows = RequestBudget(), []
@@ -100,5 +97,9 @@ if __name__ == "__main__":
             from backend import turso_db
         except ImportError:
             import turso_db
+        if not turso_db.USING_TURSO:
+            sys.exit('refusing live run: Turso not configured (would write local SQLite)')
         c = turso_db.get_connection()
+        if isinstance(c, sqlite3.Connection):
+            sys.exit('refusing live run: Turso connection failed (local SQLite fallback)')
     print(run(a.live, c))

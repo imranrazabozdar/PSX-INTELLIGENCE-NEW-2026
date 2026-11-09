@@ -6,7 +6,7 @@ Record of explicit owner approvals for fetching data from external sources.
 
 - **Approved by:** repository owner (imranrazabozdar), in-session, 2026-11-09
 - **Source:** https://dps.psx.com.pk/historical (public PSX Data Portal page)
-- **Purpose:** fill missing daily OHLCV rows in `market_bars`
+- **Purpose:** fill missing daily OHLCV rows in `daily_ohlc`
 - **Symbols:** APL, BAHL, PACE, DFML
 - **Request cap:** 10 requests maximum (retries count against the cap)
 - **Jitter:** 3.5–8.5 s random delay between requests
@@ -22,5 +22,8 @@ Record of explicit owner approvals for fetching data from external sources.
 | Approval recorded | done |
 | Offline tests | 6/6 passed |
 | Dry run | done (0 requests, no DB) |
-| Live run | BLOCKED: sandbox proxy returns 403 for dps.psx.com.pk; 0 requests sent |
-| Ingest into `market_bars` | pending |
+| Live run | ATTEMPT 1 FAILED 2026-11-09: 1 POST to /historical (symbol APL) returned HTTP 404 with the research User-Agent; run aborted, 0 rows fetched. Run stopped pending owner decision. |
+| Ingest into `daily_ohlc` | NOT DONE: 0 rows. Turso handshake with a placeholder token returned HTTP 400 (local fallback blocked by guard). |
+
+Requests that reached dps.psx.com.pk this pilot: 2 (one robots.txt GET -> 404, one POST -> 404) of the 10 cap.
+Write path targets existing `daily_ohlc` (INSERT OR IGNORE, source `psx_dps`).

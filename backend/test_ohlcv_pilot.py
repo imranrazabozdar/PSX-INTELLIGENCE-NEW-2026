@@ -9,6 +9,9 @@ HTML = """<table id="historicalTable"><tbody>
 </tbody></table>"""
 
 
+DDL = "CREATE TABLE daily_ohlc(symbol TEXT, trade_date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL, source TEXT, PRIMARY KEY(symbol,trade_date))"
+
+
 class R:
     text = HTML
     def raise_for_status(self): pass
@@ -39,10 +42,10 @@ def test_drops_current_session():
 
 
 def test_ingest_idempotent():
-    c = sqlite3.connect(":memory:")
+    c = sqlite3.connect(":memory:"); c.execute(DDL)
     rows = p._parse_historical_table(HTML, "APL")
     p.ingest(c, rows); p.ingest(c, rows)
-    assert c.execute("select count(*) from market_bars").fetchone()[0] == 2
+    assert c.execute("select count(*) from daily_ohlc").fetchone()[0] == 2
 
 
 def test_dry_run_no_network(monkeypatch):
@@ -53,7 +56,7 @@ def test_dry_run_no_network(monkeypatch):
 def test_live_jitter_and_cap(monkeypatch):
     s = S(); monkeypatch.setattr(p.requests, "post", s.post)
     sleeps = []
-    c = sqlite3.connect(":memory:")
+    c = sqlite3.connect(":memory:"); c.execute(DDL)
     out = p.run(True, c, sleep=sleeps.append)
     assert out["requests"] == 4 and len(sleeps) == 3
     assert all(3.5 <= x <= 8.5 for x in sleeps)
