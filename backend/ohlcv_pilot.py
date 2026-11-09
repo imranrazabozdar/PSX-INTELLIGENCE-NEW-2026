@@ -25,8 +25,8 @@ USER_AGENT = "Mozilla/5.0 (compatible; PSX-NEWS-INTELLIGENCE research bot, conta
 EXCHANGE_DELAY = timedelta(minutes=15)
 PKT = timezone(timedelta(hours=5))
 
-TABLE = "daily_ohlc"  # existing table: symbol, trade_date, o, h, l, c, volume, source
-SOURCE = "psx_dps"
+SOURCE_ID = "psx_dps"
+TABLE = "market_bars"
 
 
 class RequestBudget:
@@ -56,22 +56,67 @@ def fetch_symbol(symbol, budget, session=None, timeout=20):
     return _parse_historical_table(resp.text, symbol)
 
 
-def ingest(conn, rows):
-    """INSERT OR IGNORE into daily_ohlc: fills gaps, never overwrites existing rows."""
-    before = conn.execute("SELECT COUNT(*) FROM daily_ohlc").fetchone()[0]
+def _utcnow():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ensure_source(conn):
+    """Use an existing psx_dps source row if present; otherwise create it DISABLED
+    (the scheduled collector must not pick it up; this is a one-off pilot)."""
+    if conn.execute("SELECT 1 FROM sources WHERE source_id=?", (SOURCE_ID,)).fetchone():
+        return False
+    now = _utcnow()
+    conn.execute(
+        "INSERT INTO sources(source_id,name,source_type,domain,official_url,feed_url,"
+        "reliability_tier,access_method,access_status,enabled,content_format,adapter,"
+        "category,subcategory,geographic_coverage,terms_status,lifecycle_status,notes,"
+        "created_at_utc,updated_at_utc) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (SOURCE_ID, "PSX Data Portal historical daily OHLCV", "exchange", "dps.psx.com.pk",
+         "https://dps.psx.com.pk/", "https://dps.psx.com.pk/historical", "primary_official",
+         "html_permitted", "unverified", 0, "html", "dps_historical", "market_data",
+         "PSX daily OHLCV (pilot)", "Pakistan", "not_reviewed", "APPROVED",
+         f"One-off owner-approved pilot {APPROVAL_ID}; kept disabled. See docs/SOURCE_PERMISSION_LOG.md.",
+         now, now))
+    return True
+
+
+def ingest(conn, rows, requests_made=0):
+    """INSERT OR IGNORE 1d bars into market_bars under one collector_runs row."""
+    ensure_source(conn)
+    started = _utcnow()
+    cur = conn.execute(
+        "INSERT INTO collector_runs(job,source_id,started_at_utc,status,http_requests,log_reference) "
+        "VALUES(?,?,?,?,?,?)", (APPROVAL_ID, SOURCE_ID, started, "running", requests_made, APPROVAL_ID))
+    run_id = cur.lastrowid
+    count = lambda: conn.execute("SELECT COUNT(*) AS n FROM market_bars WHERE source_id=?",
+                                 (SOURCE_ID,)).fetchone()
+    n0 = count(); n0 = n0["n"] if isinstance(n0, dict) else n0[0]
+    good, rejected = [], 0
+    for r in rows:
+        if not (r["low"] > 0 and r["high"] >= max(r["open"], r["close"], r["low"])
+                and r["low"] <= min(r["open"], r["close"]) and r["volume"] >= 0):
+            rejected += 1
+            continue
+        good.append((SOURCE_ID, r["symbol"], "1d", r["date"] + "T00:00:00Z", r["date"],
+                     r["open"], r["high"], r["low"], r["close"], r["volume"], started, run_id))
     conn.executemany(
-        "INSERT OR IGNORE INTO daily_ohlc VALUES(?,?,?,?,?,?,?,?)",
-        [(r["symbol"], r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"], SOURCE)
-         for r in rows])
+        "INSERT OR IGNORE INTO market_bars(source_id,symbol,timeframe,bar_start_utc,session_date_pkt,"
+        "open,high,low,close,volume,retrieved_at_utc,collection_run_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", good)
+    n1 = count(); n1 = n1["n"] if isinstance(n1, dict) else n1[0]
+    inserted = n1 - n0
+    conn.execute(
+        "UPDATE collector_runs SET finished_at_utc=?,status=?,items_fetched=?,items_accepted=?,"
+        "items_rejected=?,items_duplicate=? WHERE run_id=?",
+        (_utcnow(), "succeeded", len(rows), inserted, rejected, len(good) - inserted, run_id))
     conn.commit()
-    return conn.execute("SELECT COUNT(*) FROM daily_ohlc").fetchone()[0] - before
+    return inserted
 
 
 def run(live, conn=None, sleep=time.sleep, rng=random.uniform):
     plan = [f"{APPROVAL_ID}: {len(SYMBOLS)} requests (cap {REQUEST_CAP}), jitter {JITTER_MIN}-{JITTER_MAX}s, UA={USER_AGENT!r}"]
     if not live:
         plan += [f"  would POST {DPS_HISTORICAL_URL} symbol={s}" for s in SYMBOLS]
-        plan.append("  would upsert into daily_ohlc (dry run: no network, no DB)")
+        plan.append("  would INSERT OR IGNORE 1d bars into market_bars (dry run: no network, no DB)")
         print("\n".join(plan))
         return {"mode": "dry", "requests": 0, "rows": 0}
     budget, allrows = RequestBudget(), []
@@ -81,7 +126,7 @@ def run(live, conn=None, sleep=time.sleep, rng=random.uniform):
         rows = drop_undelayed(fetch_symbol(s, budget))
         print(f"{s}: {len(rows)} rows")
         allrows += rows
-    n = ingest(conn, allrows) if allrows else 0
+    n = ingest(conn, allrows, budget.used) if allrows else 0
     return {"mode": "live", "requests": budget.used, "rows": n}
 
 

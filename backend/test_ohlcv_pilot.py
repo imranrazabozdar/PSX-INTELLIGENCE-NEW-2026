@@ -9,7 +9,14 @@ HTML = """<table id="historicalTable"><tbody>
 </tbody></table>"""
 
 
-DDL = "CREATE TABLE daily_ohlc(symbol TEXT, trade_date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL, source TEXT, PRIMARY KEY(symbol,trade_date))"
+import os
+SCHEMA = open(os.path.join(os.path.dirname(__file__), "fixtures", "market_bars_schema.sql")).read()
+
+
+def db():
+    c = sqlite3.connect(":memory:"); c.row_factory = None
+    c.executescript(SCHEMA)
+    return c
 
 
 class R:
@@ -42,10 +49,26 @@ def test_drops_current_session():
 
 
 def test_ingest_idempotent():
-    c = sqlite3.connect(":memory:"); c.execute(DDL)
+    c = db()
     rows = p._parse_historical_table(HTML, "APL")
-    p.ingest(c, rows); p.ingest(c, rows)
-    assert c.execute("select count(*) from daily_ohlc").fetchone()[0] == 2
+    assert p.ingest(c, rows) == 2
+    assert p.ingest(c, rows) == 0  # OR IGNORE: no overwrite
+    assert c.execute("select count(*) from market_bars").fetchone()[0] == 2
+    assert c.execute("select count(*) from sources where source_id='psx_dps'").fetchone()[0] == 1
+    assert c.execute("select count(*) from collector_runs").fetchone()[0] == 2
+    r = c.execute("select timeframe,bar_start_utc,session_date_pkt,collection_run_id from market_bars order by 2 limit 1").fetchone()
+    assert r == ("1d", "2026-11-06T00:00:00Z", "2026-11-06", 1)
+
+
+def test_existing_source_reused_and_bars_not_overwritten():
+    c = db()
+    p.ensure_source(c)
+    rows = p._parse_historical_table(HTML, "APL")
+    p.ingest(c, rows)
+    c.execute("update market_bars set close=1.1 where session_date_pkt='2026-11-06'")
+    p.ingest(c, rows)
+    assert c.execute("select count(*) from sources").fetchone()[0] == 1
+    assert c.execute("select close from market_bars where session_date_pkt='2026-11-06'").fetchone()[0] == 1.1
 
 
 def test_dry_run_no_network(monkeypatch):
@@ -56,7 +79,7 @@ def test_dry_run_no_network(monkeypatch):
 def test_live_jitter_and_cap(monkeypatch):
     s = S(); monkeypatch.setattr(p.requests, "post", s.post)
     sleeps = []
-    c = sqlite3.connect(":memory:"); c.execute(DDL)
+    c = db()
     out = p.run(True, c, sleep=sleeps.append)
     assert out["requests"] == 4 and len(sleeps) == 3
     assert all(3.5 <= x <= 8.5 for x in sleeps)

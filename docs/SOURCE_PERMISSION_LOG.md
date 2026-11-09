@@ -23,15 +23,19 @@ All other parameters unchanged (4 symbols, cap 10, jitter 3.5-8.5 s). Turso toke
 
 Finding: production Turso has no `daily_ohlc`; the real table is `market_bars` (13,228 rows, strict schema). Ingest target pending owner confirmation.
 
+### Decision D1 (owner, 2026-11-09): ingest target
+
+Ingest into existing `market_bars` (`timeframe='1d'`, `bar_start_utc` = `YYYY-MM-DDT00:00:00Z`, `INSERT OR IGNORE`), reuse an existing `psx_dps` source row or create one (disabled), and one `collector_runs` row linked to every inserted bar. No `psx_dps`/DPS source existed at 2026-11-09 (only `scs_chart`).
+
 ### Run record
 
 | Step | Status |
 |------|--------|
 | Approval recorded | done |
-| Offline tests | 6/6 passed |
+| Offline tests (real-schema copy, `backend/fixtures/market_bars_schema.sql`) | 7/7 passed |
 | Dry run | done (0 requests, no DB) |
-| Live run | ATTEMPT 1 FAILED 2026-11-09: 1 POST to /historical (symbol APL) returned HTTP 404 with the research User-Agent; run aborted, 0 rows fetched. Run stopped pending owner decision. |
-| Ingest into `daily_ohlc` | NOT DONE: 0 rows. Turso handshake with a placeholder token returned HTTP 400 (local fallback blocked by guard). |
+| Live run | NOT COMPLETED. Attempt 1 and 2 (original and amended UA): `POST /historical` `{symbol,date}` -> HTTP 404. Diagnosis: the portal page now posts `{month,year,symbol}` and adds an `X-Req-Id` header produced by the page's JavaScript. Not replicated (would imitate the site's bot-detection; outside approval). |
+| Ingest into `market_bars` | NOT DONE: 0 rows inserted, no `sources` or `collector_runs` rows created. |
 
-Requests that reached dps.psx.com.pk this pilot: 2 (one robots.txt GET -> 404, one POST -> 404) of the 10 cap.
-Write path targets existing `daily_ohlc` (INSERT OR IGNORE, source `psx_dps`).
+Requests that reached dps.psx.com.pk: 5 of 10 (robots.txt GET 404, POST 404 x2, GET /historical 200, GET /static/script.js 200).
+Turso: token renewed, `SELECT 1` HTTP 200; no writes made by this pilot.
