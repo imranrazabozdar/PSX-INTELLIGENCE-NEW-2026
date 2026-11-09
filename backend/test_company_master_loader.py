@@ -48,9 +48,57 @@ def test_rejects_bad_records_and_dupes():
     assert [c["ticker"] for c in p["new"]] == ["CCC"] and p["duplicate_in_file"] == ["CCC"] and len(p["rejected"]) == 3
 
 
-def test_overlaps_never_in_write_estimate_and_no_write_path():
+def test_overlaps_never_in_write_estimate():
     est = m.row_estimate(m.plan(SAMPLE, EXISTING))
     assert est["companies"] == 1 and est["company_aliases(ticker+legal_name)"] == 2
-    src = open(m.__file__).read().lower()
-    for bad in ("insert into", "executemany", "conn.commit", "update companies", "delete from"):
-        assert bad not in src
+
+
+import os
+import sqlite3
+FX = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+def db():
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    for f in ("market_bars_schema.sql", "source_items_schema.sql", "company_master_schema.sql"):
+        c.executescript(open(os.path.join(FX, f)).read())
+    c.execute("CREATE TABLE IF NOT EXISTS source_item_versions(x)")
+    c.execute("INSERT INTO sectors VALUES('psx-oil-gas-exploration-companies','PSX','OIL & GAS EXPLORATION COMPANIES','t')")
+    c.execute("INSERT INTO companies(company_id,legal_name,listing_status,created_at_utc,updated_at_utc) "
+              "VALUES('cmp-ogdc','Oil & Gas Development Company Limited','listed','t','t')")
+    c.execute("INSERT INTO company_identifiers(company_id,id_type,value,verified_at_utc) VALUES('cmp-ogdc','psx_ticker','OGDC','t')")
+    return c
+
+
+BIG = SAMPLE + [{"symbol": f"T{i:03d}", "company_name": f"Test Co {i}", "sector": "Oil and Gas Exploration Companies",
+                 "listing_status": "Active", "isin": "US0378331005" if i == 0 else None, "fiscal_year_end": "December 31"}
+                for i in range(5)]
+
+
+def test_apply_chunked_resumable_idempotent_and_never_touches_existing():
+    c = db()
+    r1 = m.apply_chunk(c, BIG, "a" * 64, chunk=3)
+    assert r1["chunk"] == 3 and r1["remaining_new"] == 4      # 7 new (SSGC, TPLP, T000-T004), OGDC already exists
+    assert c.execute("select count(*) from dataset_loads").fetchone()[0] == 0   # incomplete -> not recorded yet
+    r2 = m.apply_chunk(c, BIG, "a" * 64, chunk=100)
+    assert r2["remaining_new"] == 0 and c.execute("select count(*) from dataset_loads").fetchone()[0] == 1
+    before = c.execute("select count(*) from companies").fetchone()[0]
+    r3 = m.apply_chunk(c, BIG, "a" * 64)
+    assert r3["chunk"] == 0 and c.execute("select count(*) from companies").fetchone()[0] == before
+    assert c.execute("select count(*) from companies").fetchone()[0] == 8        # 1 existing + 7 new
+    # existing OGDC row untouched, no ISIN added from an invalid value, no new sectors created
+    assert c.execute("select legal_name from companies where company_id='cmp-ogdc'").fetchone()[0] == "Oil & Gas Development Company Limited"
+    assert c.execute("select count(*) from company_identifiers where id_type='isin'").fetchone()[0] == 1
+    assert c.execute("select count(*) from sectors").fetchone()[0] == 1
+    assert c.execute("select count(*) from company_identifiers where id_type='psx_ticker'").fetchone()[0] == before
+
+
+def test_seed_source_disabled_with_owner_origin_note():
+    c = db(); m.apply_chunk(c, BIG, "b" * 64)
+    s = c.execute("select enabled,lifecycle_status,access_status,notes from sources where source_id='owner_psx_profiles'").fetchone()
+    assert s["enabled"] == 0 and s["lifecycle_status"] == "RESTRICTED" and s["access_status"] == "unverified"
+    assert "publicly available structural listings" in s["notes"]
+    i = c.execute("select retrieval_method,document_type,content_sha256 from source_items where source_id='owner_psx_profiles'").fetchone()
+    assert tuple(i) == ("seed", "dataset", "b" * 64)
+    assert c.execute("select count(distinct profile_source_item_id) from companies where company_id<>'cmp-ogdc'").fetchone()[0] == 1

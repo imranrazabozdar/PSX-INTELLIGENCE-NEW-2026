@@ -1,11 +1,13 @@
-"""Company master expansion: PLAN-ONLY loader (design draft, owner approval pending).
+"""Company master expansion loader (design approved by owner 2026-11-09; see docs/COMPANY_MASTER_EXPANSION_PLAN.md).
 
-Reads data/psx_profiles.json, validates every record, compares it with what is already in Turso (read-only),
-and prints the dry-run plan: counts of new / overlapping / conflicting / rejected records and the exact rows
-that WOULD be written. There is deliberately NO write path in this file: applying the plan is added only after
-the owner approves the design (see docs/COMPANY_MASTER_EXPANSION_PLAN.md).
+Default = DRY RUN: validate every profile, compare with Turso (read-only SELECTs), print counts and the rows that
+WOULD be written. `--apply` writes at most `--chunk` (default 100) NEW companies per run, resumable (the plan is
+recomputed each run, so loaded tickers are skipped). Existing companies are never updated or deleted. Invalid ISINs
+are dropped (company kept); the master's sector labels win; unknown sectors leave the company unclassified; no
+sectors are ever created.
 
-    python backend/company_master_loader.py data/psx_profiles.json [--no-db]
+    python backend/company_master_loader.py data/psx_profiles.json [--no-db]          # dry run
+    python backend/company_master_loader.py data/psx_profiles.json --apply [--chunk N] # write one chunk
 """
 import hashlib
 import json
@@ -144,6 +146,96 @@ def report(p, sha, out=print):
     out("rows that WOULD be written: " + json.dumps(row_estimate(p)))
 
 
+# ------------------------------------------------------------------ apply (owner-approved design)
+JOB = "company_master_load"
+SEED_NOTES = ("Owner-stated origin (2026-11-09): profiles aggregated from publicly available structural listings of the "
+              "PSX corporate directory (structural mappings, not restricted individual pages). Not independently verified "
+              "by the assistant. Seed/reference dataset only: never fetched by this project; source disabled.")
+
+
+def _now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _v(row, key):
+    try:
+        return row[key]
+    except (TypeError, IndexError, KeyError):
+        return row[0]
+
+
+def ensure_seed(conn, sha, count, now):
+    """Create (if missing) the disabled seed source and its dataset seed item. Returns seed source_item_id."""
+    if not conn.execute("SELECT 1 FROM sources WHERE source_id=?", (SEED_SOURCE_ID,)).fetchone():
+        conn.execute(
+            "INSERT INTO sources(source_id,name,source_type,access_method,access_status,enabled,lifecycle_status,"
+            "terms_status,verification_status,content_format,retention_mode,notes,created_at_utc,updated_at_utc) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (SEED_SOURCE_ID, "Owner-supplied PSX company profiles (seed dataset)", "other", "manual", "unverified", 0,
+             "RESTRICTED", "not_reviewed", "unverified", "unknown", "metadata_only", SEED_NOTES, now, now))
+    ext = f"dataset:{DATASET_NAME}:{sha[:16]}"
+    row = conn.execute("SELECT source_item_id FROM source_items WHERE source_id=? AND external_id=?",
+                       (SEED_SOURCE_ID, ext)).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO source_items(source_id,external_id,title,collected_at_utc,content_sha256,access_status,"
+            "retrieval_method,document_type,publication_time_status,source_metadata_json) "
+            "VALUES(?,?,?,?,?,'restricted','seed','dataset','unavailable',?)",
+            (SEED_SOURCE_ID, ext, f"{DATASET_NAME} ({count} records)", now, sha,
+             json.dumps({"records": count, "file": "data/psx_profiles.json"})))
+        row = conn.execute("SELECT source_item_id FROM source_items WHERE source_id=? AND external_id=?",
+                           (SEED_SOURCE_ID, ext)).fetchone()
+    return _v(row, "source_item_id")
+
+
+def apply_chunk(conn, records, sha, chunk=100, now=None):
+    """Write up to `chunk` NEW companies. Returns a summary dict. Safe to re-run."""
+    now = now or _now()
+    existing = snapshot(conn)
+    p = plan(records, existing)
+    batch = p["new"][:chunk]
+    seed = ensure_seed(conn, sha, len(records), now)
+    run_id = conn.execute("INSERT INTO collector_runs(job,source_id,started_at_utc,status,log_reference) "
+                          "VALUES(?,?,?,'running',?)", (JOB, SEED_SOURCE_ID, now, DATASET_NAME)).lastrowid
+    stats = dict(companies=0, isins=0, classifications=0, aliases=0)
+    for c in batch:
+        conn.execute("INSERT OR IGNORE INTO companies(company_id,legal_name,listing_status,fiscal_year_end_month,"
+                     "profile_source_item_id,created_at_utc,updated_at_utc) VALUES(?,?,?,?,?,?,?)",
+                     (c["company_id"], c["legal_name"], c["listing_status"], c["fiscal_year_end_month"], seed, now, now))
+        stats["companies"] += 1
+
+        def add_ident(id_type, value):  # explicit existence check: UNIQUE(.., valid_from NULL) does not dedupe
+            if conn.execute("SELECT 1 FROM company_identifiers WHERE id_type=? AND value=? AND valid_to IS NULL",
+                            (id_type, value)).fetchone():
+                return 0
+            conn.execute("INSERT INTO company_identifiers(company_id,id_type,value,verified_at_utc,source_item_id) "
+                         "VALUES(?,?,?,?,?)", (c["company_id"], id_type, value, now, seed))
+            return 1
+        add_ident("psx_ticker", c["ticker"])
+        if c["isin"]:
+            stats["isins"] += add_ident("isin", c["isin"])
+        for alias, atype in ((c["ticker"], "ticker"), (c["legal_name"], "legal_name")):
+            conn.execute("INSERT OR IGNORE INTO company_aliases(company_id,alias,alias_normalized,alias_type,confidence,"
+                         "source_item_id,evidence) VALUES(?,?,?,?,'derived',?,?)",
+                         (c["company_id"], alias, alias.casefold(), atype, seed, f"seed dataset {DATASET_NAME}"))
+            stats["aliases"] += 1
+        if c["sector_id"] and not conn.execute(
+                "SELECT 1 FROM company_classifications WHERE company_id=? AND sector_id=? AND valid_from IS NULL",
+                (c["company_id"], c["sector_id"])).fetchone():
+            conn.execute("INSERT INTO company_classifications(company_id,sector_id,verified_at_utc,source_item_id) "
+                         "VALUES(?,?,?,?)", (c["company_id"], c["sector_id"], now, seed))
+            stats["classifications"] += 1
+    remaining = len(p["new"]) - len(batch)
+    if remaining == 0 and not conn.execute("SELECT 1 FROM dataset_loads WHERE dataset=?", (DATASET_NAME,)).fetchone():
+        conn.execute("INSERT INTO dataset_loads(dataset,sha256,loaded_at_utc,record_count) VALUES(?,?,?,?)",
+                     (DATASET_NAME, sha, now, len(records)))
+    conn.execute("UPDATE collector_runs SET finished_at_utc=?,status=?,items_fetched=?,items_accepted=? WHERE run_id=?",
+                 (_now(), "succeeded" if remaining == 0 else "partial", len(records), len(batch), run_id))
+    conn.commit()
+    return {**stats, "chunk": len(batch), "remaining_new": remaining, "run_id": run_id,
+            "overlap_conflicts_untouched": len(p["overlap_conflict"])}
+
+
 def main(argv):
     path = next((a for a in argv if not a.startswith("--")), "data/psx_profiles.json")
     raw = open(path, "rb").read()
@@ -158,7 +250,16 @@ def main(argv):
             import turso_db
         conn = turso_db.get_connection()
         existing = snapshot(conn)  # read-only SELECTs
-    report(plan(records, existing), hashlib.sha256(raw).hexdigest())
+    sha = hashlib.sha256(raw).hexdigest()
+    report(plan(records, existing), sha)
+    if "--apply" in argv:
+        if existing is None:
+            sys.exit("--apply needs the database (do not pass --no-db)")
+        import sqlite3
+        if isinstance(conn, sqlite3.Connection):
+            sys.exit("refusing --apply: Turso connection failed (local SQLite fallback)")
+        chunk = int(argv[argv.index("--chunk") + 1]) if "--chunk" in argv else 100
+        print("APPLIED:", apply_chunk(conn, records, sha, chunk))
 
 
 if __name__ == "__main__":

@@ -50,9 +50,8 @@ at ~4,950 rows written, so apply in **chunks of <=100 companies per run**, each 
    file's ISINs behave the same, none can be loaded as verified identifiers.
 3. OGDC is identical to the master apart from case/`&` (sector matches after normalisation).
 
-## Decisions needed
-1. Provide the full file (push, upload or paste) so real counts replace the estimates.
-2. Provenance: approve the `owner_psx_profiles` seed source, and state the file's true origin.
-3. ISINs: drop invalid ones (default) or investigate the source.
-4. Sector conflicts: master's labels win (default), or list the differing ones for manual review.
-5. Companies with sectors not in the master's 14: leave unclassified (default) or approve new sector rows.
+## Owner decisions (2026-11-09) and current status
+1. **Seed source approved:** new source `owner_psx_profiles` (disabled, `lifecycle_status=RESTRICTED`, `access_status=unverified` — a source cannot be both `restricted` and `unverified` in `access_status`, so "restricted" is carried by `lifecycle_status`) plus a `dataset_loads('psx_profiles_v1')` record, written only when the whole file has been loaded. Origin note recorded as the owner's statement: profiles aggregated from publicly available structural listings of the PSX corporate directory (not restricted individual pages); not independently verified by the assistant.
+2. **Defaults approved:** invalid ISINs dropped (company kept); master's sector labels win; unknown sectors leave the company unclassified; no sectors created.
+3. **Full file:** NOT yet received (the message announcing it contained no attachment or JSON; `data/psx_profiles.json` is not in the repo). No real counts exist yet and nothing has been written to Turso.
+4. **Apply path built and tested offline** (`--apply`, <=100 new companies per run, resumable, idempotent, never touches existing companies); 7 tests against the production DDL. Not run against Turso.
