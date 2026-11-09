@@ -48,6 +48,9 @@ def load_config(path=DEFAULT_PATH):
         names.add(p["name"])
         if not p["base_url"].startswith("https://"):
             raise ConfigError(f"{p['name']}: base_url must be https")
+        for m in p.get("models", []):
+            if not {"id", "verified", "enabled"} <= set(m):
+                raise ConfigError(f"{p['name']}: each model needs id, verified, enabled")
         if not re.fullmatch(r"[A-Z][A-Z0-9_]*", p["api_key_env"]):
             raise ConfigError(f"{p['name']}: api_key_env must be an UPPER_SNAKE env var name")
     for task, order in cfg.get("tasks", {}).items():
@@ -63,20 +66,35 @@ def usable(p, require_review=True):
     return (not require_review) or bool(p.get("model_verified") and p.get("terms_reviewed_utc"))
 
 
-def build(task="extraction", path=DEFAULT_PATH, require_review=True, session=None):
-    """-> (providers in routing order, {name: Budget}). Providers that are not usable are skipped."""
+def _models(p, require_review):
+    """Model ids usable for this provider. With a 'models' list each model needs enabled+verified; else the single
+    'model' needs model_verified."""
+    if p.get("models"):
+        return [m["id"] for m in p["models"] if m.get("enabled") and (not require_review or m.get("verified"))]
+    return [p["model"]] if (not require_review or p.get("model_verified")) else []
+
+
+def build(task="news_event_extraction", path=DEFAULT_PATH, require_review=True, session=None):
+    """-> (providers in routing order, {name: Budget}). A provider with several usable models yields one route per model
+    in listed order (in-provider fallback). Unusable providers/models are skipped."""
     cfg = load_config(path)
     by = {p["name"]: p for p in cfg["providers"]}
     providers, budgets = [], {}
     for name in cfg.get("tasks", {}).get(task, []):
         p = by[name]
-        if not usable(p, require_review):
+        if not p["enabled"] or (require_review and not p.get("terms_reviewed_utc")):
             continue
-        providers.append(OpenAICompatProvider(
-            p["name"], p["base_url"], p["model"], p["api_key_env"], p.get("max_output_tokens", 800),
-            p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), session))
-        budgets[p["name"]] = Budget(p["max_calls_per_day"], p["max_tokens_per_day"], p.get("max_attempts_per_item", 2))
+        for model in _models(p, require_review):
+            providers.append(OpenAICompatProvider(
+                p["name"], p["base_url"], model, p["api_key_env"], p.get("max_output_tokens", 800),
+                p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), session))
+        if any(x.name == name for x in providers):
+            budgets[name] = Budget(p["max_calls_per_day"], p["max_tokens_per_day"], p.get("max_attempts_per_item", 2))
     return providers, budgets
+
+
+def task_settings(task, path=DEFAULT_PATH):
+    return load_config(path).get("task_settings", {}).get(task, {})
 
 
 def status(path=DEFAULT_PATH, environ=None):
@@ -85,7 +103,8 @@ def status(path=DEFAULT_PATH, environ=None):
     env = os.environ if environ is None else environ
     out = []
     for p in load_config(path)["providers"]:
-        out.append({"name": p["name"], "enabled": p["enabled"], "model_verified": bool(p.get("model_verified")),
+        out.append({"name": p["name"], "enabled": p["enabled"], "model_verified": bool(_models(p, True)),
                     "terms_reviewed": bool(p.get("terms_reviewed_utc")), "key_present": bool(env.get(p["api_key_env"])),
-                    "usable_in_production": usable(p) and bool(env.get(p["api_key_env"]))})
+                    "usable_in_production": bool(p["enabled"] and p.get("terms_reviewed_utc") and _models(p, True)
+                                                 and env.get(p["api_key_env"]))})
     return out

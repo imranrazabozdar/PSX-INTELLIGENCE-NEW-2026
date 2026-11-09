@@ -38,6 +38,7 @@ class OpenAICompatProvider(Provider):
         self.api_key_env, self.max_output_tokens, self.timeout = api_key_env, max_output_tokens, timeout
         self.json_mode, self.extra_headers = json_mode, dict(extra_headers or {})
         self.session = session or requests   # injectable for offline tests
+        self.route_key = f"{name}/{model}"   # cooldowns are per route; budgets are per provider name
 
     def build_request(self, system_prompt, user_text, key):
         body = {"model": self.model, "temperature": 0, "max_tokens": self.max_output_tokens,

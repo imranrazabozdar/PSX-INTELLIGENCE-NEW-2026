@@ -34,3 +34,34 @@ and `enabled` in the config. Daily caps in the config are OUR conservative caps,
 ## Evaluation
 Before a model or prompt replaces another, run it on a small frozen, labelled set (to be built in Phase 2) and compare
 schema-valid rate, grounded-quote rate and ticker precision.
+
+## Rollout order and code paths (owner decision; each step contingent on verification, terms review, secure credential injection)
+| Step | Provider | Task | Code path | State |
+|---|---|---|---|---|
+| 1 | Groq | `news_event_extraction` | `extract/pipeline.py: run_news_batch`, `scripts/run_extraction.py` | built, tested offline; dry-run works; **not enabled** |
+| 2 | Gemini | `long_document_extraction`, `financial_line_items` | `extract/chunking.py`, `run_long_document`, `llm/handlers.py: FinancialHandler`, `extract/numbers.py` | built, tested offline; **not enabled** |
+| 3 | OpenRouter | fallback for both | `llm/config.py` per-model expansion; per-route cooldown, per-provider budget | built, tested offline; **not enabled** |
+
+### Step 1 - news/event extraction
+- Input is built by `extract/text.py` from the source's `retention_mode`. **All 10 verified_permitted news sources are
+  `metadata_only` with no stored excerpts**, so today the only text a model may see is the **headline** (32-78 chars in the
+  first dry run). Expect thin results (few claims, few tickers). Sending full article text would need a separate, explicit
+  permission decision plus an approved fetch path; it is not implemented.
+- Grounding, zero-number rule, Python-assigned claim types, review-gated candidates, content-hash cache, budgets and kill
+  switch all apply (see README). Run: `python fundamental_engine/scripts/run_extraction.py --task news_event_extraction --limit 10` (dry run) / `--live`.
+
+### Step 2 - long documents and financial statements
+- Documents are chunked (default 20,000 chars, 500 overlap) and each chunk is cached by content hash (folded into
+  `schema_version`, so no schema change). Quotes are grounded against their own chunk only. At most `max_chunks_per_run`
+  (default 5) uncached chunks per run; re-running resumes (earlier chunks are cache hits).
+- Financial line items: the model returns verbatim label/period/value text and the verbatim unit text; **Python parses the
+  numbers** (`value_parsed`, strict comma-grouping/parentheses rules) and never scales by unit. Candidates are stored in
+  `event_extractions` for review; nothing is written to `financial_metrics`.
+- **Eligibility limitation:** annual reports from restricted sources (e.g. PSX filings held in the manual vault) are blocked
+  by the eligibility gate and cannot be sent to any provider. Using them needs an explicit owner decision (and a provider
+  whose data-use terms are acceptable); no bypass exists.
+
+### Step 3 - OpenRouter fallback
+- A provider with a `models` list expands to one route per model that is both `enabled` and `verified`, in listed order.
+  A rate-limited route cools down for its `Retry-After`; the other models of the provider are still tried. Daily budgets
+  are shared across all models of a provider. Currently one unverified, disabled model is listed.

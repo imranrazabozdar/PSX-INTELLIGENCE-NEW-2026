@@ -5,10 +5,22 @@
     "Every provider ships DISABLED. A provider may only be used in production when enabled=true AND terms_reviewed_utc is set AND model_verified=true.",
     "base_url values are the providers' documented OpenAI-compatible endpoints; model ids and free-tier limits change often and MUST be verified against the provider's current docs/terms before enabling (record the date in terms_reviewed_utc and docs/LLM_PROVIDERS.md).",
     "max_calls_per_day / max_tokens_per_day are OUR conservative self-imposed caps (counted from llm_calls), not the provider's published limits.",
-    "Only content from verified_permitted sources may be sent to any provider (llm/router.py eligibility gate)."
+    "Only content from verified_permitted sources may be sent to any provider (llm/router.py eligibility gate).",
+    "Rollout order (owner, contingent on verification + terms review + secure credential injection): 1 groq, 2 gemini, 3 openrouter.",
+    "A provider with a 'models' list expands to one route per usable model, in order (fallback within the provider); each model needs its own verified=true and enabled=true. Budgets are shared per provider; cooldowns are per provider/model route."
   ],
   "tasks": {
-    "extraction": ["groq", "gemini", "openrouter"]
+    "news_event_extraction": [
+      "groq",
+      "openrouter"
+    ],
+    "long_document_extraction": [
+      "gemini",
+      "openrouter"
+    ],
+    "financial_line_items": [
+      "gemini"
+    ]
   },
   "providers": [
     {
@@ -59,8 +71,32 @@
       "max_calls_per_day": 50,
       "max_tokens_per_day": 100000,
       "max_attempts_per_item": 2,
-      "extra_headers": {"X-Title": "PSX Fundamental Engine"},
-      "data_use_notes": "unreviewed: free routes may be served by third parties with their own logging/training policies; verify per model"
+      "extra_headers": {
+        "X-Title": "PSX Fundamental Engine"
+      },
+      "data_use_notes": "unreviewed: free routes may be served by third parties with their own logging/training policies; verify per model",
+      "models": [
+        {
+          "id": "meta-llama/llama-3.3-70b-instruct:free",
+          "verified": false,
+          "enabled": false
+        }
+      ]
     }
-  ]
+  ],
+  "task_settings": {
+    "news_event_extraction": {
+      "batch_limit_default": 10
+    },
+    "long_document_extraction": {
+      "max_chars": 20000,
+      "overlap_chars": 500,
+      "max_chunks_per_run": 5
+    },
+    "financial_line_items": {
+      "max_chars": 20000,
+      "overlap_chars": 500,
+      "max_chunks_per_run": 5
+    }
+  }
 }

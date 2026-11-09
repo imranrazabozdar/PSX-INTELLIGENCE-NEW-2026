@@ -80,18 +80,27 @@ def test_config_valid_and_safe_by_default():
     assert providers == [] and budgets == {}
 
 
-def test_build_requires_enabled_and_review(tmp_path):
-    cfg = json.loads(Path(cfgmod.DEFAULT_PATH).read_text())
+def enable_all(cfg, verified=False):
     for p in cfg["providers"]:
         p["enabled"] = True
+        for m in p.get("models", []):
+            m["enabled"] = True
+            m["verified"] = verified
+        if verified:
+            p["model_verified"], p["terms_reviewed_utc"] = True, "2026-11-10"
+    return cfg
+
+
+def test_build_requires_enabled_and_review(tmp_path):
+    cfg = enable_all(json.loads(Path(cfgmod.DEFAULT_PATH).read_text()))
     f = tmp_path / "c.json"; f.write_text(json.dumps(cfg))
     assert cfgmod.build(path=f)[0] == []                    # enabled but not reviewed/verified -> still refused
     providers, budgets = cfgmod.build(path=f, require_review=False)
-    assert [p.name for p in providers] == ["groq", "gemini", "openrouter"] and budgets["groq"].max_calls_per_day == 100
-    for p in cfg["providers"]:
-        p["model_verified"], p["terms_reviewed_utc"] = True, "2026-11-10"
-    f.write_text(json.dumps(cfg))
-    assert len(cfgmod.build(path=f)[0]) == 3
+    assert [p.name for p in providers] == ["groq", "openrouter"] and budgets["groq"].max_calls_per_day == 100
+    assert [p.name for p in cfgmod.build("long_document_extraction", f, False)[0]] == ["gemini", "openrouter"]
+    assert [p.name for p in cfgmod.build("financial_line_items", f, False)[0]] == ["gemini"]
+    f.write_text(json.dumps(enable_all(cfg, verified=True)))
+    assert len(cfgmod.build(path=f)[0]) == 2
 
 
 @pytest.mark.parametrize("mutate,msg", [
@@ -99,7 +108,7 @@ def test_build_requires_enabled_and_review(tmp_path):
     (lambda c: c["providers"][0].update(data_use_notes="key gsk_abcdefghijklmnop"), "secret"),
     (lambda c: c["providers"][0].update(base_url="http://insecure.example"), "https"),
     (lambda c: c["providers"][0].update(api_key_env="lowercase"), "UPPER_SNAKE"),
-    (lambda c: c["tasks"].update(extraction=["nope"]), "unknown provider"),
+    (lambda c: c["tasks"].update(news_event_extraction=["nope"]), "unknown provider"),
     (lambda c: c["providers"].append(dict(c["providers"][0])), "duplicate"),
     (lambda c: c["providers"][0].pop("model"), "missing"),
 ])
@@ -242,12 +251,10 @@ def test_kill_switch_blocks_http(env, keys, monkeypatch):
 
 def test_from_config_builds_router(env, tmp_path, keys):
     db, item = env
-    cfg = json.loads(Path(cfgmod.DEFAULT_PATH).read_text())
-    for p in cfg["providers"]:
-        p["enabled"] = True
+    cfg = enable_all(json.loads(Path(cfgmod.DEFAULT_PATH).read_text()))
     f = tmp_path / "c.json"; f.write_text(json.dumps(cfg))
     rt = Router.from_config(db, path=f, require_review=False)
-    assert [p.name for p in rt.providers] == ["groq", "gemini", "openrouter"]
+    assert [p.name for p in rt.providers] == ["groq", "openrouter"]
     for p in rt.providers:
         p.session = FakeSession(FakeResp())
     assert rt.extract(item, TEXT)["outcome"] == "ok"

@@ -16,4 +16,6 @@ def load_schema(schema_id, version):
 
 
 EVENT_CANDIDATE = {"prompt_id": "event_candidate", "prompt_version": "v1", "schema_id": "event_candidate",
-                   "schema_version": "1"}
+                   "schema_version": "1", "handler": "event_candidate"}
+FINANCIAL_LINE_ITEMS = {"prompt_id": "financial_line_items", "prompt_version": "v1", "schema_id": "financial_line_items",
+                        "schema_version": "1", "handler": "financial_line_items"}
