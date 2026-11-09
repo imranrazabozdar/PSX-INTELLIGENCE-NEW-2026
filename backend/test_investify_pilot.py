@@ -74,3 +74,33 @@ def test_cap_and_bad_url():
 def test_no_db_imports():
     src = open(ip.__file__).read()
     assert "turso" not in src.lower() and "sqlite" not in src.lower()
+
+
+HOME = """<html><body><section><h2>Company Announcements</h2>
+<ul><li class="ann"><a href="/announcements/123"><span class="sym">OGDC</span><span class="t">Briefing</span><time datetime="2026-11-09T10:00">10:00</time></a></li>
+<li class="ann"><a href="/announcements/124"><span class="sym">SSGC</span><span class="t">Annual Report</span></a></li>
+<li class="ann"><a href="/announcements/125"><span class="sym">EFU</span><span class="t">Allotment</span></a></li></ul>
+<a href="/announcements">View all</a></section></body></html>"""
+
+
+def test_probe_follows_link_and_prints_raw_html():
+    lines = []
+    s = Sess({"https://investify.pk/robots.txt": Resp(404, ""), "https://investify.pk/": Resp(200, HOME),
+              "https://investify.pk/announcements": Resp(200, HOME, url="https://investify.pk/announcements")})
+    assert ip.probe(session=s, out=lines.append, **NOJ) == 0
+    text = "\n".join(lines)
+    assert "https://investify.pk/announcements" in text and '<span class="sym">OGDC</span>' in text
+    assert len(s.calls) <= ip.REQUEST_CAP
+
+
+def test_probe_block_exit():
+    s = Sess({"https://investify.pk/robots.txt": Resp(404, ""), "*": Resp(403, "no")})
+    assert ip.probe(session=s, out=lambda *_: None, **NOJ) == 3
+
+
+def test_probe_direct_page_uses_deep_link_items():
+    lines = []
+    s = Sess({"https://www.investify.pk/robots.txt": Resp(404, ""),
+              "https://www.investify.pk/announcements": Resp(200, HOME.replace("Company Announcements", "Filings"), url="https://www.investify.pk/announcements")})
+    assert ip.probe("https://www.investify.pk/announcements", session=s, out=lines.append, **NOJ) == 0
+    assert len(s.calls) == 2 and '<span class="sym">OGDC</span>' in "\n".join(lines)

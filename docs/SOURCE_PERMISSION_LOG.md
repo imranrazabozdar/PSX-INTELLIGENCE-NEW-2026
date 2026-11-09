@@ -82,3 +82,13 @@ No `psx_dps` source row was created or modified (it pre-exists, restricted). No 
 | Offline tests | 11/11 passed |
 | Live run | Run by the assistant in the sandbox at owner's request, 2026-11-09. `python backend/investify_pilot.py https://investify.pk/` -> robots.txt (404/allowed path) + 1 page GET, 2/3 requests, HTTP 200, 837,406 bytes, exit 0. No block, no CAPTCHA. Page lists homepage news plus a "Company Announcements" block (e.g. SSGC Annual Report 2026, OGDC corporate briefing recording link, EFU Life right-issue allotment, AGM notices). Console only: nothing stored, no DB writes. |
 | Network | `investify.pk` and `www.investify.pk` (redirect target) added to Default environment allowlist. A first attempt (exit 4) failed only at the sandbox proxy for the www host; it never reached Investify. |
+
+### Extension E1 to PILOT-2026-11-09-04 — structure probe (owner override, 2026-11-09)
+
+Owner authorised a read-only probe for the dedicated announcements page and its HTML structure. Same conditions (honest UA, 4.5-9.5 s jitter, robots.txt first, no bypass, console only, no DB writes). `backend/investify_pilot.py --probe`, 14 offline tests.
+
+- Homepage link finder initially picked an unrelated "See all" (`/tools#tax`); the homepage nav exposed `/announcements` ("Company filings"), which the owner had listed as a candidate path.
+- `https://www.investify.pk/announcements`: HTTP 200, server-rendered (~485 KB), title "Company Announcements | Investify", 30 results, no CAPTCHA/WAF block.
+- Requests to investify.pk / www.investify.pk this session: about 11 across 5 runs (each run: robots.txt + 1-2 pages; every request jittered). Nothing stored.
+- Findings for a future parser (cards = `div[data-announcement-row="true"]`): ticker in `a[href^="/company/<TICKER>/quote"]`; company name in the span `title` attribute; category chip span; timestamp in `<time datetime="2026-11-06T12:45:00.000Z">` (ISO, visible text is PKT); title in `h3 > a[href="/announcements/<TICKER>/dps-pdf-<id>"]`; summary in `p` (Investify-generated); "Original PDF" link to `https://dps.psx.com.pk/download/document|attachment/<id>.pdf`.
+- **Compliance flags (no action taken):** (1) the PDF links point at `dps.psx.com.pk`, a RESTRICTED / prohibits_automation source: they must not be fetched automatically; (2) Investify's summaries/highlights are its own derived content and its terms prohibit reuse; (3) the `investify` source row remains RESTRICTED and this override does not authorise storage or scheduled collection.
