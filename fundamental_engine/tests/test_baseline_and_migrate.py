@@ -31,12 +31,12 @@ def test_baseline_keeps_provenance_triggers(db):
 
 def test_fresh_db_applies_baseline_once():
     d = sqlite_connect()
-    assert [v for v, _ in migrate.apply(d, dry_run=True)] == [10]
+    assert [v for v, _ in migrate.apply(d, dry_run=True)] == [10, 11]       # baseline, then the proposed 0011
     migrate.apply(d)
-    assert d.execute("select version,name from schema_migrations").one() == {"version": 10, "name": "baseline_snapshot"}
+    assert [r["version"] for r in d.execute("select version from schema_migrations order by version").rows] == [10, 11]
     assert migrate.apply(d, dry_run=True) == []
 
 
 def test_live_style_db_never_reapplies_baseline(db):
     db.execute("INSERT INTO schema_migrations(version,name,checksum,applied_at_utc,result) VALUES(10,'market_ohlcv','" + "e" * 64 + "','t','applied')")
-    assert migrate.apply(db, dry_run=True) == []
+    assert migrate.apply(db, dry_run=True) == [(11, "extraction_reviews")]      # only the later migration is pending
