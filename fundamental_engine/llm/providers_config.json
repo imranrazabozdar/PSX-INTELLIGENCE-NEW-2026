@@ -12,6 +12,7 @@
   "tasks": {
     "news_event_extraction": [
       "groq",
+      "gemini",
       "openrouter"
     ],
     "long_document_extraction": [
@@ -49,18 +50,40 @@
       "name": "gemini",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
       "api_key_env": "GEMINI_API_KEY",
-      "model": "gemini-2.0-flash",
-      "model_verified": false,
-      "enabled": false,
-      "terms_reviewed_utc": null,
+      "model": "gemini-3.5-flash-lite",
+      "model_verified": true,
+      "enabled": true,
+      "terms_reviewed_utc": "2026-11-09",
       "json_mode": true,
-      "timeout_s": 60,
-      "max_output_tokens": 800,
+      "timeout_s": 120,
+      "max_output_tokens": 4000,
       "max_calls_per_day": 100,
       "max_tokens_per_day": 150000,
       "max_attempts_per_item": 2,
       "extra_headers": {},
-      "data_use_notes": "unreviewed: free-tier terms commonly allow use of prompts to improve products; verify before use"
+      "data_use_notes": "owner attested terms review on 2026-11-09. Free-tier Gemini terms commonly allow Google to use prompts to improve products: send only public text from verified_permitted sources, never restricted-source content, secrets or personal data",
+      "terms_reviewed_by": "owner attestation (not an assistant review)",
+      "model_verified_note": "2026-11-09 findings on the owner's account: gemini-2.0-flash not available; gemini-2.5-flash is LISTED by GET /models but a real call returns 404 'no longer available to new users' (listing is not proof of usability); gemini-3.5-flash-lite and gemini-3.1-flash-lite answered a real minimal call (HTTP 200) = verified; gemini-3.8-flash / 3.5-flash / 3.6-flash returned HTTP 502 and 3.7-flash / flash-latest HTTP 503 'high demand' (Google-side, transient) = NOT verified yet. Models are tried in listed order. Thinking models: hidden reasoning tokens count against max_output_tokens (reasoning_effort=low, 4000 cap).",
+      "extra_body": {
+        "reasoning_effort": "low"
+      },
+      "models": [
+        {
+          "id": "gemini-3.5-flash-lite",
+          "verified": true,
+          "enabled": true
+        },
+        {
+          "id": "gemini-3.1-flash-lite",
+          "verified": true,
+          "enabled": true
+        },
+        {
+          "id": "gemini-3.8-flash",
+          "verified": false,
+          "enabled": true
+        }
+      ]
     },
     {
       "name": "openrouter",

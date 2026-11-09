@@ -19,6 +19,12 @@ from llm.router import Router
 from tests.conftest import add_company, add_item, add_source
 
 CFG = cfgmod.load_config()
+
+
+def order(providers):
+    """provider names in routing order, de-duplicated (a provider may expand to several model routes)"""
+    return list(dict.fromkeys(p.name for p in providers))
+
 NAMES = [p["name"] for p in CFG["providers"]]
 TEXT = "OGDC announced a final cash dividend. The Board meeting will be held on 27 November 2026."
 GOOD = json.dumps({"event_type": "dividend", "tickers": ["OGDC"], "confidence_band": "medium",
@@ -72,19 +78,23 @@ def env(db):
 
 
 # ------------------------------------------------------------------ config
-def test_config_valid_and_only_groq_unlocked():
+def test_config_valid_and_only_groq_gemini_unlocked():
     assert set(NAMES) >= {"groq", "gemini", "openrouter"}
     by = {p["name"]: p for p in CFG["providers"]}
     g = by["groq"]
     assert g["enabled"] and g["model_verified"] and g["terms_reviewed_utc"] == "2026-11-09" and g["model"] == "openai/gpt-oss-20b"
-    for n in ("gemini", "openrouter"):                      # rollout order: still locked until verified + reviewed
-        assert by[n]["enabled"] is False and by[n]["terms_reviewed_utc"] is None
+    gm = by["gemini"]
+    assert gm["enabled"] and gm["model_verified"] and gm["terms_reviewed_utc"] == "2026-11-09" and gm["model"] == "gemini-3.5-flash-lite" and [m["id"] for m in gm["models"] if m["verified"]] == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    assert gm["extra_body"] == {"reasoning_effort": "low"} and gm["max_output_tokens"] >= 4000 and gm["timeout_s"] >= 120
+    assert by["openrouter"]["enabled"] is False and by["openrouter"]["terms_reviewed_utc"] is None   # rollout order: still locked
     assert all(m["enabled"] is False and m["verified"] is False for m in by["openrouter"]["models"])
     raw = (Path(cfgmod.DEFAULT_PATH)).read_text()
     assert not cfgmod._SECRET_VALUE.search(raw)
     providers, budgets = cfgmod.build()                      # production rules: only the reviewed+verified provider is usable
-    assert [(p.name, p.model) for p in providers] == [("groq", "openai/gpt-oss-20b")] and list(budgets) == ["groq"]
-    assert cfgmod.build("long_document_extraction")[0] == [] and cfgmod.build("financial_line_items")[0] == []
+    assert [(p.name, p.model) for p in providers] == [("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-3.5-flash-lite"), ("gemini", "gemini-3.1-flash-lite")]
+    assert list(budgets) == ["groq", "gemini"]                # gemini routes share ONE provider budget
+    assert [(p.name, p.model) for p in cfgmod.build("long_document_extraction")[0]] == [("gemini", "gemini-3.5-flash-lite"), ("gemini", "gemini-3.1-flash-lite")]
+    assert order(cfgmod.build("financial_line_items")[0]) == ["gemini"]
 
 
 def enable_all(cfg, verified=False):
@@ -102,11 +112,11 @@ def test_build_requires_enabled_and_review(tmp_path):
     f = tmp_path / "c.json"; f.write_text(json.dumps(cfg))
     assert cfgmod.build(path=f)[0] == []                    # enabled but not reviewed/verified -> still refused
     providers, budgets = cfgmod.build(path=f, require_review=False)
-    assert [p.name for p in providers] == ["groq", "openrouter"] and budgets["groq"].max_calls_per_day == 100
-    assert [p.name for p in cfgmod.build("long_document_extraction", f, False)[0]] == ["gemini", "openrouter"]
-    assert [p.name for p in cfgmod.build("financial_line_items", f, False)[0]] == ["gemini"]
+    assert order(providers) == ["groq", "gemini", "openrouter"] and budgets["groq"].max_calls_per_day == 100
+    assert order(cfgmod.build("long_document_extraction", f, False)[0]) == ["gemini", "openrouter"]
+    assert order(cfgmod.build("financial_line_items", f, False)[0]) == ["gemini"]
     f.write_text(json.dumps(enable_all(cfg, verified=True)))
-    assert len(cfgmod.build(path=f)[0]) == 2
+    assert order(cfgmod.build(path=f)[0]) == ["groq", "gemini", "openrouter"]
 
 
 @pytest.mark.parametrize("mutate,msg", [
@@ -131,7 +141,8 @@ def test_status_never_leaks_keys(monkeypatch):
     assert {s["name"]: s["key_present"] for s in st}["groq"] is True and "super-secret-value" not in json.dumps(st)
     by = {s["name"]: s for s in st}
     assert by["groq"]["usable_in_production"] is True       # key present (set above) + enabled + reviewed + verified
-    assert by["gemini"]["usable_in_production"] is False and by["openrouter"]["usable_in_production"] is False
+    assert by["gemini"]["usable_in_production"] is False        # unlocked in config, but no key in this environment
+    assert by["openrouter"]["usable_in_production"] is False
 
 
 # ------------------------------------------------------------------ request shape (per configured provider)
@@ -176,6 +187,7 @@ def test_usage_and_fallback_token_estimate(keys):
     (FakeResp(429, headers={"Retry-After": "17"}), "rate_limited"),
     (FakeResp(401), "auth"), (FakeResp(403), "auth"),
     (FakeResp(500), "error"), (FakeResp(400), "error"),
+    (FakeResp(502), "overloaded"), (FakeResp(503), "overloaded"), (FakeResp(504), "overloaded"),
     (FakeResp(body="BADJSON"), "error"), (FakeResp(body={"nope": 1}), "error"),
     (FakeResp(text_content="   "), "error"),
     (requests.ConnectionError("boom test-key-groq-0123456789"), "error"),
@@ -264,7 +276,7 @@ def test_from_config_builds_router(env, tmp_path, keys):
     cfg = enable_all(json.loads(Path(cfgmod.DEFAULT_PATH).read_text()))
     f = tmp_path / "c.json"; f.write_text(json.dumps(cfg))
     rt = Router.from_config(db, path=f, require_review=False)
-    assert [p.name for p in rt.providers] == ["groq", "openrouter"]
+    assert order(rt.providers) == ["groq", "gemini", "openrouter"]
     for p in rt.providers:
         p.session = FakeSession(FakeResp())
     assert rt.extract(item, TEXT)["outcome"] == "ok"
@@ -289,3 +301,48 @@ def test_live_key_connectivity_and_structured_json(name, db):
     assert r["outcome"] in ("ok", "invalid_output"), r      # reachable + key accepted; invalid_output = reachable but model misbehaved
     assert r["outcome"] == "ok", f"{name} reached but did not return schema-valid, grounded JSON: {r}"
     assert "official_statement" in r["claim_types"]
+
+
+# ------------------------------------------------------------------ Gemini-specific
+def test_fallback_order_groq_then_gemini_then_openrouter(env, keys):
+    db, item = env
+    item2 = add_item(db, ext="x2")
+    s_groq, s_gem = FakeSession(FakeResp(429, headers={"Retry-After": "60"})), FakeSession(FakeResp(503))
+    s_or = FakeSession(FakeResp(), FakeResp())
+    provs = [make("groq", s_groq), make("gemini", s_gem), make("openrouter", s_or)]
+    rt = Router(db, provs, {n: Budget() for n in ("groq", "gemini", "openrouter")}, mono=lambda: 0.0)
+    assert rt.extract(item, TEXT)["outcome"] == "ok"
+    assert (len(s_groq.calls), len(s_gem.calls), len(s_or.calls)) == (1, 1, 1)       # tried in order, each once
+    assert [r["provider"] for r in db.execute("select provider from llm_calls order by call_id").rows] == ["groq", "gemini", "openrouter"]
+    assert rt.extract(item2, TEXT)["outcome"] == "ok" and len(s_groq.calls) == 1      # groq cooling down; gemini overloaded -> cooling down too
+    assert len(s_gem.calls) == 1 and len(s_or.calls) == 2
+
+
+def test_gemini_request_uses_configured_long_timeout_and_extra_body(keys):
+    sess = FakeSession()
+    prov = cfgmod.build("financial_line_items", session=sess)[0][0]
+    prov.complete("sys", "x" * 150_000)                      # ~150k chars (~37k tokens) payload
+    call = sess.calls[0]
+    assert call["timeout"] == 120 and call["json"]["model"] == "gemini-3.5-flash-lite" and call["json"]["reasoning_effort"] == "low"
+    assert call["json"]["max_tokens"] == 4000 and "x" * 150_000 in call["json"]["messages"][1]["content"]    # sent intact, not truncated
+    assert call["url"] == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+
+FIN_TEXT = ("Statement of Profit or Loss (Rupees in thousand)\n\nRevenue 2026 12,345,678 2025 10,111,222\n\n"
+            "Profit after tax 2026 (1,250) 2025 3,400")
+
+
+@pytest.mark.live
+def test_live_gemini_financial_line_items(db):
+    """Live: Gemini finds line items; PYTHON parses the numbers. Synthetic statement text (no third-party content)."""
+    if not _live_ready("gemini"):
+        pytest.skip("live test for gemini: set RUN_LIVE_LLM_TESTS=1 and GEMINI_API_KEY")
+    from extract import registry
+    add_source(db, "report", stype="exchange"); item = add_item(db, "report", "r1")
+    provs, budgets = cfgmod.build("financial_line_items")
+    rt = Router(db, provs, budgets, spec=registry.FINANCIAL_LINE_ITEMS)
+    r = rt.extract(item, FIN_TEXT)
+    assert r["outcome"] == "ok", r
+    j = json.loads(db.execute("select extracted_json from event_extractions").one()["extracted_json"])
+    got = {(i["label"], i["period"]): i["value_parsed"] for i in j["items"]}
+    assert got.get(("Revenue", "2026")) == "12345678" and got.get(("Profit after tax", "2026")) == "-1250", got

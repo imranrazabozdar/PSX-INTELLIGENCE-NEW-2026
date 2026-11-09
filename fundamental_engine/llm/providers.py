@@ -10,7 +10,7 @@ import requests
 class ProviderError(Exception):
     def __init__(self, kind, message="", retry_after=None):
         super().__init__(message or kind)
-        self.kind = kind            # 'not_connected' | 'auth' | 'rate_limited' | 'error'
+        self.kind = kind            # 'not_connected' | 'auth' | 'rate_limited' | 'overloaded' | 'error'
         self.retry_after = retry_after
 
 
@@ -63,6 +63,8 @@ class OpenAICompatProvider(Provider):
         if r.status_code == 429:
             ra = r.headers.get("Retry-After", "")
             raise ProviderError("rate_limited", "HTTP 429", int(ra) if str(ra).isdigit() else None)
+        if r.status_code in (502, 503, 504):
+            raise ProviderError("overloaded", f"HTTP {r.status_code} upstream overloaded/unavailable", 30)
         if r.status_code in (401, 403):
             raise ProviderError("auth", f"HTTP {r.status_code} (key rejected or no access)")
         if r.status_code >= 400:

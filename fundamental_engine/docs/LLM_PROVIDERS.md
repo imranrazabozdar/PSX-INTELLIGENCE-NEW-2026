@@ -16,7 +16,7 @@ Status: **no provider is enabled or connected yet.** `llm/providers_config.json`
 | Provider | Base URL | Model (UNVERIFIED) | Key env var | Terms/limits reviewed | Status |
 |---|---|---|---|---|---|
 | groq | https://api.groq.com/openai/v1 | openai/gpt-oss-20b | `GROQ_API_KEY` | 2026-11-09, owner attestation | **enabled** (model confirmed via /models) |
-| gemini | https://generativelanguage.googleapis.com/v1beta/openai | gemini-2.0-flash | `GEMINI_API_KEY` | not yet | disabled |
+| gemini | https://generativelanguage.googleapis.com/v1beta/openai | gemini-3.5-flash-lite, gemini-3.1-flash-lite (verified); gemini-3.8-flash (listed, unverified) | `GEMINI_API_KEY` | 2026-11-09, owner attestation | **enabled** |
 | openrouter | https://openrouter.ai/api/v1 | meta-llama/llama-3.3-70b-instruct:free | `OPENROUTER_API_KEY` | not yet | disabled |
 
 Base URLs are the providers' documented OpenAI-compatible endpoints. Model ids and free-tier limits were written without
@@ -72,3 +72,13 @@ schema-valid rate, grounded-quote rate and ticker precision.
 - **Reasoning-model gotcha:** `gpt-oss` spends hidden reasoning tokens inside `max_output_tokens`. At 800 the model sometimes produced an empty answer and Groq's JSON mode returned HTTP 400 `json_validate_failed`. Config now uses `max_output_tokens=2000` and `extra_body={"reasoning_effort":"low"}`; the live compat test passed 3/3 afterwards. Error details now include a redacted, truncated response body for diagnosis.
 - Observed usage: ~380 input / ~680 output tokens per headline-sized call before the fix; watch `llm_calls` after the change.
 - Disclosure: one live call during debugging used a headline-length sentence paraphrased from an Investify (restricted) listing (OGDC corporate briefing). It was sent only to Groq, stored nowhere (in-memory DB), and should not have been used: the eligibility gate protects stored items, but my ad-hoc test bypassed it. Later live tests use only synthetic sample text.
+
+### Gemini go-live notes (2026-11-09)
+- Key: saved on the Default environment via the secure credential form (host `generativelanguage.googleapis.com`); the proxy injects it. Run with `GEMINI_API_KEY=proxy-injected` in this sandbox.
+- **`/models` listing is not proof a model works.** `gemini-2.5-flash` is listed but a real call returns 404 "no longer available to new users"; `gemini-2.0-flash` is absent. Only a successful real call counts as verification.
+- Availability is volatile on this tier: on 2026-11-09 `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` answered (HTTP 200) while `gemini-3.8-flash`, `3.5-flash`, `3.6-flash` returned HTTP 502 and `3.7-flash`, `flash-latest` HTTP 503 "high demand". The config lists models in order (`models` list, per-model `verified`); `gemini-3.8-flash` is enabled but unverified, so it is skipped until a live call succeeds. When one does, flip its `verified` to true and move it first if quality justifies it.
+- Router now treats HTTP 502/503/504 as `overloaded`: the route cools down 30 s and the next route/provider is tried (logged as `error`).
+- Thinking-model caveat applies (reasoning tokens count against `max_output_tokens`): `reasoning_effort=low`, cap 4000, timeout 120 s.
+- Fallback order: news = groq -> gemini -> openrouter; long documents = gemini -> openrouter; financial line items = gemini.
+- Live verification: `check_providers.py --live` ok; live pytest (structured JSON + financial line items) 2/2; synthetic 3-chunk statement (known values): recall 9/9, 0 wrong, numbers parsed by Python.
+- Privacy: free-tier Gemini terms commonly allow Google to use prompts to improve products. Only public text from verified_permitted sources may be sent; restricted-source documents (e.g. PSX filings in the vault) remain blocked by the eligibility gate.

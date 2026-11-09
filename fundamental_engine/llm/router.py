@@ -99,7 +99,7 @@ class Router:
                     reply = prov.complete(self.prompt, text)
                 except ProviderError as e:
                     outcome = "not_connected" if e.kind in ("not_connected", "auth") else "error"
-                    if e.kind == "rate_limited":
+                    if e.kind in ("rate_limited", "overloaded"):
                         self.cooldown_until[route] = self.mono() + (e.retry_after or 60)
                     self._log(prov.name, prov.model, in_sha, outcome, attempts=attempt, error=f"{e.kind}: {e}"[:300])
                     last = {"outcome": outcome, "provider": prov.name, "detail": str(e)}
