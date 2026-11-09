@@ -80,4 +80,5 @@ No `psx_dps` source row was created or modified (it pre-exists, restricted). No 
 |------|--------|
 | Override recorded | done |
 | Offline tests | 11/11 passed |
-| Live run | not run by the assistant; owner to run locally and report |
+| Live run | Run by the assistant in the sandbox at owner's request, 2026-11-09. `python backend/investify_pilot.py https://investify.pk/` -> robots.txt (404/allowed path) + 1 page GET, 2/3 requests, HTTP 200, 837,406 bytes, exit 0. No block, no CAPTCHA. Page lists homepage news plus a "Company Announcements" block (e.g. SSGC Annual Report 2026, OGDC corporate briefing recording link, EFU Life right-issue allotment, AGM notices). Console only: nothing stored, no DB writes. |
+| Network | `investify.pk` and `www.investify.pk` (redirect target) added to Default environment allowlist. A first attempt (exit 4) failed only at the sandbox proxy for the www host; it never reached Investify. |
