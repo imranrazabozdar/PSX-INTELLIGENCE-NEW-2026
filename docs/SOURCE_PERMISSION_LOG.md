@@ -15,6 +15,14 @@ Record of explicit owner approvals for fetching data from external sources.
 - **Note:** the earlier pilot (-01) has no record in this repository's history; this is the first entry in this log.
 - **Code:** `backend/ohlcv_pilot.py`, tests in `backend/test_ohlcv_pilot.py`
 
+### Amendment A1 — User-Agent (owner-approved in-session, 2026-11-09)
+
+Original UA drew HTTP 404 from the portal. Owner approved:
+`Mozilla/5.0 (compatible; PSX-NEWS-INTELLIGENCE research bot, contact owner)` (still identifies the bot).
+All other parameters unchanged (4 symbols, cap 10, jitter 3.5-8.5 s). Turso token was renewed by the owner; `SELECT 1` handshake returned HTTP 200. Amendment is defined but NOT yet exercised: no request sent with it.
+
+Finding: production Turso has no `daily_ohlc`; the real table is `market_bars` (13,228 rows, strict schema). Ingest target pending owner confirmation.
+
 ### Run record
 
 | Step | Status |

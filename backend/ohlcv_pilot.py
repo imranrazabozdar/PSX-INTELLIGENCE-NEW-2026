@@ -21,7 +21,7 @@ APPROVAL_ID = "PILOT-2026-11-09-02"
 SYMBOLS = ["APL", "BAHL", "PACE", "DFML"]
 REQUEST_CAP = 10
 JITTER_MIN, JITTER_MAX = 3.5, 8.5
-USER_AGENT = "PSX-NEWS-INTELLIGENCE research bot, contact owner"
+USER_AGENT = "Mozilla/5.0 (compatible; PSX-NEWS-INTELLIGENCE research bot, contact owner)"  # amended per owner, see docs/SOURCE_PERMISSION_LOG.md
 EXCHANGE_DELAY = timedelta(minutes=15)
 PKT = timezone(timedelta(hours=5))
 
