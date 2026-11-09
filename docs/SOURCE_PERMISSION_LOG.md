@@ -39,3 +39,29 @@ Ingest into existing `market_bars` (`timeframe='1d'`, `bar_start_utc` = `YYYY-MM
 
 Requests that reached dps.psx.com.pk: 5 of 10 (robots.txt GET 404, POST 404 x2, GET /historical 200, GET /static/script.js 200).
 Turso: token renewed, `SELECT 1` HTTP 200; no writes made by this pilot.
+
+## PILOT-2026-11-09-03 — SCS Trade chart feed micro-batch (supersedes -02 route)
+
+- **Approved by:** repository owner, in-session, 2026-11-09 (after -02's dps.psx.com.pk route was abandoned: the portal now requires a JS-generated `X-Req-Id` header, which is not to be imitated)
+- **Source:** `https://chart.scstrade.com/history` (existing `scs_chart` source row, TradingView UDF, resolution `D`)
+- **Symbols:** APL, BAHL, PACE, DFML
+- **Scope:** last 30 trading days per symbol only; fields Symbol/Date/O/H/L/C/Volume
+- **Write budget:** up to 500 rows into `market_bars` (`INSERT OR IGNORE`, `timeframe='1d'`, one `collector_runs` row, source `scs_chart`); overrides the per-run budget block for this pilot only
+- **Constraints:** UA `Mozilla/5.0 (compatible; PSX-NEWS-INTELLIGENCE research bot, contact owner)`; jitter 3.5-8.5 s; no Referer or other spoofed headers; rows younger than 15 min (and the current PKT session) excluded; request cap 10
+- **Network:** `chart.scstrade.com` added to the Default environment allowlist
+- **Code:** `backend/ohlcv_pilot.py`, tests `backend/test_ohlcv_pilot.py` (8/8)
+
+### Run record — PILOT-2026-11-09-03 (2026-11-09, ~11:47 UTC)
+
+| Step | Result |
+|------|--------|
+| Approval recorded | done |
+| Offline tests (real-schema copy) | 8/8 passed |
+| Dry run | done (0 requests, no DB) |
+| Live run | 4 GET requests to chart.scstrade.com/history (cap 10), all HTTP 200, jitter 3.5-8.5 s |
+| Fetched | 120 bars (30 per symbol, 2026-09-28 .. 2026-11-06); none dated 2026-11-09 (market holiday) |
+| Ingest | **120 rows inserted** into `market_bars` (limit 500); 0 rejected, 0 duplicates |
+| Provenance | `collector_runs.run_id=38`, job `PILOT-2026-11-09-03`, status `succeeded`, linked to all 120 bars; source `scs_chart` (existing row, unchanged) |
+| Independent verification | Turso query: APL/BAHL/DFML/PACE = 30 `1d` bars each; `market_bars` total 13,228 -> 13,348 |
+
+No `psx_dps` source row was created (the -02 route never ran). No Referer or spoofed headers were sent.
