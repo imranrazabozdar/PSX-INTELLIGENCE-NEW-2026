@@ -1,0 +1,484 @@
+{
+ "version": "eval_sample@v1",
+ "note": "SYNTHETIC controlled sample: invented headlines, hand-labelled expectations, no third-party content.",
+ "master": {
+  "sectors": [
+   "psx-oil-gas-exploration-companies",
+   "psx-oil-gas-marketing-companies",
+   "psx-refinery",
+   "psx-commercial-banks",
+   "psx-cement",
+   "psx-power-generation-distribution",
+   "psx-fertilizer",
+   "psx-technology-communication"
+  ],
+  "companies": [
+   {
+    "ticker": "OGDC",
+    "legal_name": "Oil & Gas Development Company Limited",
+    "sector": "psx-oil-gas-exploration-companies",
+    "aliases": [
+     {
+      "alias": "oil gas development",
+      "type": "short_name",
+      "confidence": "derived"
+     },
+     {
+      "alias": "OGDCL",
+      "type": "abbreviation",
+      "confidence": "verified"
+     }
+    ]
+   },
+   {
+    "ticker": "PPL",
+    "legal_name": "Pakistan Petroleum Limited",
+    "sector": "psx-oil-gas-exploration-companies",
+    "aliases": []
+   },
+   {
+    "ticker": "PSO",
+    "legal_name": "Pakistan State Oil Company Limited",
+    "sector": "psx-oil-gas-marketing-companies",
+    "aliases": []
+   },
+   {
+    "ticker": "HUBC",
+    "legal_name": "The Hub Power Company Limited",
+    "sector": "psx-power-generation-distribution",
+    "aliases": [
+     {
+      "alias": "hub power",
+      "type": "short_name",
+      "confidence": "derived"
+     }
+    ]
+   },
+   {
+    "ticker": "BAFL",
+    "legal_name": "Bank Alfalah Limited",
+    "sector": "psx-commercial-banks",
+    "aliases": [
+     {
+      "alias": "bank alfalah",
+      "type": "short_name",
+      "confidence": "derived"
+     }
+    ]
+   },
+   {
+    "ticker": "LUCK",
+    "legal_name": "Lucky Cement Limited",
+    "sector": "psx-cement",
+    "aliases": []
+   },
+   {
+    "ticker": "FFC",
+    "legal_name": "Fauji Fertilizer Company Limited",
+    "sector": "psx-fertilizer",
+    "aliases": []
+   },
+   {
+    "ticker": "PPP",
+    "legal_name": "Pakistan Paper Products Limited",
+    "sector": null,
+    "aliases": []
+   },
+   {
+    "ticker": "CTM",
+    "legal_name": "Colony Textile Mills Ltd",
+    "sector": null,
+    "aliases": []
+   },
+   {
+    "ticker": "SYS",
+    "legal_name": "Systems Limited",
+    "sector": "psx-technology-communication",
+    "aliases": []
+   }
+  ],
+  "relationships": [
+   {
+    "parent": "HUBC",
+    "child_ticker": null,
+    "child_name": "Narowal Energy",
+    "type": "subsidiary"
+   }
+  ]
+ },
+ "dedup": {
+  "items": [
+   {
+    "id": 1,
+    "title": "Gold rises over 1% as softer oil prices ease inflation worries"
+   },
+   {
+    "id": 2,
+    "title": "GOLD RISES OVER 1% AS SOFTER OIL PRICES EASE INFLATION WORRIES | Business Recorder"
+   },
+   {
+    "id": 3,
+    "title": "Gold  rises over 1% as softer oil prices ease inflation worries."
+   },
+   {
+    "id": 4,
+    "title": "Petrol price cut by Rs6.59, HSD’s by Rs4.25"
+   },
+   {
+    "id": 5,
+    "title": "Petrol price cut by Rs 6.59, HSD's by Rs. 4.25 - Dawn"
+   },
+   {
+    "id": 6,
+    "title": "Petrol price slashed by Rs9.41 per litre"
+   },
+   {
+    "id": 7,
+    "title": "Petrol price slashed by Rs6.59 per litre"
+   },
+   {
+    "id": 8,
+    "title": "SBP keeps policy rate unchanged"
+   },
+   {
+    "id": 9,
+    "title": "SBP cuts policy rate"
+   },
+   {
+    "id": 10,
+    "title": "UPDATE 1 - Short-term inflation surges to 12.31pc"
+   },
+   {
+    "id": 11,
+    "title": "Short-term inflation surges to 12.31 percent"
+   },
+   {
+    "id": 12,
+    "title": "Pakistan's forex reserves climb to $26bn"
+   },
+   {
+    "id": 13,
+    "title": "Pakistan's forex reserves climb to $27bn"
+   },
+   {
+    "id": 14,
+    "title": "Government unveils export package; exporters to get relief on energy tariffs"
+   },
+   {
+    "id": 15,
+    "title": "Exporters to get energy tariff relief under new government package"
+   }
+  ],
+  "expected_duplicate_pairs": [
+   [
+    1,
+    2
+   ],
+   [
+    1,
+    3
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    4,
+    5
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    14,
+    15
+   ]
+  ],
+  "note": "pair 14-15 is the SAME story reworded: a human would call it a duplicate, deterministic fingerprints will not (documented limitation)"
+ },
+ "entities": [
+  {
+   "text": "OGDC announces final cash dividend",
+   "direct": [
+    "OGDC"
+   ],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "Hub Power Company Limited board approves interim dividend",
+   "direct": [
+    "HUBC"
+   ],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "Bank Alfalah quits Kabul after 20 years",
+   "direct": [
+    "BAFL"
+   ],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "OGDCL discovers new gas field",
+   "direct": [
+    "OGDC"
+   ],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "OGDC and PPL discover new fields; Lucky Cement steady",
+   "direct": [
+    "OGDC",
+    "PPL",
+    "LUCK"
+   ],
+   "indirect_rules": [
+    "cement_inputs"
+   ],
+   "unresolved": []
+  },
+  {
+   "text": "Petrol price cut by Rs6 per litre",
+   "direct": [],
+   "indirect_rules": [
+    "fuel_prices"
+   ],
+   "unresolved": []
+  },
+  {
+   "text": "Brent crude rallies; OGDC gains",
+   "direct": [
+    "OGDC"
+   ],
+   "indirect_rules": [
+    "fuel_prices"
+   ],
+   "unresolved": []
+  },
+  {
+   "text": "SBP keeps policy rate unchanged",
+   "direct": [],
+   "indirect_rules": [
+    "interest_rates"
+   ],
+   "unresolved": []
+  },
+  {
+   "text": "NEPRA raises industrial tariff",
+   "direct": [],
+   "indirect_rules": [
+    "power_tariff"
+   ],
+   "unresolved": []
+  },
+  {
+   "text": "Urea offtake rises in October",
+   "direct": [],
+   "indirect_rules": [
+    "fertilizer"
+   ],
+   "unresolved": []
+  },
+  {
+   "text": "PPP calls for emergency over violence against women",
+   "direct": [],
+   "indirect_rules": [],
+   "unresolved": [
+    "ambiguous_ticker_without_corroboration"
+   ]
+  },
+  {
+   "text": "PPP declares interim dividend for shareholders",
+   "direct": [
+    "PPP"
+   ],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "Narowal Energy plant shut for maintenance",
+   "direct": [],
+   "indirect_rules": [],
+   "unresolved": [
+    "child_not_in_master"
+   ]
+  },
+  {
+   "text": "Acme Textile Mills (ACME) posts record profit",
+   "direct": [],
+   "indirect_rules": [],
+   "unresolved": [
+    "ticker_like_not_in_master"
+   ]
+  },
+  {
+   "text": "Pindi courts acquit most accused",
+   "direct": [],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "US attack on island damages no vital infrastructure",
+   "direct": [],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "Colony Textile Mills transmits annual report",
+   "direct": [
+    "CTM"
+   ],
+   "indirect_rules": [],
+   "unresolved": []
+  },
+  {
+   "text": "Systems Limited wins export contract",
+   "direct": [
+    "SYS"
+   ],
+   "indirect_rules": [],
+   "unresolved": []
+  }
+ ],
+ "candidates": [
+  {
+   "id": "c1",
+   "text": "OGDC announces final cash dividend",
+   "output": {
+    "event_type": "dividend",
+    "tickers": [
+     "OGDC"
+    ],
+    "confidence_band": "medium",
+    "claims": [
+     {
+      "kind": "quote",
+      "text": "OGDC announces final cash dividend"
+     }
+    ]
+   },
+   "expect": "accept"
+  },
+  {
+   "id": "c2",
+   "text": "OGDC announces final cash dividend",
+   "output": {
+    "event_type": "dividend",
+    "tickers": [
+     "OGDC"
+    ],
+    "confidence_band": "medium",
+    "claims": [
+     {
+      "kind": "quote",
+      "text": "OGDC will pay a final dividend of Rs5"
+     }
+    ]
+   },
+   "expect": "reject",
+   "why": "quote not verbatim"
+  },
+  {
+   "id": "c3",
+   "text": "OGDC announces final cash dividend",
+   "output": {
+    "event_type": "dividend",
+    "tickers": [
+     "OGDC"
+    ],
+    "confidence_band": "high",
+    "claims": [
+     {
+      "kind": "inference",
+      "text": "Dividend yield is about 5 percent"
+     }
+    ]
+   },
+   "expect": "reject",
+   "why": "number in inference"
+  },
+  {
+   "id": "c4",
+   "text": "OGDC announces final cash dividend",
+   "output": {
+    "event_type": "dividend",
+    "tickers": [
+     "OGDC"
+    ],
+    "confidence_band": "high",
+    "claims": [
+     {
+      "kind": "quote",
+      "text": "OGDC announces final cash dividend",
+      "claim_type": "verified_fact"
+     }
+    ]
+   },
+   "expect": "reject",
+   "why": "model set claim type"
+  },
+  {
+   "id": "c5",
+   "text": "OGDC announces final cash dividend",
+   "output": {
+    "event_type": "dividend",
+    "tickers": [
+     "OGDC"
+    ],
+    "confidence_band": 0.9,
+    "claims": []
+   },
+   "expect": "reject",
+   "why": "numeric confidence"
+  },
+  {
+   "id": "c6",
+   "text": "OGDC announces final cash dividend",
+   "output": {
+    "event_type": "dividend",
+    "tickers": [
+     "OGDC",
+     "ZZZZ"
+    ],
+    "confidence_band": "low",
+    "claims": [
+     {
+      "kind": "quote",
+      "text": "OGDC announces final cash dividend"
+     }
+    ]
+   },
+   "expect": "accept",
+   "why": "unknown ticker dropped, never assigned"
+  },
+  {
+   "id": "c7",
+   "text": "Budget estimates revised",
+   "output": {
+    "event_type": "policy_regulation",
+    "tickers": [],
+    "confidence_band": "low",
+    "claims": [
+     {
+      "kind": "inference",
+      "text": "The government may revise spending plans"
+     }
+    ]
+   },
+   "expect": "accept",
+   "why": "number-free inference"
+  },
+  {
+   "id": "c8",
+   "text": "Budget estimates revised",
+   "output": "Sure! Here is the answer.",
+   "expect": "reject",
+   "why": "not JSON"
+  }
+ ]
+}

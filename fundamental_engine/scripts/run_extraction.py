@@ -2,6 +2,7 @@
   python fundamental_engine/scripts/run_extraction.py --task news_event_extraction --limit 10
   python fundamental_engine/scripts/run_extraction.py --task news_event_extraction --limit 5 --live   # needs an enabled+reviewed provider + key
 Relevance prefilter is ON by default (--no-prefilter to disable; --scan N = pending window scanned, default 300).
+Exact-duplicate headline skipping is ON by default (--no-dedupe to disable); near-duplicates are only reported.
 Reads/writes the production Turso DB via LIBSQL_URL/LIBSQL_AUTH_TOKEN."""
 import json
 import sys
@@ -24,7 +25,11 @@ if __name__ == "__main__":
         sys.exit("no usable provider: enable it, verify the model, record the terms review, and set its key (see docs/LLM_PROVIDERS.md)")
     scan = int(a[a.index("--scan") + 1]) if "--scan" in a else 300
     pre = None if "--no-prefilter" in a else Relevance.from_db(db)
-    res = run_news_batch(router, db, limit, dry_run=not live, prefilter=pre, scan_limit=scan)
-    print(json.dumps({k: v for k, v in res.items() if k != "plan"}))
+    res = run_news_batch(router, db, limit, dry_run=not live, prefilter=pre, scan_limit=scan, dedupe="--no-dedupe" not in a)
+    print(json.dumps({k: v for k, v in res.items() if k not in ("plan", "duplicates", "near_duplicates_reported")}))
+    for d in res["duplicates"]:
+        print("   duplicate skipped:", d)
+    for n in res["near_duplicates_reported"]:
+        print("   near-duplicate (sent, reported only):", n)
     for p in res["plan"][:20]:
         print("  ", p)
