@@ -31,5 +31,5 @@ if __name__ == "__main__":
             db.execute("INSERT INTO company_identifiers(company_id,id_type,value,verified_at_utc) VALUES('cmp-ogdc','psx_ticker','OGDC','t')")
             item = db.execute("INSERT INTO source_items(source_id,external_id,collected_at_utc,content_sha256) VALUES('s','e','t',?)", ("a" * 64,)).lastrowid
             prov = OpenAICompatProvider(p["name"], p["base_url"], p["model"], p["api_key_env"], p.get("max_output_tokens", 800),
-                                        p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"))
+                                        p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), None, p.get("extra_body"))
             print(p["name"], Router(db, [prov], {p["name"]: Budget(max_calls_per_day=2)}).extract(item, SAMPLE))

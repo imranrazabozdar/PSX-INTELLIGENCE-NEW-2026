@@ -54,7 +54,8 @@ class FakeSession:
 def make(name, session, **over):
     p = {x["name"]: x for x in CFG["providers"]}[name]
     return OpenAICompatProvider(name, p["base_url"], p["model"], p["api_key_env"], p.get("max_output_tokens", 800),
-                                p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), session, **over) \
+                                p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), session,
+                                p.get("extra_body"), **over) \
         if not over else OpenAICompatProvider(name, p["base_url"], p["model"], p["api_key_env"], session=session, **over)
 
 
@@ -71,13 +72,19 @@ def env(db):
 
 
 # ------------------------------------------------------------------ config
-def test_config_valid_and_safe_by_default():
+def test_config_valid_and_only_groq_unlocked():
     assert set(NAMES) >= {"groq", "gemini", "openrouter"}
-    assert all(p["enabled"] is False and p["terms_reviewed_utc"] is None and p["model_verified"] is False for p in CFG["providers"])
+    by = {p["name"]: p for p in CFG["providers"]}
+    g = by["groq"]
+    assert g["enabled"] and g["model_verified"] and g["terms_reviewed_utc"] == "2026-11-09" and g["model"] == "openai/gpt-oss-20b"
+    for n in ("gemini", "openrouter"):                      # rollout order: still locked until verified + reviewed
+        assert by[n]["enabled"] is False and by[n]["terms_reviewed_utc"] is None
+    assert all(m["enabled"] is False and m["verified"] is False for m in by["openrouter"]["models"])
     raw = (Path(cfgmod.DEFAULT_PATH)).read_text()
     assert not cfgmod._SECRET_VALUE.search(raw)
-    providers, budgets = cfgmod.build()                      # production rules: nothing usable until reviewed + enabled
-    assert providers == [] and budgets == {}
+    providers, budgets = cfgmod.build()                      # production rules: only the reviewed+verified provider is usable
+    assert [(p.name, p.model) for p in providers] == [("groq", "openai/gpt-oss-20b")] and list(budgets) == ["groq"]
+    assert cfgmod.build("long_document_extraction")[0] == [] and cfgmod.build("financial_line_items")[0] == []
 
 
 def enable_all(cfg, verified=False):
@@ -86,8 +93,7 @@ def enable_all(cfg, verified=False):
         for m in p.get("models", []):
             m["enabled"] = True
             m["verified"] = verified
-        if verified:
-            p["model_verified"], p["terms_reviewed_utc"] = True, "2026-11-10"
+        p["model_verified"], p["terms_reviewed_utc"] = (True, "2026-11-10") if verified else (False, None)
     return cfg
 
 
@@ -123,7 +129,9 @@ def test_status_never_leaks_keys(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "super-secret-value")
     st = cfgmod.status()
     assert {s["name"]: s["key_present"] for s in st}["groq"] is True and "super-secret-value" not in json.dumps(st)
-    assert all(s["usable_in_production"] is False for s in st)
+    by = {s["name"]: s for s in st}
+    assert by["groq"]["usable_in_production"] is True       # key present (set above) + enabled + reviewed + verified
+    assert by["gemini"]["usable_in_production"] is False and by["openrouter"]["usable_in_production"] is False
 
 
 # ------------------------------------------------------------------ request shape (per configured provider)
@@ -140,6 +148,8 @@ def test_request_shape(name, keys):
     assert body["model"] == pcfg["model"] and body["temperature"] == 0 and body["max_tokens"] == pcfg.get("max_output_tokens", 800)
     assert [m["role"] for m in body["messages"]] == ["system", "user"] and "untrusted" in body["messages"][1]["content"]
     assert ("response_format" in body) == pcfg.get("json_mode", False)
+    for k, v in pcfg.get("extra_body", {}).items():             # provider-specific fields come from config
+        assert body[k] == v
     assert "test-key" not in json.dumps(body)                  # key only in the header
     for k, v in pcfg.get("extra_headers", {}).items():
         assert call["headers"][k] == v
@@ -274,7 +284,7 @@ def test_live_key_connectivity_and_structured_json(name, db):
     add_source(db); add_company(db, "OGDC"); item = add_item(db)
     pcfg = {x["name"]: x for x in CFG["providers"]}[name]
     prov = OpenAICompatProvider(name, pcfg["base_url"], pcfg["model"], pcfg["api_key_env"], pcfg.get("max_output_tokens", 800),
-                                pcfg.get("timeout_s", 60), pcfg.get("json_mode", False), pcfg.get("extra_headers"))
+                                pcfg.get("timeout_s", 60), pcfg.get("json_mode", False), pcfg.get("extra_headers"), None, pcfg.get("extra_body"))
     r = Router(db, [prov], {name: Budget(max_calls_per_day=3)}).extract(item, TEXT)
     assert r["outcome"] in ("ok", "invalid_output"), r      # reachable + key accepted; invalid_output = reachable but model misbehaved
     assert r["outcome"] == "ok", f"{name} reached but did not return schema-valid, grounded JSON: {r}"

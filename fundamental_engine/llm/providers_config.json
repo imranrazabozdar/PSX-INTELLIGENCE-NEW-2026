@@ -27,18 +27,23 @@
       "name": "groq",
       "base_url": "https://api.groq.com/openai/v1",
       "api_key_env": "GROQ_API_KEY",
-      "model": "llama-3.3-70b-versatile",
-      "model_verified": false,
-      "enabled": false,
-      "terms_reviewed_utc": null,
+      "model": "openai/gpt-oss-20b",
+      "model_verified": true,
+      "enabled": true,
+      "terms_reviewed_utc": "2026-11-09",
       "json_mode": true,
       "timeout_s": 60,
-      "max_output_tokens": 800,
+      "max_output_tokens": 2000,
       "max_calls_per_day": 100,
       "max_tokens_per_day": 150000,
       "max_attempts_per_item": 2,
       "extra_headers": {},
-      "data_use_notes": "unreviewed: check whether prompts are logged or used for training before sending any text"
+      "data_use_notes": "owner attested terms review on 2026-11-09; send only public text from verified_permitted sources",
+      "terms_reviewed_by": "owner attestation (not an assistant review)",
+      "model_verified_note": "id confirmed present on the owner's account via GET /models on 2026-11-09 (llama-3.3-70b-versatile and llama-3.1-8b-instant are NOT available there); gpt-oss is a reasoning model: hidden reasoning tokens count against max_output_tokens, so 800 caused empty generations (json_validate_failed) - raised to 2000 with reasoning_effort=low",
+      "extra_body": {
+        "reasoning_effort": "low"
+      }
     },
     {
       "name": "gemini",

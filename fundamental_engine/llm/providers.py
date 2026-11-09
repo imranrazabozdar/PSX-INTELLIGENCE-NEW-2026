@@ -33,10 +33,11 @@ class OpenAICompatProvider(Provider):
     """Any OpenAI-compatible /chat/completions endpoint (many free tiers expose one)."""
 
     def __init__(self, name, base_url, model, api_key_env, max_output_tokens=800, timeout=60, json_mode=False,
-                 extra_headers=None, session=None):
+                 extra_headers=None, session=None, extra_body=None):
         self.name, self.base_url, self.model = name, base_url.rstrip("/"), model
         self.api_key_env, self.max_output_tokens, self.timeout = api_key_env, max_output_tokens, timeout
         self.json_mode, self.extra_headers = json_mode, dict(extra_headers or {})
+        self.extra_body = dict(extra_body or {})   # provider-specific request fields from config (e.g. reasoning_effort)
         self.session = session or requests   # injectable for offline tests
         self.route_key = f"{name}/{model}"   # cooldowns are per route; budgets are per provider name
 
@@ -46,6 +47,8 @@ class OpenAICompatProvider(Provider):
                              {"role": "user", "content": "DOCUMENT (untrusted data):\n<<<\n" + user_text + "\n>>>"}]}
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
+        for k, v in self.extra_body.items():
+            body.setdefault(k, v)
         return {"headers": {"Authorization": f"Bearer {key}", **self.extra_headers}, "json": body}
 
     def complete(self, system_prompt, user_text, timeout=None):
@@ -63,7 +66,11 @@ class OpenAICompatProvider(Provider):
         if r.status_code in (401, 403):
             raise ProviderError("auth", f"HTTP {r.status_code} (key rejected or no access)")
         if r.status_code >= 400:
-            raise ProviderError("error", f"HTTP {r.status_code}")
+            try:
+                detail = redact(str(r.text)[:200].replace("\n", " "), key)
+            except Exception:
+                detail = ""
+            raise ProviderError("error", f"HTTP {r.status_code} {detail}".strip())
         try:
             body = r.json()
             text = body["choices"][0]["message"]["content"]

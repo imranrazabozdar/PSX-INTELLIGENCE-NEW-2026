@@ -87,7 +87,7 @@ def build(task="news_event_extraction", path=DEFAULT_PATH, require_review=True, 
         for model in _models(p, require_review):
             providers.append(OpenAICompatProvider(
                 p["name"], p["base_url"], model, p["api_key_env"], p.get("max_output_tokens", 800),
-                p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), session))
+                p.get("timeout_s", 60), p.get("json_mode", False), p.get("extra_headers"), session, p.get("extra_body")))
         if any(x.name == name for x in providers):
             budgets[name] = Budget(p["max_calls_per_day"], p["max_tokens_per_day"], p.get("max_attempts_per_item", 2))
     return providers, budgets

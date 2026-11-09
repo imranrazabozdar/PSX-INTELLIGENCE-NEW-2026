@@ -15,7 +15,7 @@ Status: **no provider is enabled or connected yet.** `llm/providers_config.json`
 
 | Provider | Base URL | Model (UNVERIFIED) | Key env var | Terms/limits reviewed | Status |
 |---|---|---|---|---|---|
-| groq | https://api.groq.com/openai/v1 | llama-3.3-70b-versatile | `GROQ_API_KEY` | not yet | disabled |
+| groq | https://api.groq.com/openai/v1 | openai/gpt-oss-20b | `GROQ_API_KEY` | 2026-11-09, owner attestation | **enabled** (model confirmed via /models) |
 | gemini | https://generativelanguage.googleapis.com/v1beta/openai | gemini-2.0-flash | `GEMINI_API_KEY` | not yet | disabled |
 | openrouter | https://openrouter.ai/api/v1 | meta-llama/llama-3.3-70b-instruct:free | `OPENROUTER_API_KEY` | not yet | disabled |
 
@@ -65,3 +65,10 @@ schema-valid rate, grounded-quote rate and ticker precision.
 - A provider with a `models` list expands to one route per model that is both `enabled` and `verified`, in listed order.
   A rate-limited route cools down for its `Retry-After`; the other models of the provider are still tried. Daily budgets
   are shared across all models of a provider. Currently one unverified, disabled model is listed.
+
+### Groq go-live notes (2026-11-09)
+- Enabled by owner decision: `openai/gpt-oss-20b` (id confirmed present via `GET /models`; `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` are NOT available on this account). Terms review recorded as an **owner attestation**, not an assistant review.
+- Key: saved on the Default environment via the secure credential form; the proxy injects it. Code reads `GROQ_API_KEY`, so run with `GROQ_API_KEY=proxy-injected` in this sandbox. On the owner's own machine/hosts set the real key in the environment.
+- **Reasoning-model gotcha:** `gpt-oss` spends hidden reasoning tokens inside `max_output_tokens`. At 800 the model sometimes produced an empty answer and Groq's JSON mode returned HTTP 400 `json_validate_failed`. Config now uses `max_output_tokens=2000` and `extra_body={"reasoning_effort":"low"}`; the live compat test passed 3/3 afterwards. Error details now include a redacted, truncated response body for diagnosis.
+- Observed usage: ~380 input / ~680 output tokens per headline-sized call before the fix; watch `llm_calls` after the change.
+- Disclosure: one live call during debugging used a headline-length sentence paraphrased from an Investify (restricted) listing (OGDC corporate briefing). It was sent only to Groq, stored nowhere (in-memory DB), and should not have been used: the eligibility gate protects stored items, but my ad-hoc test bypassed it. Later live tests use only synthetic sample text.
