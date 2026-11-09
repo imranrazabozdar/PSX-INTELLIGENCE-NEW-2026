@@ -60,3 +60,20 @@ def test_mapping_satisfies_real_schema_constraints_in_memory_copy():
     with pytest.raises(sqlite3.IntegrityError):  # same (source, external_id) twice is rejected -> dedupe key works
         row = ip.to_source_item(ip.parse_announcements(HTML)[0], "2026-11-09T13:00:00Z")
         c.execute(f"INSERT INTO source_items({','.join(row)}) VALUES({','.join('?' * len(row))})", list(row.values()))
+
+
+def test_company_name_from_span_title_only_when_text_matches():
+    items = {i["ticker"]: i for i in ip.parse_announcements(HTML)}
+    assert items["SSGC"]["company_name"] == "Sui Southern Gas Company Ltd"
+    assert items["TPLP"]["company_name"] == "TPL Properties Ltd"
+    bad = HTML.replace('<span title="TPL Properties Ltd">TPL Properties Ltd</span>', '<span title="Other Name">TPL Properties Ltd</span>')
+    assert {i["ticker"]: i for i in ip.parse_announcements(bad)}["TPLP"]["company_name"] is None
+
+
+def test_name_in_metadata_but_not_in_hash():
+    it = ip.parse_announcements(HTML)[0]
+    row = ip.to_source_item(it, "2026-11-09T12:00:00Z")
+    assert '"company_name": "Sui Southern Gas Company Ltd"' in row["source_metadata_json"]
+    it2 = dict(it, company_name=None)
+    assert ip.facts_sha256(it) == ip.facts_sha256(it2)          # hash is over the five approved facts only
+    assert "company_name" not in ip.to_source_item(it2, "t")["source_metadata_json"]

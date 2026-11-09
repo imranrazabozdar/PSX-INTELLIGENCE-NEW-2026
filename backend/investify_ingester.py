@@ -105,6 +105,55 @@ def ingest(conn, items, http_requests=0, now=None):
             "new_versions": len(p["changed"]), "run_id": run_id}
 
 
+BACKFILL_JOB = "investify_name_backfill"
+
+
+def backfill_names(conn, items, dry_run=False, now=None):
+    """Add `company_name` to source_metadata_json of EXISTING investify items (matched by external_id AND ticker).
+    Never inserts, never overwrites a different existing name. This is a documented exception to the append-only
+    convention (owner-approved 2026-11-09); the immutability triggers do not cover source_metadata_json. Every
+    update is recorded on one collector_runs row."""
+    import json as _json
+    res = {"updated": [], "already_set": 0, "conflict": [], "unmatched": [], "no_name_on_page": 0}
+    for it in items:
+        name = it.get("company_name")
+        if not name:
+            res["no_name_on_page"] += 1
+            continue
+        ext = f"psx_filing:{it['psx_id']}"
+        row = conn.execute("SELECT source_item_id, source_metadata_json FROM source_items WHERE source_id=? AND external_id=?",
+                           (parser.SOURCE_ID, ext)).fetchone()
+        if row is None:
+            res["unmatched"].append(ext)
+            continue
+        meta = _json.loads(_v(row, "source_metadata_json") or "{}")
+        if meta.get("ticker") != it["ticker"]:
+            res["conflict"].append((ext, f"ticker {meta.get('ticker')} != {it['ticker']}"))
+        elif meta.get("company_name") == name:
+            res["already_set"] += 1
+        elif meta.get("company_name"):
+            res["conflict"].append((ext, f"existing name {meta['company_name']!r} != {name!r}"))
+        else:
+            meta["company_name"] = name
+            res["updated"].append((_v(row, "source_item_id"), it["ticker"], name, _json.dumps(meta, sort_keys=True)))
+    if dry_run:
+        return res
+    stamp = now or _now()
+    run_id = conn.execute(
+        "INSERT INTO collector_runs(job,source_id,started_at_utc,status,log_reference) VALUES(?,?,?,'running',?)",
+        (BACKFILL_JOB, parser.SOURCE_ID, stamp, pilot.APPROVAL_ID)).lastrowid
+    for sid, _t, _n, meta_json in res["updated"]:
+        conn.execute("UPDATE source_items SET source_metadata_json=? WHERE source_item_id=?", (meta_json, sid))
+    conn.execute("UPDATE collector_runs SET finished_at_utc=?,status='succeeded',items_fetched=?,items_accepted=?,"
+                 "errors=? WHERE run_id=?",
+                 (_now(), len(items), len(res["updated"]),
+                  f"NOT AN ERROR - append-only exception, owner-approved 2026-11-09: source_metadata_json.company_name added to "
+                  f"{len(res['updated'])} existing source_items rows; no other columns changed", run_id))
+    conn.commit()
+    res["run_id"] = run_id
+    return res
+
+
 def get_html(args):
     if args.html_file:
         return open(args.html_file, encoding="utf-8").read(), 0
@@ -124,6 +173,8 @@ def main(argv=None):
     g.add_argument("--dry-run", action="store_true")
     g.add_argument("--live", action="store_true")
     ap.add_argument("--html-file", help="parse a saved page instead of fetching (no Investify request)")
+    ap.add_argument("--backfill-names", action="store_true",
+                    help="add company_name to existing rows only (no inserts); use with --dry-run or --live")
     a = ap.parse_args(argv)
     try:
         html, used = get_html(a)
@@ -138,6 +189,14 @@ def main(argv=None):
         conn = turso_db.get_connection()
         if isinstance(conn, sqlite3.Connection):
             raise IngestError("Turso connection failed (local fallback); refusing")
+        if a.backfill_names:
+            res = backfill_names(conn, items, dry_run=a.dry_run)
+            print({k: (len(v) if isinstance(v, list) else v) for k, v in res.items()})
+            for sid, t, n, _ in res["updated"]:
+                print(f"  {'would set' if a.dry_run else 'set'} item {sid} {t}: company_name={n!r}")
+            for x in res["conflict"] + [("unmatched", u) for u in res["unmatched"]]:
+                print("  skipped:", x)
+            return 0
         if a.dry_run:
             p = plan(conn, items)
             print({"would_insert": len(p["new"]), "duplicates": len(p["duplicate"]), "changed": len(p["changed"])})
