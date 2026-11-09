@@ -10,7 +10,7 @@ import requests
 class ProviderError(Exception):
     def __init__(self, kind, message="", retry_after=None):
         super().__init__(message or kind)
-        self.kind = kind            # 'not_connected' | 'auth' | 'rate_limited' | 'error'
+        self.kind = kind            # 'not_connected' | 'auth' | 'rate_limited' | 'overloaded' | 'error'
         self.retry_after = retry_after
 
 
@@ -19,6 +19,7 @@ class Reply:
     text: str
     input_tokens: int = 0
     output_tokens: int = 0
+    served_model: str | None = None   # what the provider says actually answered (auto-routers hide this behind one id)
 
 
 class Provider:
@@ -63,6 +64,8 @@ class OpenAICompatProvider(Provider):
         if r.status_code == 429:
             ra = r.headers.get("Retry-After", "")
             raise ProviderError("rate_limited", "HTTP 429", int(ra) if str(ra).isdigit() else None)
+        if r.status_code in (502, 503, 504):
+            raise ProviderError("overloaded", f"HTTP {r.status_code} upstream overloaded/unavailable", 30)
         if r.status_code in (401, 403):
             raise ProviderError("auth", f"HTTP {r.status_code} (key rejected or no access)")
         if r.status_code >= 400:
@@ -79,8 +82,9 @@ class OpenAICompatProvider(Provider):
         if not isinstance(text, str) or not text.strip():
             raise ProviderError("error", "empty completion")
         u = body.get("usage") or {}
+        sm = body.get("model") if isinstance(body.get("model"), str) else None
         return Reply(text, int(u.get("prompt_tokens") or (len(user_text) + len(system_prompt)) // 4),
-                     int(u.get("completion_tokens") or len(text) // 4))
+                     int(u.get("completion_tokens") or len(text) // 4), sm)
 
 
 def redact(text, *secrets):

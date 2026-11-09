@@ -99,7 +99,7 @@ class Router:
                     reply = prov.complete(self.prompt, text)
                 except ProviderError as e:
                     outcome = "not_connected" if e.kind in ("not_connected", "auth") else "error"
-                    if e.kind == "rate_limited":
+                    if e.kind in ("rate_limited", "overloaded"):
                         self.cooldown_until[route] = self.mono() + (e.retry_after or 60)
                     self._log(prov.name, prov.model, in_sha, outcome, attempts=attempt, error=f"{e.kind}: {e}"[:300])
                     last = {"outcome": outcome, "provider": prov.name, "detail": str(e)}
@@ -112,11 +112,11 @@ class Router:
                     last = {"outcome": "invalid_output", "provider": prov.name, "detail": e.reason}
                     continue
                 call_id = self._log(prov.name, prov.model, in_sha, "ok", reply.input_tokens, reply.output_tokens, attempt)
-                return self._store(item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv)
+                return self._store(item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv, reply.served_model)
         return last
 
     # ------------------------------------------------------------ candidate write (idempotent)
-    def _store(self, item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv):
+    def _store(self, item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv, served_model=None):
         extracted = self.handler.extracted(cand, item["source_type"])
         band = cand["confidence_band"]
         self.db.execute(
@@ -128,7 +128,8 @@ class Router:
              f"model band {band!r} mapped to {BAND_TO_CONFIDENCE[band]} by a fixed Python table; not a model-supplied number",
              json.dumps(["phase1_all_candidates_need_human_review"] + flags),
              json.dumps({"provider": prov.name, "model": prov.model, "prompt_sha256": self.prompt_sha,
-                         "input_sha256": in_sha, "source_item_id": source_item_id, "call_id": call_id}, sort_keys=True),
+                         "input_sha256": in_sha, "source_item_id": source_item_id, "call_id": call_id,
+                         **({"served_model": served_model} if served_model and served_model != prov.model else {})}, sort_keys=True),
              self.now()))
         self.db.commit()
         row = self.db.execute("SELECT extraction_id FROM event_extractions WHERE source_item_id=? AND schema_version=? "

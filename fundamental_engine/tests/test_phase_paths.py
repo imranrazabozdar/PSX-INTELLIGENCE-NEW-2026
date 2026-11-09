@@ -198,7 +198,8 @@ def test_openrouter_models_expand_in_order_and_need_individual_verification(tmp_
     f = or_cfg(tmp_path, [{"id": "m-a:free", "verified": True, "enabled": True}, {"id": "m-b:free", "verified": False, "enabled": True},
                           {"id": "m-c:free", "verified": True, "enabled": False}, {"id": "m-d:free", "verified": True, "enabled": True}])
     provs, budgets = cfgmod.build("long_document_extraction", f)
-    assert [(p.name, p.model) for p in provs] == [("gemini", "gemini-2.0-flash"), ("openrouter", "m-a:free"), ("openrouter", "m-d:free")]
+    assert [(p.name, p.model) for p in provs] == [("gemini", "gemini-3.5-flash-lite"), ("gemini", "gemini-3.1-flash-lite"), ("gemini", "gemini-3.8-flash"),
+                                                       ("openrouter", "m-a:free"), ("openrouter", "m-d:free")]
     assert list(budgets) == ["gemini", "openrouter"]
 
 
