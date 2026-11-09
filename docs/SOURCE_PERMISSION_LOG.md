@@ -65,3 +65,19 @@ Turso: token renewed, `SELECT 1` HTTP 200; no writes made by this pilot.
 | Independent verification | Turso query: APL/BAHL/DFML/PACE = 30 `1d` bars each; `market_bars` total 13,228 -> 13,348 |
 
 No `psx_dps` source row was created or modified (it pre-exists, restricted). No Referer or spoofed headers were sent.
+
+## PILOT-2026-11-09-04 — Investify public-page read test (OWNER OVERRIDE)
+
+- **Decision:** OWNER OVERRIDE, 2026-11-09, in-session. The `investify` source row is `RESTRICTED` / `prohibits_automation` / `permission_required` (terms reviewed 2026-11-07, `docs/INVESTIFY_SCS_TRADE_ASSESSMENT.md`, PR #6): automated access needs Investify's prior written permission. **No such permission exists.** The owner explicitly accepts the legal/terms risk, under the same risk-acceptance protocol as the SCS pilot, to test Investify's public pages for text-based announcement metadata.
+- **Scope:** read-only, public pages only; console output only; **no database writes** (Turso untouched); no `sources` row change (it stays RESTRICTED).
+- **Conditions:** honest User-Agent only — `Mozilla/5.0 (compatible; PSX-NEWS-INTELLIGENCE research bot, contact owner)`; no spoofed browser headers (no Sec-Fetch-*, no Referer); a browser-mimicking header set was proposed and **declined**; 4.5-9.5 s jitter before every request; robots.txt checked first and respected; no auth, no CAPTCHA/WAF bypass — on a block (403/429/503, CAPTCHA or challenge page) the script exits and reports it; hard cap of 3 requests per run.
+- **Code:** `backend/investify_pilot.py`, tests `backend/test_investify_pilot.py` (offline). Run locally by the owner; not run by the assistant (no network access to the host from the sandbox).
+- **Not an approval for collection:** stored data, scheduled collection or enabling the source would each need a separate decision.
+
+### Run record
+
+| Step | Status |
+|------|--------|
+| Override recorded | done |
+| Offline tests | 11/11 passed |
+| Live run | not run by the assistant; owner to run locally and report |
