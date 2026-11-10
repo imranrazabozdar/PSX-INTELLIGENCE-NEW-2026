@@ -46,6 +46,15 @@ import time
 
 LIBSQL_URL = os.getenv("LIBSQL_URL")
 LIBSQL_AUTH_TOKEN = os.getenv("LIBSQL_AUTH_TOKEN")
+# Fail closed: this engine must never use the PSX-NEWS-INTELLIGENCE database (see
+# fundamental_engine/core/db_guard.py for the same rule). Refused at import, before any connection is made.
+_NEWS_OWNED_HOST = "psx-news-intelligence-imranrazabozdar.aws-us-east-1.turso.io"
+if LIBSQL_URL:
+    _rest = LIBSQL_URL.split("://", 1)[-1]
+    _host = _rest.split("/", 1)[0].split(":", 1)[0].lower().rstrip(".")
+    if "@" in _rest.split("/", 1)[0] or _host == _NEWS_OWNED_HOST or "psx-news-intelligence" in _host:
+        raise RuntimeError("refusing: LIBSQL_URL points at the PSX-NEWS-INTELLIGENCE database; this engine "
+                           "must use its own separate database (docs/DATABASE_OWNERSHIP.md)")
 LOCAL_REPLICA_PATH = os.getenv("PSX_DB", "psx_v2.db")
 
 USING_TURSO = bool(LIBSQL_URL and LIBSQL_AUTH_TOKEN)

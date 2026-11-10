@@ -10,6 +10,7 @@ from core.config import LLM_ELIGIBLE_ACCESS_STATUS
 from extract import registry
 from extract.claims import BAND_TO_CONFIDENCE
 from llm import budget as bud
+from extract.entities import Resolver
 from llm.handlers import HANDLERS
 from llm.providers import ProviderError
 from llm.validate import ValidationError, parse_json_object
@@ -27,11 +28,12 @@ def sha(text):
 
 
 class Router:
-    def __init__(self, db, providers, budgets=None, spec=registry.EVENT_CANDIDATE, now=_now, mono=time.monotonic):
+    def __init__(self, db, providers, budgets=None, spec=registry.EVENT_CANDIDATE, now=_now, mono=time.monotonic, resolver=None):
         """providers: ordered list (primary first). budgets: {provider_name: Budget} (shared by all models of a provider)."""
         self.db, self.providers, self.spec, self.now, self.mono = db, providers, spec, now, mono
         self.budgets = budgets or {}
         self.handler = HANDLERS[spec["handler"]]
+        self._resolver = resolver  # deterministic entity resolver; built lazily from the master tables
         self.cooldown_until = {}   # route key ('provider/model') -> monotonic time; set after a rate limit
         self.prompt, self.prompt_sha = registry.load_prompt(spec["prompt_id"], spec["prompt_version"])
         self.schema = registry.load_schema(spec["schema_id"], spec["schema_version"])
@@ -51,14 +53,21 @@ class Router:
             (self.now(), provider, model, self.spec["prompt_id"], self.spec["prompt_version"], self.prompt_sha,
              input_sha, in_tok, out_tok, attempts, outcome, error)).lastrowid
 
+    def resolver(self):
+        if self._resolver is None:
+            self._resolver = Resolver.from_db(self.db)
+        return self._resolver
+
     def _resolve_ticker(self, t):
         r = self.db.execute("SELECT company_id FROM company_identifiers WHERE id_type='psx_ticker' AND value=? "
                             "AND valid_to IS NULL", (t,)).one()
         return r["company_id"] if r else None
 
     # ------------------------------------------------------------ main entry
-    def extract(self, source_item_id, text, variant=""):
-        """variant: extra cache discriminator folded into schema_version (e.g. a long-document chunk tag)."""
+    def extract(self, source_item_id, text, variant="", text_basis="headline"):
+        """variant: extra cache discriminator folded into schema_version (e.g. a long-document chunk tag).
+        text_basis: what the text IS ('headline' | 'excerpt' | 'full_text'); recorded so headline-only findings are never
+        presented as findings about the whole article."""
         item = self.db.execute(
             "SELECT s.source_item_id, s.source_id, src.access_status, src.source_type FROM source_items s "
             "JOIN sources src USING(source_id) WHERE s.source_item_id=?", (source_item_id,)).one()
@@ -112,12 +121,23 @@ class Router:
                     last = {"outcome": "invalid_output", "provider": prov.name, "detail": e.reason}
                     continue
                 call_id = self._log(prov.name, prov.model, in_sha, "ok", reply.input_tokens, reply.output_tokens, attempt)
-                return self._store(item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv, reply.served_model)
+                return self._store(item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv, reply.served_model, text, text_basis)
         return last
 
     # ------------------------------------------------------------ candidate write (idempotent)
-    def _store(self, item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv, served_model=None):
+    def _store(self, item, source_item_id, in_sha, call_id, prov, cand, flags, sv, pv, served_model=None, text="", text_basis="headline"):
         extracted = self.handler.extracted(cand, item["source_type"])
+        extracted["text_basis"] = text_basis
+        extracted["evidence_scope"] = {"headline": "headline_only", "excerpt": "excerpt_only", "full_text": "full_text"}.get(text_basis, text_basis)
+        if self.handler.name == "event_candidate":
+            res = self.resolver().resolve(text)                       # deterministic, independent of the model
+            extracted["entity_resolution"] = res
+            proposed = {t["ticker"] for t in extracted.get("tickers", [])}
+            unsupported = sorted(proposed - {d["ticker"] for d in res["direct"]})
+            if unsupported:
+                flags = flags + [f"model-proposed tickers not supported by deterministic resolution: {unsupported}"]
+        if text_basis == "headline":
+            flags = flags + ["headline_only: findings describe the headline, not the full article"]
         band = cand["confidence_band"]
         self.db.execute(
             "INSERT OR IGNORE INTO event_extractions(source_item_id,event_id,call_id,schema_version,prompt_version,model,"
@@ -128,7 +148,7 @@ class Router:
              f"model band {band!r} mapped to {BAND_TO_CONFIDENCE[band]} by a fixed Python table; not a model-supplied number",
              json.dumps(["phase1_all_candidates_need_human_review"] + flags),
              json.dumps({"provider": prov.name, "model": prov.model, "prompt_sha256": self.prompt_sha,
-                         "input_sha256": in_sha, "source_item_id": source_item_id, "call_id": call_id,
+                         "input_sha256": in_sha, "source_item_id": source_item_id, "call_id": call_id, "text_basis": text_basis,
                          **({"served_model": served_model} if served_model and served_model != prov.model else {})}, sort_keys=True),
              self.now()))
         self.db.commit()

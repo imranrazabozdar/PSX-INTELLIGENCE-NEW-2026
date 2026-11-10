@@ -1,0 +1,40 @@
+{
+  "version": "exposure_rules@v1",
+  "notes": [
+    "INDIRECT exposure rules: a keyword/commodity term associates a news item with PSX sectors, and through the master's company_classifications with companies in those sectors.",
+    "These are rule-based, low-confidence associations for a reviewer to consider, NOT findings. They never create a direct link and never assign a ticker by themselves. Direction is always unknown.",
+    "Sector ids must exist in the master `sectors` table; unknown ids are skipped and reported by the resolver (warnings).",
+    "Rules are the owner's to tune: bump `version` when they change."
+  ],
+  "ambiguous_tickers": ["PPP"],
+  "rules": [
+    {"id": "fuel_prices", "confidence": 0.4,
+     "terms": ["petrol price", "diesel price", "hsd", "oil prices", "brent", "crude oil", "crude"],
+     "sector_ids": ["psx-oil-gas-marketing-companies", "psx-refinery", "psx-oil-gas-exploration-companies"],
+     "rationale": "fuel and crude price news is typically relevant to oil marketing, refining and E&P companies"},
+    {"id": "gas_and_lng", "confidence": 0.3,
+     "terms": ["gas price", "ogra", "lng", "circular debt"],
+     "sector_ids": ["psx-oil-gas-marketing-companies", "psx-oil-gas-exploration-companies", "psx-fertilizer", "psx-power-generation-distribution"],
+     "rationale": "gas pricing/supply and circular-debt news touches gas utilities, E&P, fertilizer and power"},
+    {"id": "power_tariff", "confidence": 0.4,
+     "terms": ["nepra", "power tariff", "electricity tariff", "capacity payments", "fuel cost adjustment"],
+     "sector_ids": ["psx-power-generation-distribution"],
+     "rationale": "power regulator and tariff news is relevant to power generation and distribution companies"},
+    {"id": "interest_rates", "confidence": 0.4,
+     "terms": ["policy rate", "monetary policy", "kibor"],
+     "sector_ids": ["psx-commercial-banks"],
+     "rationale": "interest-rate news is relevant to banks' margins"},
+    {"id": "cement_inputs", "confidence": 0.4,
+     "terms": ["cement", "coal price"],
+     "sector_ids": ["psx-cement"],
+     "rationale": "cement demand and coal costs are relevant to cement producers"},
+    {"id": "fertilizer", "confidence": 0.5,
+     "terms": ["urea", "dap", "fertiliser", "fertilizer"],
+     "sector_ids": ["psx-fertilizer"],
+     "rationale": "fertilizer price/offtake news is relevant to fertilizer producers"},
+    {"id": "it_exports", "confidence": 0.4,
+     "terms": ["it exports", "software exports", "it services exports"],
+     "sector_ids": ["psx-technology-communication"],
+     "rationale": "IT export news is relevant to technology companies"}
+  ]
+}

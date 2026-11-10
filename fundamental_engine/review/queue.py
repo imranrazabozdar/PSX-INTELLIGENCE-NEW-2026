@@ -26,7 +26,10 @@ def summarise(row):
             "event_type": j.get("event_type"), "band": j.get("confidence_band"),
             "tickers": [t["ticker"] for t in j.get("tickers", [])], "unresolved": j.get("unresolved_tickers", []),
             "quotes": [(c["claim_type"], c["text"]) for c in quotes], "inferences": [c["text"] for c in infs],
-            "reviewable": bool(quotes)}
+            "reviewable": bool(quotes),
+            "text_basis": j.get("text_basis", "headline"),      # legacy candidates (before this field) were all headline-only
+            "direct_companies": [d["ticker"] for d in j.get("entity_resolution", {}).get("direct", [])],
+            "indirect_rules": [i.get("rule_id") or i.get("basis") for i in j.get("entity_resolution", {}).get("indirect", [])]}
 
 
 def show(db, extraction_id):
