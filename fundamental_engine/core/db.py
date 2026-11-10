@@ -49,6 +49,8 @@ def _dec(cell):
 class TursoClient:
     def __init__(self, url=None, token=None, timeout=30):
         url = url or os.getenv("LIBSQL_URL", "")
+        from core.db_guard import refuse_news_database  # fail closed before any network call
+        refuse_news_database(url)
         if not url:
             raise RuntimeError("LIBSQL_URL is not set")
         self.endpoint = url.replace("libsql://", "https://").rstrip("/") + "/v2/pipeline"
