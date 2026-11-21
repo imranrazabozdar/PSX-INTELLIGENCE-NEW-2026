@@ -39,69 +39,38 @@ TIMEOUT = 45  # generous margin for cross-region latency to Turso (Streamlit
 _EMBED_BACKEND = os.getenv("PSX_EMBED_BACKEND", "").lower() in ("1", "true", "yes")
 _BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
 
-_BACKEND_VERSION = "v7"  # bumped for the fire-scan/wyckoff-scan 24h->30min cache-interval fix
+def _backend_code_version():
+    """Manual tag + a hash of the backend's own .py files, so any backend code
+    change deployed to this process makes the embedded server restart."""
+    import hashlib
+    h = hashlib.sha256()
+    for name in sorted(os.listdir(_BACKEND_DIR)) if os.path.isdir(_BACKEND_DIR) else []:
+        if name.endswith(".py"):
+            try:
+                with open(os.path.join(_BACKEND_DIR, name), "rb") as f:
+                    h.update(name.encode() + f.read())
+            except OSError:
+                pass
+    return "v8-" + h.hexdigest()[:12]
+
+
+_BACKEND_VERSION = _backend_code_version()  # v8: Phase D /patterns/phase-d-scan
 
 
 @st.cache_resource
-def _ensure_embedded_backend(_version=None):
-    """Starts backend/app.py in a daemon thread exactly once per container
-    process. Bump _BACKEND_VERSION to force cache invalidation on deploy."""
+def _ensure_embedded_backend(version=None):
+    """Serves backend/app.py on :8000 inside this process (embedded_backend.py).
+    `version` is part of the cache key (no leading underscore -- Streamlit does
+    not hash underscore-prefixed arguments), and embedded_backend stops a
+    server left running by older code, so a deploy really serves new routes."""
     if not _EMBED_BACKEND:
         return False
-
-    # If backend is already healthy (previous hot-reload left it running), skip.
-    try:
-        if requests.get("http://127.0.0.1:8000/health", timeout=2).ok:
-            print("[embed] Backend already running on :8000, reusing")
-            return True
-    except Exception:
-        pass
-
-    os.environ.setdefault("PSX_DB", os.path.join(_BACKEND_DIR, "psx_v2.db"))
-    if _BACKEND_DIR not in sys.path:
-        sys.path.insert(0, _BACKEND_DIR)
-
-    import uvicorn
-    import importlib
-
-    _backend_modules = [m for m in sys.modules if m == "app" or m.startswith("app.")]
-    for _m in _backend_modules:
-        try:
-            importlib.reload(sys.modules[_m])
-        except Exception:
-            pass
-    if "app" in sys.modules:
-        importlib.reload(sys.modules["app"])
-    import app as _backend_app
-
-    cfg = uvicorn.Config(
-        app=_backend_app.app, host="127.0.0.1", port=8000, log_level="warning",
-    )
-    server = uvicorn.Server(cfg)
-    # Allow rebinding port even if old thread hasn't fully released it
-    import socket
-    _orig_bind = socket.socket.bind
-    def _reuse_bind(self, addr):
-        self.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return _orig_bind(self, addr)
-    socket.socket.bind = _reuse_bind
-    threading.Thread(target=server.run, daemon=True).start()
-    socket.socket.bind = _orig_bind
-    # Survives script reruns (module globals don't): _backend_up() reads it
-    # so a backend still starting up is waited for, not duplicated.
-    os.environ["PSX_EMBED_STARTED_AT"] = str(time.time())
-
-    for _ in range(30):
-        try:
-            if requests.get("http://127.0.0.1:8000/health", timeout=1).ok:
-                break
-        except Exception:
-            pass
-        time.sleep(1)
+    import embedded_backend
+    embedded_backend.ensure(version, _BACKEND_DIR)
     return True
 
 
-_ensure_embedded_backend(_version=_BACKEND_VERSION)
+_ensure_embedded_backend(version=_BACKEND_VERSION)
 
 st.set_page_config(page_title="PSX Intelligence", layout="wide",
                     initial_sidebar_state="collapsed",
@@ -800,7 +769,7 @@ def _backend_up():
     if _EMBED_BACKEND:
         try:
             _ensure_embedded_backend.clear()
-            _ensure_embedded_backend(_version=_BACKEND_VERSION)
+            _ensure_embedded_backend(version=_BACKEND_VERSION)
             r = requests.get(f"{BACKEND}/health", timeout=5)
             return r.ok
         except Exception:
