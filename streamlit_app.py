@@ -1033,8 +1033,8 @@ if _health_db.get("on_local_fallback"):
 elif _health_banner.get("status") == "error":
     st.warning(f"⚠️ Backend unreachable: {_health_banner.get('reason')} — data below may be stale or missing.")
 
-tab_home, tab_intraday, tab_screener, tab_pulse, tab_dss, tab_patterns, tab_more = st.tabs(
-    ["🏠 Home", "⚡ Intraday", "🔍 Screener", "📰 Pulse", "🎯 Stock Research", "🕯️ Patterns", "⚙️ More"]
+tab_home, tab_intraday, tab_screener, tab_pulse, tab_dss, tab_patterns, tab_breakouts, tab_more = st.tabs(
+    ["🏠 Home", "⚡ Intraday", "🔍 Screener", "📰 Pulse", "🎯 Stock Research", "🕯️ Patterns", "🚀 Breakouts", "⚙️ More"]
 )
 
 
@@ -3975,6 +3975,19 @@ with tab_patterns:
 
     st.caption("More patterns (Hammer, Piercing Pattern, Harami, Three White Soldiers) will be added to "
                "this tab as separate detectors, each scanned the same way.")
+
+
+# ----------------------------------------------------------- Breakouts ----
+# Phase D Breakout & Shelf Tracker (phase_d_ui.py), its own tab -- reuses the
+# Patterns tab's shared table/banner helpers and refresh params defined above,
+# without changing anything inside the Patterns tab.
+with tab_breakouts:
+    try:
+        import phase_d_ui as _phase_d_ui
+        _phase_d_ui.render_tab(_get, _company_names, _render_pattern_table, _scan_status_banner,
+                               _pat_refresh_params)
+    except Exception as _e:
+        st.warning(f"Breakouts tab unavailable: {type(_e).__name__}: {_e}")
 
 
 # ---------------------------------------------------------------- More ----

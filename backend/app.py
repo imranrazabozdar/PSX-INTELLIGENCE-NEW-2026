@@ -3733,6 +3733,45 @@ def patterns_wyckoff_scan(request:Request, force:bool=False):
     return _serve_cheap_scan("wyckoff_scan", _run_wyckoff_scan, force, request)
 
 
+def _run_phase_d_scan():
+    """Phase D Breakout & Shelf Tracker (fire_engine/phase_d_detector.py) --
+    reads the latest scanned session's phase_d_signals rows; never computes.
+    The session comes from the 'phase_d_batch' completion record when there is
+    one, so a day with zero signals shows as "0 signals today" rather than
+    silently falling back to an older date; else MAX(scan_date)."""
+    with db() as c:
+        try:
+            r = c.execute("SELECT MAX(session_date) AS d FROM batch_runs WHERE job = 'phase_d_batch' "
+                          "AND status = 'completed'").fetchone()
+            done = r["d"] if r else None
+        except Exception:
+            done = None
+        try:
+            r = c.execute("SELECT MAX(scan_date) AS d FROM phase_d_signals").fetchone()
+            latest = r["d"] if r else None
+        except Exception as exc:
+            return {"status": "ok", "scanned": 0, "hits": [], "date": done,
+                    "reason": f"phase_d_signals not available yet ({type(exc).__name__}); the daily "
+                              "tracker (fire_engine/run_phase_d_tracker.py) hasn't run against this database yet."}
+        date = max([d for d in (done, latest) if d], default=None)
+        if not date:
+            return {"status": "ok", "scanned": 0, "hits": [],
+                    "reason": "No Phase D scan yet -- it runs with the daily pattern refresh."}
+        hits = [dict(x) for x in c.execute(
+            "SELECT * FROM phase_d_signals WHERE scan_date = ? ORDER BY CASE signal_type "
+            "WHEN 'SHELF_BREAKOUT' THEN 0 WHEN 'SOS_IGNITION' THEN 1 WHEN 'ACTIVE_SHELF' THEN 2 ELSE 3 END, "
+            "rvol DESC", (date,)).fetchall()]
+    return {"status": "ok", "scanned": len(hits), "date": date, "hits": hits}
+
+
+@app.get("/patterns/phase-d-scan")
+def patterns_phase_d_scan(request:Request, force:bool=False):
+    """Phase D Breakout & Shelf Tracker -- completed-bar technical states
+    (SHELF_BREAKOUT / SOS_IGNITION / ACTIVE_SHELF), one per symbol per date.
+    A state tracker, not a buy recommendation or a probability."""
+    return _serve_cheap_scan("phase_d_scan", _run_phase_d_scan, force, request)
+
+
 @app.get("/patterns/mharris-scan")
 def patterns_mharris_scan(request:Request, force:bool=False):
     """Market-wide MHarris 5-Bar Reversal scan -- both BULL and BEAR hits,
