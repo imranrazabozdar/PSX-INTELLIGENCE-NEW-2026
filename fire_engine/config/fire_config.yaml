@@ -89,7 +89,8 @@ stocks:
   # 93 entries once deduplicated, and 32 of those were already in the
   # original 89 (e.g. ABL, PPL, OGDC, MARI) -- so only the 61 genuinely
   # new symbols below were appended. Total universe: 89 + 61 = 150, not
-  # the 178 a naive 89+89 add would imply.
+  # the 178 a naive 89+89 add would imply. NPL, NCPL, PAEL appended
+  # 2026-11-21 (total 153).
   #
   # exclusion.enabled below still removes any of these that also appear
   # in the excluded-sectors list (currently just YOUW, per that list's
@@ -247,6 +248,10 @@ stocks:
     - WAFI
     - APL
     - GWLC
+    # added 2026-11-21 by request (Breakouts watch list): already-present requests left as-is
+    - NPL
+    - NCPL
+    - PAEL
 
 exclusion:
   enabled: true
