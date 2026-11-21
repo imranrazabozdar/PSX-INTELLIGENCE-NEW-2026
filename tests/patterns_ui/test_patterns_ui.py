@@ -137,6 +137,7 @@ def test_volatility_and_w2_detail_paths_still_open(fx):
 MODULE_TABLES = {
     "PSX FIRE Engine — Priority Setups": ["fire_scan_table_FIRE", "fire_scan_table_PRE-FIRE"],
     "Wyckoff Institutional Accumulation": ["wyckoff_scan_table"],
+    "Phase D Breakout & Shelf Tracker": ["phase_d_scan_table"],
     "OBV+MFI Setup with ATR Contraction": ["obv_mfi_scan_table"],
     "Bullish Engulfing": ["patterns_scan_table"],
     "Morning Star": ["morning_star_scan_table"],
@@ -209,14 +210,15 @@ def test_overview_by_module_counts_match_module_outputs(fx, module_tables):
     exp = _expected(module_tables)
     seen = 0
     for name, rows in exp.items():
-        line = next(x for x in md if x.startswith(f"**{name}**"))
+        import html as _html
+        line = next(x for x in md if x.startswith(f"**{_html.escape(name)}**"))
         n = int(re.search(r">(\d+) (?:signals?|alerts|research flags)<", line).group(1))
         assert n == len(rows), (name, n, len(rows))
         seen += 1
     assert seen == len(MODULE_TABLES) + 1
     hv = next(x for x in md if x.startswith("**Historical Validation**"))
     assert "Information view" in hv
-    w2 = next(x for x in md if x.startswith(f"**{W2_NAME}**"))
+    w2 = next(x for x in md if x.startswith(f"**{W2_NAME}**"))  # no "&" in this name
     assert "include only Strong Accumulation, Advanced Accumulation and Potential Breakout" in w2
 
 
@@ -257,10 +259,12 @@ TRADE_LABELS = {"entry": "Entry", "Entry": "Entry", "stop": None, "Stop": "Stop-
 def test_cards_show_entry_stop_target_date_rr_wherever_they_exist(fx, module_tables):
     import html as _h
     import patterns_ui as U
+    cards = []
     for v in ["Long", "Short", "Structural"]:
         at = capture.run(fx, {"pui_view": v, "pui_layout": "Cards",
                               **{f"{k}__shown": 100000 for k in MODULE_TABLES_KEYS()}})
-        cards = [_h.unescape(str(m.value)) for m in at.markdown if 'class="pui-card"' in str(m.value)]
+        cards += [_h.unescape(str(m.value)) for m in at.markdown if 'class="pui-card"' in str(m.value)]
+    if True:
         for key in [k for ks in MODULE_TABLES.values() for k in ks]:
             if key not in module_tables or not key.endswith("scan_table"):
                 continue

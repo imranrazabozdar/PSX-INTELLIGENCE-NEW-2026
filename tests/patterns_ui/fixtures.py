@@ -158,7 +158,9 @@ def build():
         "/patterns/gp-evolved-ranking": {"ranked": [1], "symbols_trained": 40, "symbols_skipped": 49},
         "/patterns/fire-scan": dict(_scan(fire_hits, scanned=len(fire_hits), age=6 * 3600), date=SESSION),
         "/patterns/wyckoff-scan": dict(_scan(wy_hits, scanned=len(wy_rows), age=6 * 3600), date=SESSION),
-        "/patterns/bullish-engulfing-scan": _scan(_hits(14, 6, lambda i, r, h: {"classification": "VALID" if i % 3 else "GEOMETRY_ONLY"})),
+        # geometry-only detector: real hits carry no entry/stop/target fields
+        "/patterns/bullish-engulfing-scan": _scan([{k: v for k, v in h.items() if k not in ("entry_price", "stop_loss", "target_1")}
+                                                   for h in _hits(14, 6, lambda i, r, h: {"classification": "VALID" if i % 3 else "GEOMETRY_ONLY"})]),
         "/patterns/morning-star-scan": _scan(_hits(4, 7, bull_bear, date_key="date")),
         "/patterns/three-line-strike-scan": _scan([]),
         "/patterns/bearish-engulfing-scan": _scan(_hits(61, 8, lambda i, r, h: {"classification": "VALID" if i % 4 else "FAILED"})),
@@ -168,6 +170,12 @@ def build():
                                                date_key="signal_date")),
         "/patterns/hstop-scan": _scan(_hits(2, 11, lambda i, r, h: {"pattern_type": "HEAD_SHOULDERS_TOP",
                                                                     "risk_reward_measured": 0.9}, date_key="signal_date")),
+        "/patterns/phase-d-scan": dict(_scan([
+            {"symbol": SYMBOLS[i], "signal_type": t, "rvol": rv, "turnover_pkr": 12_500_000.0 + i, "close": 20.0 + i,
+             "shelf_days": sd, "pct_change": 1.5, "base_or_shelf_high": 21.0 + i, "up_down_vol_ratio": ud,
+             "ignition_date": _d(sd)} for i, (t, rv, sd, ud) in enumerate([
+                ("SHELF_BREAKOUT", 3.2, 7, 2.1), ("SOS_IGNITION", 5.5, 0, None), ("ACTIVE_SHELF", 0.9, 4, 1.9)])],
+            scanned=3), date=SESSION),
         "/patterns/volatility-engine": vol,
         "/patterns/volatility-engine/stats": vstats,
         "/patterns/volatility-wyckoff": combined,
