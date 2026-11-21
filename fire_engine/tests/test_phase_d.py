@@ -226,3 +226,60 @@ def test_diagnose_is_read_only_and_matches_detector(tmp_path, capsys):
     for cells, k in zip(rows, range(38, len(b))):
         want = (D.evaluate(b[:k + 1]) or {}).get("signal_type", "—")
         assert cells[-1].strip() == want
+
+
+def custom_shelf(shelf_bars):
+    """Base + the standard ignition bar (low 10.2, close 11.28, volume 5M), then the given shelf bars
+    as (open, high, low, close, volume) tuples."""
+    b = story(shelf=0, breakout=False)
+    for o, h, l, c, v in shelf_bars:
+        b.append({"open": o, "high": h, "low": l, "close": c, "volume": v})
+    for x, d in zip(b, _dates(len(b))):
+        x["date"] = d
+    return b
+
+
+def test_stair_step_shelf_is_not_penalised():
+    # five higher steps on light volume: total span (14.6 - 11.2) / 11.2 = 30% (the old 28% span rule failed it),
+    # but no pullback from any running peak exceeds 25%
+    steps = [(11.3, 11.5, 11.2, 11.4, 900_000), (11.4, 12.2, 11.4, 12.1, 900_000), (12.1, 12.9, 12.0, 12.8, 900_000),
+             (12.8, 13.7, 12.7, 13.6, 900_000), (13.6, 14.6, 13.5, 14.5, 900_000)]
+    b = custom_shelf(steps)
+    assert (max(x[1] for x in steps) - min(x[2] for x in steps)) / min(x[2] for x in steps) > 0.28
+    r = D.evaluate(b)
+    assert r["signal_type"] == "ACTIVE_SHELF" and r["shelf_days"] == 5
+    m = D.shelf_metrics(b, 40, len(b) - 1, D._ema([x["close"] for x in b], 20))
+    assert m["depth"] <= 0.25 and m["up_days"] == 5 and m["down_days"] == 0
+
+
+def test_pullback_deeper_than_25pct_from_running_peak_ends_shelf():
+    # the third bar's low is 27% below the shelf's running high (11.3) although every close holds the floor
+    bars = [(11.2, 11.3, 11.1, 11.25, 1_400_000), (11.25, 11.3, 11.1, 11.15, 600_000),
+            (11.15, 11.2, 8.2, 11.1, 600_000), (11.1, 11.3, 11.0, 11.25, 1_400_000)]
+    b = custom_shelf(bars)
+    m = D.shelf_metrics(b, 40, len(b) - 1, D._ema([x["close"] for x in b], 20))
+    assert m["held"] and m["depth"] == pytest.approx((11.3 - 8.2) / 11.3) and not m["depth_ok"]
+    assert sig(b) is None
+    bars[2] = (11.15, 11.2, 8.6, 11.1, 600_000)                  # 23.9% -> within the limit
+    assert sig(custom_shelf(bars)) == "ACTIVE_SHELF"
+
+
+def test_pure_low_volume_throwback_passes_heavy_one_fails():
+    # three straight down closes (no up day), all above the floor and EMA20
+    light = [(11.25, 11.3, 11.1, 11.2, 1_500_000), (11.2, 11.25, 11.0, 11.1, 1_800_000),
+             (11.1, 11.15, 10.9, 11.0, 2_100_000)]           # avg 1.8M <= 0.40 x 5M = 2.0M
+    b = custom_shelf(light)
+    m = D.shelf_metrics(b, 40, len(b) - 1, D._ema([x["close"] for x in b], 20))
+    assert m["up_days"] == 0 and m["vol_path"] == "throwback" and m["throwback_vol"] == pytest.approx(0.36)
+    assert sig(b) == "ACTIVE_SHELF"
+    heavy = [x[:4] + (x[4] + 500_000,) for x in light]          # avg 2.3M > 2.0M
+    assert sig(custom_shelf(heavy)) is None
+
+
+def test_up_down_ratio_threshold_is_1_5x():
+    def shelf(up_v):
+        # up, down, up, down (the first close 11.30 is above the ignition close 11.28)
+        return [(11.2, 11.35, 11.1, 11.30, up_v), (11.3, 11.3, 11.1, 11.15, 1_000_000),
+                (11.15, 11.35, 11.1, 11.25, up_v), (11.25, 11.3, 11.1, 11.15, 1_000_000)]
+    assert sig(custom_shelf(shelf(1_550_000))) == "ACTIVE_SHELF"   # 1.55x
+    assert sig(custom_shelf(shelf(1_450_000))) is None             # 1.45x

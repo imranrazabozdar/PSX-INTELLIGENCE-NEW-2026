@@ -167,9 +167,9 @@ def diagnose(conn, symbol, d_from, d_to):
     r = D.RULES
     pf = lambda ok: "Pass" if ok else "Fail"
     print(f"### {symbol} ACTIVE_SHELF diagnostic {d_from} → {d_to} (read-only)\n")
-    print("| Date | Close | Volume | EMA20 | Shelf Days | Floor Value | Above Floor & EMA20? | Shelf Range % | "
-          "<= 28%? | Up/Down Vol Ratio | >= 1.8x? | Final Signal |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print("| Date | Close | Volume | EMA20 | Shelf Days | Floor Value | Above Floor & EMA20? | Pullback Depth % | "
+          "<= 25%? | Up/Down Vol Ratio | Shelf Vol / Ignition Vol | Volume Test | Final Signal |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for k, b in enumerate(allbars):
         if not (d_from <= b["date"] <= d_to):
             continue
@@ -180,27 +180,21 @@ def diagnose(conn, symbol, d_from, d_to):
         ign = next((t - a for a in range(1, r["shelf_max_age"] + 1) if t - a >= 0 and D._sos_at(w, t - a, r)), None)
         if ign is None:
             print(f"| {b['date']} | {b['close']:.2f} | {b['volume']:,.0f} | {ema[t]:.3f} | — | — | — | — | — | — | — "
-                  f"| {sig} |")
+                  f"| — | {sig} |")
             continue
         age = t - ign
-        g = w[ign]
-        floor = g["low"] + 0.25 * (g["close"] - g["low"])
-        bad = [w[j]["date"] for j in range(ign + 1, t + 1) if not (w[j]["close"] > floor and w[j]["close"] > ema[j])]
-        shelf = w[ign + 1:t + 1]
-        hi, lo = max(x["high"] for x in shelf), min(x["low"] for x in shelf)
-        rng = (hi - lo) / lo * 100 if lo > 0 else None
-        up = [w[j]["volume"] for j in range(ign + 1, t + 1) if w[j]["close"] > w[j - 1]["close"]]
-        dn = [w[j]["volume"] for j in range(ign + 1, t + 1) if w[j]["close"] < w[j - 1]["close"]]
-        ratio = (sum(up) / len(up) if up else 0.0) / (sum(dn) / len(dn)) if dn else None
-        early = " (age < 3: too early)" if age < r["shelf_min_age"] else ""
-        held = "Pass" if not bad else "Fail (" + ", ".join(bad) + ")"
-        print(f"| {b['date']} | {b['close']:.2f} | {b['volume']:,.0f} | {ema[t]:.3f} | {age}{early} | {floor:.3f} | "
-              f"{held} | {rng:.2f}% | {pf(rng is not None and rng <= r['shelf_max_range'] * 100)} | "
-              f"{'no down days' if ratio is None else f'{ratio:.2f}x'} | "
-              f"{pf(ratio is None or ratio >= r['shelf_updown_vol'])} | {sig} |")
-    print(f"\nIgnition used: most recent SOS_IGNITION 1–12 trading days back. Floor = ign_low + 0.25 × "
-          "(ign_close − ign_low). 'Above Floor & EMA20' must hold on EVERY close since the ignition "
-          "(failing dates listed). Shelf range and up/down volume are over all bars since the ignition.")
+        m = D.shelf_metrics(w, ign, t, ema, r)
+        early = " (under 3: too early)" if age < r["shelf_min_age"] else ""
+        held = "Pass" if m["held"] else "Fail (" + ", ".join(m["broke_on"]) + ")"
+        ratio = "—" if m["ratio"] is None else f"{m['ratio']:.2f}x"
+        tv = "—" if m["throwback_vol"] is None else f"{m['throwback_vol']:.2f}x"
+        vol = f"{pf(m['vol_ok'])} ({m['vol_path']}: {m['up_days']} up / {m['down_days']} down)"
+        print(f"| {b['date']} | {b['close']:.2f} | {b['volume']:,.0f} | {ema[t]:.3f} | {age}{early} | "
+              f"{m['floor']:.3f} | {held} | {m['depth'] * 100:.2f}% | {pf(m['depth_ok'])} | {ratio} | {tv} | "
+              f"{vol} | {sig} |")
+    print("\nIgnition used: most recent SOS_IGNITION 1–12 trading days back. 'Above Floor & EMA20' must hold on "
+          "EVERY close since it. Volume test: up/down = at least one up day and ratio >= 1.5x (or no down days); "
+          "throwback = no up day and shelf volume <= 0.40x the ignition bar's.")
 
 
 def main(argv=None):

@@ -49,9 +49,12 @@ def rules():
                "the 20-session average, the previous 20 sessions' range (max high − min low) / min low ≤ 30%, "
                "and a strong close.")
     st.caption("**ACTIVE SHELF** — an SOS Ignition 3 to 12 trading days ago (the most recent one); every "
-               "close since stays above the ignition floor low + 25% × (close − low) of the ignition bar and above the 20-day "
-               "EMA; the shelf's range (high − low) / low ≤ 28%; and average up-day volume ≥ 1.8× average "
-               "down-day volume (when there are down days).")
+               "close since stays above the ignition floor low + 25% × (close − low) of the ignition bar and "
+               "above the 20-day EMA; no pullback deeper than 25% from the shelf's running peak (the largest "
+               "(running high − low) / running high across the shelf bars, so stepping higher inside the shelf "
+               "is not penalised); and volume confirms — either at least one up day with average up-day volume "
+               "≥ 1.5× average down-day volume (or no down days), or, for a pure throwback with no up day yet, "
+               "average shelf volume ≤ 40% of the ignition bar's volume.")
     st.caption("**SHELF BREAKOUT** — the stock was an Active Shelf through yesterday, and today closes above "
                "that shelf's high on volume ≥ 2.5× the 20-session average with a strong close.")
     st.caption("One signal per stock per day, in priority Shelf Breakout > SOS Ignition > Active Shelf. Same "

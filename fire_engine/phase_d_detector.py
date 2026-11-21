@@ -29,9 +29,14 @@ All rules are evaluated on completed daily bars only and look backwards only
       low[i] + 0.25 * (close[i] - low[i]) AND above EMA20[j]
       (lets a normal LPS throwback into the ignition bar's lower half stand;
       a close in its bottom quarter ends the shelf)
-    shelf = bars (i, t]: (shelf_high - shelf_low) / shelf_low <= 0.28
-    avg up-day volume >= 1.8 x avg down-day volume (only if there are down
-      days; up/down = close vs previous close)
+    shelf = bars (i, t]. Pullback depth from the running peak:
+      max over shelf bars of (running_max(high) - low) / running_max(high)
+      <= 0.25 (stair-stepping higher inside the shelf is not penalised; a
+      > 25% drop from any shelf peak is)
+    volume: EITHER at least one up day and (no down days, or avg up-day
+      volume >= 1.5 x avg down-day volume), OR no up day at all (a pure
+      throwback) with avg shelf volume <= 0.40 x the ignition bar's volume
+      (up/down = close vs previous close)
 
   SHELF_BREAKOUT at bar t
     ACTIVE_SHELF held at t-1 (evaluated on bars up to t-1)
@@ -51,8 +56,9 @@ RULES = {
     "min_turnover_pkr": 5_000_000,
     "shelf_min_age": 3,
     "shelf_max_age": 12,
-    "shelf_max_range": 0.28,
-    "shelf_updown_vol": 1.8,
+    "shelf_max_depth": 0.25,
+    "shelf_updown_vol": 1.5,
+    "throwback_max_vol": 0.40,
     "ema_span": 20,
     "breakout_vol_mult": 2.5,
     "bars": 90,
@@ -112,6 +118,38 @@ def _sos_at(bars, i, r=RULES):
     return {"base_high": max_h, "rvol": b["volume"] / sma}
 
 
+def shelf_metrics(bars, i, t, ema, r=RULES):
+    """Every ACTIVE_SHELF measurement for ignition bar i and shelf bars (i, t].
+    Shared by the detector and the read-only replay diagnostic."""
+    ign = bars[i]
+    floor = ign["low"] + 0.25 * (ign["close"] - ign["low"])
+    shelf = bars[i + 1:t + 1]
+    broke = [bars[j]["date"] for j in range(i + 1, t + 1)
+             if not (bars[j]["close"] > floor and bars[j]["close"] > ema[j])]
+    peak, depth = None, 0.0
+    for x in shelf:
+        peak = x["high"] if peak is None else max(peak, x["high"])
+        if peak > 0:
+            depth = max(depth, (peak - x["low"]) / peak)
+    up, dn = [], []
+    for j in range(i + 1, t + 1):
+        if bars[j]["close"] > bars[j - 1]["close"]:
+            up.append(bars[j]["volume"])
+        elif bars[j]["close"] < bars[j - 1]["close"]:
+            dn.append(bars[j]["volume"])
+    ratio = (sum(up) / len(up)) / (sum(dn) / len(dn)) if up and dn and sum(dn) else None
+    avg_vol = sum(x["volume"] for x in shelf) / len(shelf) if shelf else 0.0
+    throwback_vol = avg_vol / ign["volume"] if ign["volume"] else None
+    if up:
+        vol_ok, vol_path = (not dn) or (ratio is not None and ratio >= r["shelf_updown_vol"]), "up/down"
+    else:
+        vol_ok, vol_path = throwback_vol is not None and throwback_vol <= r["throwback_max_vol"], "throwback"
+    return {"floor": floor, "held": not broke, "broke_on": broke, "depth": depth,
+            "depth_ok": depth <= r["shelf_max_depth"], "up_days": len(up), "down_days": len(dn),
+            "ratio": ratio, "throwback_vol": throwback_vol, "vol_ok": vol_ok, "vol_path": vol_path,
+            "shelf_high": max(x["high"] for x in shelf), "shelf_low": min(x["low"] for x in shelf)}
+
+
 def _shelf_at(bars, t, ema, r=RULES):
     """ACTIVE_SHELF test for bar t (uses bars[0..t] only). Detail or None."""
     for age in range(r["shelf_min_age"], r["shelf_max_age"] + 1):
@@ -121,29 +159,11 @@ def _shelf_at(bars, t, ema, r=RULES):
         if _sos_at(bars, i, r) is None:
             continue
         # most recent qualifying ignition found -> evaluate this one only
-        ign = bars[i]
-        floor = ign["low"] + 0.25 * (ign["close"] - ign["low"])
-        shelf = bars[i + 1:t + 1]
-        for j in range(i + 1, t + 1):
-            if not (bars[j]["close"] > floor and bars[j]["close"] > ema[j]):
-                return None
-        hi = max(x["high"] for x in shelf)
-        lo = min(x["low"] for x in shelf)
-        if lo <= 0 or (hi - lo) / lo > r["shelf_max_range"]:
+        m = shelf_metrics(bars, i, t, ema, r)
+        if not (m["held"] and m["depth_ok"] and m["vol_ok"]):
             return None
-        up, dn = [], []
-        for j in range(i + 1, t + 1):
-            (up if bars[j]["close"] > bars[j - 1]["close"] else dn if bars[j]["close"] < bars[j - 1]["close"]
-             else []).append(bars[j]["volume"])
-        ratio = None
-        if dn:
-            avg_up = sum(up) / len(up) if up else 0.0
-            avg_dn = sum(dn) / len(dn)
-            ratio = avg_up / avg_dn if avg_dn else None
-            if avg_dn and avg_up < r["shelf_updown_vol"] * avg_dn:
-                return None
-        return {"ignition_index": i, "ignition_date": ign["date"], "shelf_high": hi, "shelf_low": lo,
-                "shelf_days": age, "up_down_vol_ratio": ratio}
+        return {"ignition_index": i, "ignition_date": bars[i]["date"], "shelf_high": m["shelf_high"],
+                "shelf_low": m["shelf_low"], "shelf_days": age, "up_down_vol_ratio": m["ratio"]}
     return None
 
 
