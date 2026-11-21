@@ -39,7 +39,9 @@ All rules are evaluated on completed daily bars only and look backwards only
       (up/down = close vs previous close)
 
   SHELF_BREAKOUT at bar t
-    ACTIVE_SHELF held at t-1 (evaluated on bars up to t-1)
+    ACTIVE_SHELF held at t-1 (evaluated on bars up to t-1) AND t-1's resolved
+      final label was ACTIVE_SHELF -- so it fires once, on the initial break;
+      the day after a SHELF_BREAKOUT cannot fire another one
     close[t] > that shelf's shelf_high
     volume[t] >= 2.5 * sma20_vol[t], strong close, turnover >= 5M
 
@@ -185,7 +187,8 @@ def evaluate(bars, r=RULES):
     # 1. SHELF_BREAKOUT
     sh_prev = _shelf_at(bars, t - 1, ema, r)
     if sh_prev and sma and b["close"] > sh_prev["shelf_high"] and b["volume"] >= r["breakout_vol_mult"] * sma \
-            and _strong_close(b, prev["close"], r["strong_close"]) and common["turnover_pkr"] >= r["min_turnover_pkr"]:
+            and _strong_close(b, prev["close"], r["strong_close"]) and common["turnover_pkr"] >= r["min_turnover_pkr"] \
+            and (evaluate(bars[:-1], r) or {}).get("signal_type") == "ACTIVE_SHELF":
         return dict(common, signal_type="SHELF_BREAKOUT", base_or_shelf_high=sh_prev["shelf_high"],
                     shelf_days=sh_prev["shelf_days"], up_down_vol_ratio=sh_prev["up_down_vol_ratio"],
                     ignition_date=sh_prev["ignition_date"])

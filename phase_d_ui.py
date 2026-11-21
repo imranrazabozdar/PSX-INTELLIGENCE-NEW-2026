@@ -55,8 +55,9 @@ def rules():
                "is not penalised); and volume confirms — either at least one up day with average up-day volume "
                "≥ 1.5× average down-day volume (or no down days), or, for a pure throwback with no up day yet, "
                "average shelf volume ≤ 40% of the ignition bar's volume.")
-    st.caption("**SHELF BREAKOUT** — the stock was an Active Shelf through yesterday, and today closes above "
-               "that shelf's high on volume ≥ 2.5× the 20-session average with a strong close.")
+    st.caption("**SHELF BREAKOUT** — yesterday's signal was Active Shelf, and today closes above that shelf's "
+               "high on volume ≥ 2.5× the 20-session average with a strong close. It fires once, on the initial "
+               "break: the day after a Shelf Breakout cannot fire another one.")
     st.caption("One signal per stock per day, in priority Shelf Breakout > SOS Ignition > Active Shelf. Same "
                "universe and exclusion list as Wyckoff; stocks with fewer than 30 bars, or whose newest "
                "candle is not the session date (stale), are skipped. Last 90 daily bars from the shared "

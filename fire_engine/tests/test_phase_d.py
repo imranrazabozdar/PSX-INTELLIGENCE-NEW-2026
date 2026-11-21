@@ -283,3 +283,18 @@ def test_up_down_ratio_threshold_is_1_5x():
                 (11.15, 11.35, 11.1, 11.25, up_v), (11.25, 11.3, 11.1, 11.15, 1_000_000)]
     assert sig(custom_shelf(shelf(1_550_000))) == "ACTIVE_SHELF"   # 1.55x
     assert sig(custom_shelf(shelf(1_450_000))) is None             # 1.45x
+
+
+def test_shelf_breakout_fires_once_not_on_follow_through_day():
+    b = story()                                      # ... ACTIVE_SHELF ..., SHELF_BREAKOUT on the last bar
+    assert sig(b) == "SHELF_BREAKOUT" and sig(b[:-1]) == "ACTIVE_SHELF"
+    # strong follow-through: new high above the shelf high, heavy volume, strong close, > 5M turnover
+    nxt = {"open": 11.85, "high": 12.6, "low": 11.85, "close": 12.55, "volume": 8_000_000,
+           "date": _dates(1, date.fromisoformat(b[-1]["date"]) + timedelta(days=3))[0]}
+    b2 = b + [nxt]
+    # without the single-trigger rule the follow-through would qualify on every other breakout condition
+    sh_prev = D._shelf_at(b2, len(b2) - 2, D._ema([x["close"] for x in b2], 20))
+    assert sh_prev and nxt["close"] > sh_prev["shelf_high"]
+    sma = D._sma_vol([x["volume"] for x in b2], len(b2) - 1)
+    assert nxt["volume"] >= 2.5 * sma and nxt["close"] * nxt["volume"] >= 5_000_000
+    assert sig(b2) != "SHELF_BREAKOUT"
