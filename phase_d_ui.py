@@ -97,6 +97,28 @@ def watch(h, scan_date):
             f"Day 12, and only while the shelf still holds.", verdict)
 
 
+def invalidation(h, scan_date):
+    """Exact next-session cancel levels from the stored EMA20 / ignition floor. None when not stored.
+    EMA20 recursion: close[t+1] > EMA20[t+1] <=> close[t+1] > EMA20[t], so tonight's EMA20 is tomorrow's line."""
+    ema, flo = h.get("ema20"), h.get("ignition_floor")
+    if ema is None and flo is None:
+        return None
+    ema = float(ema) if ema is not None else None
+    flo = float(flo) if flo is not None else None
+    lvl = max(v for v in (ema, flo) if v is not None)
+    nxt = _fmt_day(add_trading_days(scan_date, 1))
+    why = " and ".join(x for x in ((f"20-EMA Rs. {ema:.2f}" if ema is not None else ""),
+                                   (f"ignition floor Rs. {flo:.2f}" if flo is not None else "")) if x)
+    out = [f"Cancelled if it **closes at or below Rs. {lvl:.2f} on {nxt}** (the higher of {why})."]
+    hi = h.get("base_or_shelf_high")
+    if h.get("signal_type") == "ACTIVE_SHELF" and hi is not None:
+        out.append(f"Also cancelled if any day's **low trades below Rs. {0.75 * float(hi):.2f}** "
+                   f"(25% under the shelf peak Rs. {float(hi):.2f}).")
+    out.append("The level is recalculated after every close — check the updated figure each evening. "
+               "Weak up-day vs down-day volume can also end the shelf (no price equivalent).")
+    return out
+
+
 def rows(scan, names):
     return pd.DataFrame([{
         "symbol": h["symbol"], "status": TIERS[tier(h)][0],
@@ -157,7 +179,11 @@ def checklist(scan, names):
                         f"- {ceiling}\n"
                         f"- Volume ≥ **2.5×** the 20-day average (**RVOL ≥ 2.50×**; today {float(h.get('rvol') or 0):.2f}×)\n"
                         f"- Strong close in the **top 30%** of the day's range (or a PSX upper lock)")
-            st.markdown(f"**⛔ Invalidation / cancel rule:** {INVALIDATION}")
+            inv = invalidation(h, sd)
+            if inv:
+                st.markdown("**⛔ Invalidation / cancel levels:**\n" + "\n".join(f"- {x}" for x in inv))
+            else:
+                st.markdown(f"**⛔ Invalidation / cancel rule:** {INVALIDATION}")
             st.caption(f"Price Rs. {float(h.get('close') or 0):.2f} · day {float(h.get('pct_change') or 0):+.2f}% · "
                        f"turnover {fmt_turnover(h.get('turnover_pkr'))} · ignition {h.get('ignition_date') or '—'}")
             st.button(f"🎯 Open {sym} in Stock Research", key=f"phase_d_open_{sym}", on_click=_open_research,
