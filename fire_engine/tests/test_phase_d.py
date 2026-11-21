@@ -156,7 +156,8 @@ def test_scan_store_stale_short_and_idempotent(tmp_path):
     assert [tuple(r) for r in rows] == [("AAA", "SHELF_BREAKOUT")]
     cols = [r[1] for r in c.execute("PRAGMA table_info(phase_d_signals)")]
     assert cols == ["id", "symbol", "scan_date", "signal_type", "close", "pct_change", "rvol", "turnover_pkr",
-                    "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date", "created_at"]
+                    "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date", "created_at",
+                        "ema20", "ignition_floor"]
     idx = [r[1] for r in c.execute("PRAGMA index_list(phase_d_signals)")]
     assert "idx_phase_d_scan_date" in idx
 
@@ -322,3 +323,16 @@ def test_backfill_runs_each_trading_session_skips_holiday_and_reads_back(tmp_pat
                      (full[-1]["date"],)).fetchall()
     assert last == [("AAA", "SHELF_BREAKOUT"), ("BBB", "SHELF_BREAKOUT"), ("CCC", "SHELF_BREAKOUT")]
     assert f"session {full[-1]['date']}: 3 stock(s)" in out and "| AAA | SHELF_BREAKOUT |" in out
+
+
+def test_schema_migration_adds_level_columns_to_old_table(tmp_path):
+    import sqlite3
+    from fire_engine import run_phase_d_tracker as R
+    c = sqlite3.connect(tmp_path / "old.db")
+    c.execute("CREATE TABLE phase_d_signals (id INTEGER PRIMARY KEY, symbol TEXT, scan_date TEXT, signal_type TEXT, "
+              "close REAL, pct_change REAL, rvol REAL, turnover_pkr REAL, base_or_shelf_high REAL, shelf_days INT, "
+              "up_down_vol_ratio REAL, ignition_date TEXT, created_at TEXT, UNIQUE(symbol, scan_date))")
+    R.ensure_schema(c)
+    R.ensure_schema(c)                                                   # idempotent
+    cols = [r[1] for r in c.execute("PRAGMA table_info(phase_d_signals)")]
+    assert cols[-2:] == ["ema20", "ignition_floor"]
