@@ -173,8 +173,6 @@ def main(argv=None):
 
     if a.replay:
         replay(conn, a.replay.upper(), a.d_from or "2026-10-01", a.d_to or a.d_from or "2026-11-05")
-        if hasattr(sys.modules.get("turso_db"), "print_usage_report"):
-            sys.modules["turso_db"].print_usage_report(label="run_phase_d_tracker.py --replay")
         return 0
 
     import batch_guard
