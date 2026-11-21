@@ -167,7 +167,7 @@ def test_universe_alignment_excludes_and_reports_unavailable():
 
 def test_configured_universe_matches_fire_config():
     uni, exc = ve.configured_universe()
-    assert len(uni) == 150 and set(exc) <= set(uni)
+    assert len(uni) == 153 and set(exc) <= set(uni)
 
 
 # 6. 4-hour cache cannot leak future candles into a backfill ----------------
