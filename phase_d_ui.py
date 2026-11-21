@@ -1,9 +1,8 @@
-"""phase_d_ui.py — Patterns tab section "Phase D Breakout & Shelf Tracker".
+"""phase_d_ui.py — the dashboard's top-level "Breakouts" tab: the Phase D
+Breakout & Shelf Tracker.
 
 Self-contained and read-only: one GET (/patterns/phase-d-scan), no
-computation. Used by both Patterns layouts -- streamlit_app.py's current
-layout calls render_legacy(); the redesigned layout (patterns_tab.py) builds
-its module from rows() / FIELDS / rules().
+computation. Independent of the Patterns tab, which it does not touch.
 """
 import pandas as pd
 import streamlit as st
@@ -68,12 +67,26 @@ def caption(scan):
             "Phase D state, ordered Shelf Breakout, SOS Ignition, Active Shelf, then RVOL.")
 
 
-def render_legacy(get, company_names, render_table, scan_status_banner, refresh_params):
-    """Section for the current streamlit_app.py Patterns layout."""
-    st.markdown('<div class="psx-section-eyebrow">MARKET BEHAVIOUR</div>'
+def counts(scan):
+    hits = scan.get("hits") or []
+    return {k: sum(1 for h in hits if h.get("signal_type") == k) for k in LABELS}
+
+
+def render_tab(get, company_names, render_table, scan_status_banner, refresh_params):
+    """Top-level Breakouts tab: summary metrics, disclaimer, table, rules."""
+    st.markdown('<div class="psx-section-eyebrow">BREAKOUTS</div>'
                 f'<div class="psx-section-title">🚀 {TITLE}</div>', unsafe_allow_html=True)
-    st.warning(DISCLAIMER)
     scan = get(ENDPOINT, **refresh_params)
+    ok = scan.get("status") == "ok"
+    n = counts(scan) if ok else {k: None for k in LABELS}
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Shelf Breakouts", "—" if n["SHELF_BREAKOUT"] is None else n["SHELF_BREAKOUT"],
+              help="SHELF_BREAKOUT on the latest scanned session")
+    c2.metric("SOS Ignitions", "—" if n["SOS_IGNITION"] is None else n["SOS_IGNITION"],
+              help="SOS_IGNITION on the latest scanned session")
+    c3.metric("Active Shelves", "—" if n["ACTIVE_SHELF"] is None else n["ACTIVE_SHELF"],
+              help="ACTIVE_SHELF on the latest scanned session")
+    st.warning(DISCLAIMER)
     if scan_status_banner(scan, TITLE):
         if not scan.get("hits"):
             st.info(scan.get("reason") or f"No stock is in a Phase D state on {scan.get('date') or 'the latest scan'}.")
