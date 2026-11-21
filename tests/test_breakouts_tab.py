@@ -19,7 +19,8 @@ HITS = [   # deliberately NOT in display order
     {"symbol": "LUCK", "signal_type": "SOS_IGNITION", "rvol": 6.0, "turnover_pkr": 90000000.0, "close": 800.0,
      "shelf_days": 0, "pct_change": 6.0, "base_or_shelf_high": 790.0, "up_down_vol_ratio": None, "ignition_date": "2026-11-20"},
     {"symbol": "NBP", "signal_type": "ACTIVE_SHELF", "rvol": 0.63, "turnover_pkr": 404649683.0, "close": 175.9,
-     "shelf_days": 11, "pct_change": 1.53, "base_or_shelf_high": 180.25, "up_down_vol_ratio": 2.0, "ignition_date": "2026-11-04"},
+     "shelf_days": 11, "pct_change": 1.53, "base_or_shelf_high": 180.25, "up_down_vol_ratio": 2.0, "ignition_date": "2026-11-04",
+     "ema20": 172.4, "ignition_floor": 160.1},
     {"symbol": "PASL", "signal_type": "SHELF_BREAKOUT", "rvol": 3.1, "turnover_pkr": 61234567.0, "close": 2.15,
      "shelf_days": 9, "pct_change": 7.5, "base_or_shelf_high": 2.0, "up_down_vol_ratio": 2.2, "ignition_date": "2026-11-09"},
     {"symbol": "HUBC", "signal_type": "ACTIVE_SHELF", "rvol": 0.7, "turnover_pkr": 8000000.0, "close": 150.0,
@@ -84,7 +85,9 @@ def test_breakouts_tab_renders(backend):
     assert "Entry conditions satisfied on Fri, Nov 20" in md and "Close > **Rs. 2.00**" in md
     nbp = " ".join(x.value for x in exp[2].markdown)
     assert "Final Breakout Window (Day 11 of 12)" in nbp and "Mon, Nov 23 – Tue, Nov 24" in nbp
-    assert "Do not enter if price closes below its 20 EMA" in nbp
+    assert "closes at or below Rs. 172.40 on Mon, Nov 23" in nbp and "below Rs. 135.19" in nbp
+    efert = " ".join(x.value for x in exp[1].markdown)
+    assert "Do not enter if price closes below its 20 EMA" in efert            # no stored levels -> generic rule
     luck = " ".join(x.value for x in exp[5].markdown)
     assert "Too early to chase" in luck and "Wed, Nov 25 (Day 3)" in luck and "Tue, Dec 8 (Day 12)" in luck
     assert any(b.key == "phase_d_open_NBP" for b in tab.button)
