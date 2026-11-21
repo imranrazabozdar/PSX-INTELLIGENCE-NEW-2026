@@ -298,3 +298,24 @@ def test_shelf_breakout_fires_once_not_on_follow_through_day():
     sma = D._sma_vol([x["volume"] for x in b2], len(b2) - 1)
     assert nxt["volume"] >= 2.5 * sma and nxt["close"] * nxt["volume"] >= 5_000_000
     assert sig(b2) != "SHELF_BREAKOUT"
+
+
+def test_backfill_runs_each_trading_session_skips_holiday_and_reads_back(tmp_path, monkeypatch, capsys):
+    full = story()
+    holiday = full[-4]["date"]                               # no stock trades that day
+    data = {s: [x for x in full if x["date"] != holiday] for s in ("AAA", "BBB", "CCC")}
+    p, c = _db(tmp_path, data)
+    monkeypatch.setattr(R, "universe", lambda: ["AAA", "BBB", "CCC"])
+    R.ensure_schema(c)
+    sessions = R.trading_sessions(c, 3, full[-1]["date"])
+    assert holiday not in sessions and sessions[-1] == full[-1]["date"] and len(sessions) == 3
+    c.close()
+    R.main(["--local-db", str(p), "--backfill", "3", "--until", full[-1]["date"]])
+    out = capsys.readouterr().out
+    c = sqlite3.connect(p)
+    done = [r[0] for r in c.execute("SELECT session_date FROM batch_runs WHERE job='phase_d_batch' ORDER BY 1")]
+    assert done == sessions
+    last = c.execute("SELECT symbol, signal_type FROM phase_d_signals WHERE scan_date=? ORDER BY symbol",
+                     (full[-1]["date"],)).fetchall()
+    assert last == [("AAA", "SHELF_BREAKOUT"), ("BBB", "SHELF_BREAKOUT"), ("CCC", "SHELF_BREAKOUT")]
+    assert f"session {full[-1]['date']}: 3 stock(s)" in out and "| AAA | SHELF_BREAKOUT |" in out
