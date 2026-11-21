@@ -154,6 +154,55 @@ def replay(conn, symbol, d_from, d_to):
     return out
 
 
+def diagnose(conn, symbol, d_from, d_to):
+    """READ-ONLY per-day breakdown of the ACTIVE_SHELF checks (markdown table).
+    Uses the detector's own helpers on the same last-90-bar window per date."""
+    rows = conn.execute(
+        "SELECT trade_date, open, high, low, close, volume FROM daily_ohlc WHERE symbol = ? AND trade_date <= ? "
+        "ORDER BY trade_date DESC LIMIT ?", (symbol, d_to, D.RULES["bars"] + 400)).fetchall()
+    rows = [dict(r) if not isinstance(r, (tuple, list)) else
+            dict(zip(("trade_date", "open", "high", "low", "close", "volume"), r)) for r in rows]
+    rows.reverse()
+    allbars = D.as_bars(rows)
+    r = D.RULES
+    pf = lambda ok: "Pass" if ok else "Fail"
+    print(f"### {symbol} ACTIVE_SHELF diagnostic {d_from} → {d_to} (read-only)\n")
+    print("| Date | Close | Volume | EMA20 | Shelf Days | Floor Value | Above Floor & EMA20? | Shelf Range % | "
+          "<= 28%? | Up/Down Vol Ratio | >= 1.8x? | Final Signal |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for k, b in enumerate(allbars):
+        if not (d_from <= b["date"] <= d_to):
+            continue
+        w = allbars[max(0, k + 1 - r["bars"]):k + 1]
+        t = len(w) - 1
+        ema = D._ema([x["close"] for x in w], r["ema_span"])
+        sig = (D.evaluate(w) or {}).get("signal_type", "—")
+        ign = next((t - a for a in range(1, r["shelf_max_age"] + 1) if t - a >= 0 and D._sos_at(w, t - a, r)), None)
+        if ign is None:
+            print(f"| {b['date']} | {b['close']:.2f} | {b['volume']:,.0f} | {ema[t]:.3f} | — | — | — | — | — | — | — "
+                  f"| {sig} |")
+            continue
+        age = t - ign
+        g = w[ign]
+        floor = g["low"] + 0.25 * (g["close"] - g["low"])
+        bad = [w[j]["date"] for j in range(ign + 1, t + 1) if not (w[j]["close"] > floor and w[j]["close"] > ema[j])]
+        shelf = w[ign + 1:t + 1]
+        hi, lo = max(x["high"] for x in shelf), min(x["low"] for x in shelf)
+        rng = (hi - lo) / lo * 100 if lo > 0 else None
+        up = [w[j]["volume"] for j in range(ign + 1, t + 1) if w[j]["close"] > w[j - 1]["close"]]
+        dn = [w[j]["volume"] for j in range(ign + 1, t + 1) if w[j]["close"] < w[j - 1]["close"]]
+        ratio = (sum(up) / len(up) if up else 0.0) / (sum(dn) / len(dn)) if dn else None
+        early = " (age < 3: too early)" if age < r["shelf_min_age"] else ""
+        held = "Pass" if not bad else "Fail (" + ", ".join(bad) + ")"
+        print(f"| {b['date']} | {b['close']:.2f} | {b['volume']:,.0f} | {ema[t]:.3f} | {age}{early} | {floor:.3f} | "
+              f"{held} | {rng:.2f}% | {pf(rng is not None and rng <= r['shelf_max_range'] * 100)} | "
+              f"{'no down days' if ratio is None else f'{ratio:.2f}x'} | "
+              f"{pf(ratio is None or ratio >= r['shelf_updown_vol'])} | {sig} |")
+    print(f"\nIgnition used: most recent SOS_IGNITION 1–12 trading days back. Floor = ign_low + 0.25 × "
+          "(ign_close − ign_low). 'Above Floor & EMA20' must hold on EVERY close since the ignition "
+          "(failing dates listed). Shelf range and up/down volume are over all bars since the ignition.")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Phase D Breakout & Shelf Tracker")
     ap.add_argument("--date", default=None)
@@ -161,6 +210,7 @@ def main(argv=None):
     ap.add_argument("--replay", default=None, metavar="SYMBOL")
     ap.add_argument("--from", dest="d_from", default=None)
     ap.add_argument("--to", dest="d_to", default=None)
+    ap.add_argument("--diagnose", action="store_true", help="with --replay: per-day ACTIVE_SHELF rule breakdown")
     a = ap.parse_args(argv)
 
     if a.local_db:
@@ -172,7 +222,10 @@ def main(argv=None):
         conn = turso_db.get_connection()
 
     if a.replay:
-        replay(conn, a.replay.upper(), a.d_from or "2026-10-01", a.d_to or a.d_from or "2026-11-05")
+        if a.diagnose:
+            diagnose(conn, a.replay.upper(), a.d_from or "2026-10-15", a.d_to or "2026-10-28")
+        else:
+            replay(conn, a.replay.upper(), a.d_from or "2026-10-01", a.d_to or a.d_from or "2026-11-05")
         if hasattr(sys.modules.get("turso_db"), "print_usage_report"):
             sys.modules["turso_db"].print_usage_report(label="run_phase_d_tracker.py --replay")
         return 0

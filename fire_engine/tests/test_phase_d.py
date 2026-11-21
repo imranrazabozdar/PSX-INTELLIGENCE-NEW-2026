@@ -211,3 +211,18 @@ def test_api_orders_by_priority_then_rvol_and_handles_zero_signal_day(tmp_path, 
                          env={**__import__('os').environ, "PSX_DB": str(p)})
     res = _j.loads(out.stdout.strip().splitlines()[-1])
     assert res["date"] == "2026-10-29" and res["hits"] == []
+
+
+def test_diagnose_is_read_only_and_matches_detector(tmp_path, capsys):
+    b = story()
+    p, c = _db(tmp_path, {"PASL": b})
+    c.close()
+    before = hashlib.sha256(p.read_bytes()).hexdigest()
+    R.main(["--local-db", str(p), "--replay", "PASL", "--diagnose", "--from", b[38]["date"], "--to", b[-1]["date"]])
+    out = capsys.readouterr().out
+    assert hashlib.sha256(p.read_bytes()).hexdigest() == before
+    rows = [l.split("|")[1:-1] for l in out.splitlines() if l.startswith("| 2")]
+    assert len(rows) == len(b) - 38
+    for cells, k in zip(rows, range(38, len(b))):
+        want = (D.evaluate(b[:k + 1]) or {}).get("signal_type", "—")
+        assert cells[-1].strip() == want
