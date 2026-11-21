@@ -1,0 +1,34 @@
+name: Scratch - backfill NPL NCPL PAEL
+on:
+  push:
+    branches: [scratch/backfill-new-symbols]
+permissions:
+  contents: read
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PYTHONUNBUFFERED: "1"
+      LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+      LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.txt
+      - name: Daily OHLC history for NPL NCPL PAEL
+        run: python scratch/backfill_new.py
+      - name: Phase D re-scan of Fri 2026-11-20
+        run: python fire_engine/run_phase_d_tracker.py --backfill 1 --until 2026-11-20
+      - name: Coverage
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import turso_db
+          c = turso_db.get_connection()
+          for s in ("NPL", "NCPL", "PAEL"):
+              print(s, tuple(c.execute("SELECT MIN(trade_date), MAX(trade_date), COUNT(*) FROM daily_ohlc WHERE symbol=?", (s,)).fetchone()))
+          PY
