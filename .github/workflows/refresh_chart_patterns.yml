@@ -113,19 +113,6 @@ jobs:
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
         run: python run_chart_pattern_refresh.py
 
-      # Phase D Breakout & Shelf Tracker -- standalone (fire_engine/phase_d_detector.py),
-      # reads daily_ohlc from the local snapshot above (0 Turso reads for prices),
-      # writes phase_d_signals + its own 'phase_d_batch' completion record.
-      # continue-on-error: it can never fail this job or the chart_refresh marker.
-      - name: 🚀 Phase D Breakout & Shelf Tracker
-        if: steps.guard.outputs.skip != 'true' && steps.cal.outputs.trading == 'true'
-        continue-on-error: true
-        env:
-          PSX_SESSION_DATE: ${{ steps.guard.outputs.session }}
-          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
-          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
-        run: python fire_engine/run_phase_d_tracker.py
-
       # RESEARCH / NOT PRODUCTION: Wyckoff Accumulation 2.0 daily scan. Reads the
       # local snapshot (0 Turso reads for prices), writes one research row.
       # continue-on-error: it can never fail the production job or its marker.
