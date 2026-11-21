@@ -137,7 +137,6 @@ def test_volatility_and_w2_detail_paths_still_open(fx):
 MODULE_TABLES = {
     "PSX FIRE Engine — Priority Setups": ["fire_scan_table_FIRE", "fire_scan_table_PRE-FIRE"],
     "Wyckoff Institutional Accumulation": ["wyckoff_scan_table"],
-    "Phase D Breakout & Shelf Tracker": ["phase_d_scan_table"],
     "OBV+MFI Setup with ATR Contraction": ["obv_mfi_scan_table"],
     "Bullish Engulfing": ["patterns_scan_table"],
     "Morning Star": ["morning_star_scan_table"],

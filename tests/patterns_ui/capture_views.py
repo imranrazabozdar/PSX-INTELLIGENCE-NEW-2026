@@ -10,7 +10,7 @@ import capture  # noqa: E402
 VIEWS = ["Overview", "Market Behaviour", "Long", "Short", "Structural", "Volatility", "Wyckoff 2.0"]
 VOL_SUBS = ["⚠️ Early Warning", "🟢 Bullish Expansion", "🔴 Bearish Expansion", "🧩 Wyckoff × Volatility",
             "🔔 Alerts", "🧪 Historical Validation"]
-KEYS = ["phase_d_scan_table", "fire_scan_table_FIRE", "fire_scan_table_PRE-FIRE", "wyckoff_scan_table", "obv_mfi_scan_table",
+KEYS = ["fire_scan_table_FIRE", "fire_scan_table_PRE-FIRE", "wyckoff_scan_table", "obv_mfi_scan_table",
         "patterns_scan_table", "morning_star_scan_table", "three_line_strike_scan_table", "mharris_bull_scan_table",
         "engulfing_star_bull_scan_table", "macdema_bull_scan_table", "level_breakout_bull_scan_table",
         "gp_evolved_bull_scan_table", "bearish_engulfing_scan_table", "evening_star_scan_table",

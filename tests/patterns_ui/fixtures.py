@@ -170,12 +170,6 @@ def build():
                                                date_key="signal_date")),
         "/patterns/hstop-scan": _scan(_hits(2, 11, lambda i, r, h: {"pattern_type": "HEAD_SHOULDERS_TOP",
                                                                     "risk_reward_measured": 0.9}, date_key="signal_date")),
-        "/patterns/phase-d-scan": dict(_scan([
-            {"symbol": SYMBOLS[i], "signal_type": t, "rvol": rv, "turnover_pkr": 12_500_000.0 + i, "close": 20.0 + i,
-             "shelf_days": sd, "pct_change": 1.5, "base_or_shelf_high": 21.0 + i, "up_down_vol_ratio": ud,
-             "ignition_date": _d(sd)} for i, (t, rv, sd, ud) in enumerate([
-                ("SHELF_BREAKOUT", 3.2, 7, 2.1), ("SOS_IGNITION", 5.5, 0, None), ("ACTIVE_SHELF", 0.9, 4, 1.9)])],
-            scanned=3), date=SESSION),
         "/patterns/volatility-engine": vol,
         "/patterns/volatility-engine/stats": vstats,
         "/patterns/volatility-wyckoff": combined,

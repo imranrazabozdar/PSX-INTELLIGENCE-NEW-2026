@@ -279,49 +279,6 @@ def _wyckoff_module(get, params, names):
     return m
 
 
-def _phase_d_module(get, params, names):
-    """Phase D Breakout & Shelf Tracker (phase_d_ui.py) -- standalone, its own endpoint and table."""
-    import phase_d_ui as P
-    scan = get(P.ENDPOINT, **params)
-    m = _module(id="phase_d", group="Market Behaviour", category="Market behaviour", name=P.TITLE,
-                timeframe="1D", age=scan.get("_cache_age_seconds"), always_show=True,
-                details=lambda: P.rules(), empty_msg="No stock is in a Phase D state on the latest scan.")
-    st_msg = _state_msg(scan, P.TITLE)
-    if st_msg:
-        m.update(state_msg=st_msg, count=0, body=lambda: st.warning(P.DISCLAIMER))
-        return m
-    df = P.rows(scan, names)
-    fields = [U.F("symbol", "Symbol"), U.F("signal", "Signal", card=False, help="The frozen Phase D state"),
-              U.F("company", "Company"),
-              U.F("rvol", "RVOL", "%.2fx", "num", help="Volume ÷ average of the previous 20 sessions"),
-              U.F("turnover", "Turnover (PKR)", "%.0f", "num", help="Close × volume"),
-              U.F("price", "Price", "Rs %.2f", "num"),
-              U.F("shelf days", "Shelf Days", "%d", "num", help="Trading days since the ignition bar"),
-              U.F("chg %", "Day %", "%.2f%%", "num", primary=False),
-              U.F("base/shelf high", "Base / shelf high", "Rs %.2f", "num", primary=False),
-              U.F("up/down vol", "Up / down volume", "%.2fx", "num", primary=False),
-              U.F("ignition", "Ignition date", kind="date", primary=False),
-              U.F("signal_type", "Signal (raw)", primary=False, card=False)]
-    variant = {"SHELF BREAKOUT": "info", "SOS IGNITION": "info", "ACTIVE SHELF": "neutral"}
-
-    def body():
-        st.warning(P.DISCLAIMER)
-        if not len(df):
-            st.info(scan.get("reason") or f"No stock is in a Phase D state on {scan.get('date') or 'the latest scan'}.")
-            return
-        U.results(df, "phase_d_scan_table", fields,
-                  badge_fn=lambda r: [(r["signal"], variant.get(r["signal"], "neutral"))], on_open=_open_research)
-
-    def details():
-        st.caption(P.caption(scan))
-        P.rules()
-
-    m.update(count=len(df), body=body, details=details, df=df,
-             updated=f"Scan {scan.get('date') or '—'} · " + U.friendly_age(scan.get("_cache_age_seconds")),
-             flags=[(r["symbol"], None, f"Phase D {r['signal']}") for _, r in df.iterrows()] if len(df) else [])
-    return m
-
-
 def _obv_mfi_module(get, names):
     scan = get("/patterns/obv-mfi-scan")
     m = _module(id="obv_mfi", group="Long", category="Accumulation footprint",
@@ -467,8 +424,7 @@ def _structural_module(get, params, names, rr_label):
 
 def build_modules(get, params, names, rr_label):
     st.session_state["_pui_company_names"] = names
-    mods = [_fire_module(get, params, names), _wyckoff_module(get, params, names),
-            _phase_d_module(get, params, names)]
+    mods = [_fire_module(get, params, names), _wyckoff_module(get, params, names)]
     mh = get("/patterns/mharris-scan", **params)
     es = get("/patterns/engulfing-star-scan", **params)
     me = get("/patterns/macdema-scan", **params)
