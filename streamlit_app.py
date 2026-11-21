@@ -3512,6 +3512,16 @@ with tab_patterns:
                        "market close, right after the FIRE Engine batch -- see "
                        "fire_engine/run_wyckoff_batch.py.")
 
+    # ----------------------------- Phase D Breakout & Shelf Tracker ----
+    # Standalone section (phase_d_ui.py); isolated so a failure here never
+    # touches the Wyckoff section above.
+    try:
+        import phase_d_ui as _phase_d_ui
+        _phase_d_ui.render_legacy(_get, _company_names, _render_pattern_table, _scan_status_banner,
+                                  _pat_refresh_params)
+    except Exception as _e:
+        st.warning(f"Phase D Breakout & Shelf Tracker unavailable: {type(_e).__name__}: {_e}")
+
     st.divider()
 
     tab_long, tab_short, tab_structural, tab_volatility, tab_wyckoff2 = st.tabs(
