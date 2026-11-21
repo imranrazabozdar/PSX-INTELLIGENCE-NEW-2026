@@ -1,0 +1,44 @@
+name: Phase D backfill (manual)
+
+# Manually started only. Runs the Phase D Breakout & Shelf Tracker's daily
+# batch (fire_engine/run_phase_d_tracker.py) for each of the last N PSX
+# trading sessions up to a date -- the dates come from daily_ohlc itself, so
+# holidays are skipped -- then reads the latest session back from
+# phase_d_signals (what the Breakouts tab shows). Writes only phase_d_signals
+# rows and the 'phase_d_batch' completion records; idempotent (each session's
+# rows are replaced). No other table, engine or workflow is touched.
+on:
+  workflow_dispatch:
+    inputs:
+      sessions:
+        description: 'Number of PSX trading sessions'
+        default: '10'
+      until:
+        description: 'Last session (YYYY-MM-DD)'
+        default: '2026-11-20'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-d-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests pyyaml pandas numpy
+      - name: Backfill Phase D sessions
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python fire_engine/run_phase_d_tracker.py --backfill "${{ github.event.inputs.sessions }}" --until "${{ github.event.inputs.until }}"

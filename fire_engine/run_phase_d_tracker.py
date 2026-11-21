@@ -197,6 +197,67 @@ def diagnose(conn, symbol, d_from, d_to):
           "throwback = no up day and shelf volume <= 0.40x the ignition bar's.")
 
 
+def run_session(conn, session, log=print):
+    """One daily batch for `session`: scan, replace that session's rows, completion record."""
+    import batch_guard
+    syms = universe()
+    sigs, stale, short = scan(conn, syms, session)
+    n_ok = len(syms) - len(stale) - len(short)
+    store(conn, session, sigs)
+    by = {k: sum(1 for x in sigs if x["signal_type"] == k) for k in D.PRIORITY}
+    log(f"[phase d] {session}: {n_ok} scanned, {len(stale)} stale {[x['symbol'] for x in stale]}, "
+        f"{len(short)} with < {D.RULES['min_bars']} bars · signals {by}")
+    if n_ok and n_ok >= 0.9 * (n_ok + len(stale)):
+        batch_guard.mark_done(JOB, session, f"{n_ok} scanned, {len(stale)} stale, {len(sigs)} signals", conn)
+    else:
+        log("[phase d] fewer than 90% of symbols current -- no completion record (a later run retries)")
+    return sigs
+
+
+def trading_sessions(conn, n, until, probe=12):
+    """The last `n` PSX trading dates <= `until`, taken from the data itself (a date on which at least half
+    of the first `probe` universe symbols have a bar), so holidays are skipped. ~probe * (n + 10) rows read."""
+    from collections import Counter
+    seen = Counter()
+    syms = universe()[:probe]
+    for s in syms:
+        for r in conn.execute("SELECT trade_date FROM daily_ohlc WHERE symbol = ? AND trade_date <= ? "
+                              "ORDER BY trade_date DESC LIMIT ?", (s, until, n + 10)).fetchall():
+            seen[r["trade_date"] if not isinstance(r, (tuple, list)) else r[0]] += 1
+    days = sorted(d for d, c in seen.items() if c >= len(syms) / 2)
+    return days[-n:]
+
+
+def readback(conn):
+    """What the Breakouts tab will show: the latest session's rows, in the endpoint's order."""
+    row = conn.execute("SELECT MAX(scan_date) AS d FROM phase_d_signals").fetchone()
+    done = conn.execute("SELECT MAX(session_date) AS d FROM batch_runs WHERE job = ? AND status = 'completed'",
+                        (JOB,)).fetchone()
+    pick = lambda x: (x["d"] if not isinstance(x, (tuple, list)) else x[0]) if x else None
+    d = max([v for v in (pick(row), pick(done)) if v], default=None)
+    rows = conn.execute(
+        "SELECT symbol, signal_type, close, pct_change, rvol, turnover_pkr, shelf_days, ignition_date "
+        "FROM phase_d_signals WHERE scan_date = ? ORDER BY CASE signal_type WHEN 'SHELF_BREAKOUT' THEN 0 "
+        "WHEN 'SOS_IGNITION' THEN 1 WHEN 'ACTIVE_SHELF' THEN 2 ELSE 3 END, rvol DESC", (d,)).fetchall()
+    rows = [dict(r) if not isinstance(r, (tuple, list)) else dict(zip(
+        ("symbol", "signal_type", "close", "pct_change", "rvol", "turnover_pkr", "shelf_days", "ignition_date"), r))
+        for r in rows]
+    print(f"\n### Breakouts tab (read back from phase_d_signals) — session {d}: {len(rows)} stock(s)\n")
+    print("| Symbol | Signal | Price | Day % | RVOL | Turnover (PKR) | Shelf Days | Ignition |")
+    print("|---|---|---|---|---|---|---|---|")
+    f = lambda v, n=2: "—" if v is None else f"{float(v):.{n}f}"
+    for x in rows:
+        print(f"| {x['symbol']} | {x['signal_type']} | {f(x['close'])} | {f(x['pct_change'])} | {f(x['rvol'])}x | "
+              f"{float(x['turnover_pkr'] or 0):,.0f} | {x['shelf_days']} | {x['ignition_date']} |")
+    totals = conn.execute("SELECT scan_date, signal_type, COUNT(*) AS n FROM phase_d_signals GROUP BY scan_date, "
+                          "signal_type ORDER BY scan_date").fetchall()
+    print("\nRows per session: " + "; ".join(
+        f"{(t['scan_date'] if not isinstance(t, (tuple, list)) else t[0])} "
+        f"{(t['signal_type'] if not isinstance(t, (tuple, list)) else t[1])}="
+        f"{(t['n'] if not isinstance(t, (tuple, list)) else t[2])}" for t in totals))
+    return d, rows
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Phase D Breakout & Shelf Tracker")
     ap.add_argument("--date", default=None)
@@ -205,6 +266,9 @@ def main(argv=None):
     ap.add_argument("--from", dest="d_from", default=None)
     ap.add_argument("--to", dest="d_to", default=None)
     ap.add_argument("--diagnose", action="store_true", help="with --replay: per-day ACTIVE_SHELF rule breakdown")
+    ap.add_argument("--backfill", type=int, default=None, metavar="N",
+                    help="run the daily batch for each of the last N PSX trading sessions up to --until")
+    ap.add_argument("--until", default=None, help="with --backfill: last session date (default: current session)")
     a = ap.parse_args(argv)
 
     if a.local_db:
@@ -225,22 +289,20 @@ def main(argv=None):
         return 0
 
     import batch_guard
-    session = a.date or os.getenv("PSX_SESSION_DATE") or batch_guard.session_date()
-    if not a.date and batch_guard.already_done(JOB, session, conn):
-        print(f"[phase d] {session} already completed -- nothing to do")
-        return 0
-    ensure_schema(conn)
-    syms = universe()
-    sigs, stale, short = scan(conn, syms, session)
-    n_ok = len(syms) - len(stale) - len(short)
-    store(conn, session, sigs)
-    by = {k: sum(1 for x in sigs if x["signal_type"] == k) for k in D.PRIORITY}
-    print(f"[phase d] {session}: {n_ok} scanned, {len(stale)} stale {[x['symbol'] for x in stale]}, "
-          f"{len(short)} with < {D.RULES['min_bars']} bars · signals {by}")
-    if n_ok and n_ok >= 0.9 * (n_ok + len(stale)):
-        batch_guard.mark_done(JOB, session, f"{n_ok} scanned, {len(stale)} stale, {len(sigs)} signals", conn)
+    if a.backfill:
+        ensure_schema(conn)
+        sessions = trading_sessions(conn, a.backfill, a.until or batch_guard.session_date())
+        print(f"[phase d] backfill {len(sessions)} PSX sessions: {sessions}")
+        for d in sessions:
+            run_session(conn, d)
+        readback(conn)
     else:
-        print("[phase d] fewer than 90% of symbols current -- no completion record (a later run retries)")
+        session = a.date or os.getenv("PSX_SESSION_DATE") or batch_guard.session_date()
+        if not a.date and batch_guard.already_done(JOB, session, conn):
+            print(f"[phase d] {session} already completed -- nothing to do")
+            return 0
+        ensure_schema(conn)
+        run_session(conn, session)
     if hasattr(sys.modules.get("turso_db"), "print_usage_report"):
         sys.modules["turso_db"].print_usage_report(label="run_phase_d_tracker.py")
     return 0
