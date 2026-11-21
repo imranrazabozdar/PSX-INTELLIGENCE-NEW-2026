@@ -27,9 +27,10 @@ def _dates(n, end=date(2026, 10, 30)):
     return out[::-1]
 
 
-def story(n_base=40, shelf=6, breakout=True, ign_vol=5_000_000, ign_close_pos=0.9, shelf_dip=False,
+def story(n_base=40, shelf=6, breakout=True, ign_vol=5_000_000, ign_close_pos=0.9, shelf_dip=None,
           bo_vol=3_000_000, upper_lock=False):
-    """Flat base at ~10, an ignition bar, a tight shelf above its midpoint, then (optionally) a breakout."""
+    """Flat base at ~10, an ignition bar (low 10.2, close 11.28 -> floor 10.47), a tight shelf above
+    its floor, then (optionally) a breakout. shelf_dip = close of the 3rd shelf bar, if given."""
     bars = []
     for k in range(n_base):
         c = 10.0 + (0.1 if k % 2 else -0.1)
@@ -41,8 +42,8 @@ def story(n_base=40, shelf=6, breakout=True, ign_vol=5_000_000, ign_close_pos=0.
         bars.append({"open": 10.2, "high": hi, "low": lo, "close": lo + ign_close_pos * (hi - lo), "volume": ign_vol})
     for k in range(shelf):
         c = 11.2 + (0.05 if k % 2 else -0.05)
-        if shelf_dip and k == 2:
-            c = 10.5          # below the ignition midpoint
+        if shelf_dip is not None and k == 2:
+            c = shelf_dip
         v = 1_400_000 if k % 2 else 600_000   # up days heavier than down days
         bars.append({"open": c - 0.02, "high": c + 0.1, "low": c - 0.1, "close": c, "volume": v})
     if breakout:
@@ -85,9 +86,22 @@ def test_weak_close_blocks_and_upper_lock_counts():
     assert sig(story(upper_lock=True)[:41]) == "SOS_IGNITION"
 
 
-def test_shelf_broken_by_close_below_midpoint():
-    b = story(shelf_dip=True, breakout=False)
+def test_shelf_broken_by_close_below_ignition_floor():
+    # floor = ign_low + 0.25 * (ign_close - ign_low) = 10.2 + 0.25 * 1.08 = 10.47; EMA20 there is ~10.33,
+    # so a 10.45 close breaks the shelf through the floor rule alone
+    b = story(shelf_dip=10.45, breakout=False)
+    ign = b[40]
+    assert ign["low"] + 0.25 * (ign["close"] - ign["low"]) == pytest.approx(10.47)
+    assert D._ema([x["close"] for x in b], 20)[43] < 10.45
     assert all(sig(b[:t + 1]) is None for t in range(43, len(b)))
+
+
+def test_lps_throwback_above_floor_keeps_the_shelf():
+    # 10.60 is below the old (open + close) / 2 midpoint (10.74) but above the new floor (10.47)
+    b = story(shelf_dip=10.60, breakout=False)
+    ign = b[40]
+    assert 10.60 < (ign["open"] + ign["close"]) / 2
+    assert sig(b[:44]) == "ACTIVE_SHELF" and sig(b) == "ACTIVE_SHELF"
 
 
 def test_breakout_needs_volume_and_shelf_through_yesterday():

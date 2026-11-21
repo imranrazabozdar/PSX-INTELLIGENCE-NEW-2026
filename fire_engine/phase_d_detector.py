@@ -25,8 +25,10 @@ All rules are evaluated on completed daily bars only and look backwards only
 
   ACTIVE_SHELF at bar t
     the most recent SOS_IGNITION bar i with 3 <= t - i <= 12 (trading days)
-    every bar j in (i, t] closes above the ignition midpoint
-      (open[i] + close[i]) / 2 AND above EMA20[j]
+    every bar j in (i, t] closes above the ignition floor
+      low[i] + 0.25 * (close[i] - low[i]) AND above EMA20[j]
+      (lets a normal LPS throwback into the ignition bar's lower half stand;
+      a close in its bottom quarter ends the shelf)
     shelf = bars (i, t]: (shelf_high - shelf_low) / shelf_low <= 0.28
     avg up-day volume >= 1.8 x avg down-day volume (only if there are down
       days; up/down = close vs previous close)
@@ -120,10 +122,10 @@ def _shelf_at(bars, t, ema, r=RULES):
             continue
         # most recent qualifying ignition found -> evaluate this one only
         ign = bars[i]
-        mid = (ign["open"] + ign["close"]) / 2.0
+        floor = ign["low"] + 0.25 * (ign["close"] - ign["low"])
         shelf = bars[i + 1:t + 1]
         for j in range(i + 1, t + 1):
-            if not (bars[j]["close"] > mid and bars[j]["close"] > ema[j]):
+            if not (bars[j]["close"] > floor and bars[j]["close"] > ema[j]):
                 return None
         hi = max(x["high"] for x in shelf)
         lo = min(x["low"] for x in shelf)
