@@ -182,7 +182,11 @@ def evaluate(bars, r=RULES):
     rvol = (b["volume"] / sma) if sma else None
     common = {"date": b["date"], "close": b["close"],
               "pct_change": (b["close"] / prev["close"] - 1) * 100 if prev["close"] else None,
-              "rvol": rvol, "turnover_pkr": b["close"] * b["volume"]}
+              "rvol": rvol, "turnover_pkr": b["close"] * b["volume"], "ema20": ema[t]}
+
+    def floor_of(i):        # the ignition floor the shelf rule uses (output only -- no rule reads this)
+        g = bars[i]
+        return g["low"] + 0.25 * (g["close"] - g["low"])
 
     # 1. SHELF_BREAKOUT
     sh_prev = _shelf_at(bars, t - 1, ema, r)
@@ -191,18 +195,18 @@ def evaluate(bars, r=RULES):
             and (evaluate(bars[:-1], r) or {}).get("signal_type") == "ACTIVE_SHELF":
         return dict(common, signal_type="SHELF_BREAKOUT", base_or_shelf_high=sh_prev["shelf_high"],
                     shelf_days=sh_prev["shelf_days"], up_down_vol_ratio=sh_prev["up_down_vol_ratio"],
-                    ignition_date=sh_prev["ignition_date"])
+                    ignition_date=sh_prev["ignition_date"], ignition_floor=floor_of(sh_prev["ignition_index"]))
     # 2. SOS_IGNITION
     sos = _sos_at(bars, t, r)
     if sos:
         return dict(common, signal_type="SOS_IGNITION", base_or_shelf_high=sos["base_high"], shelf_days=0,
-                    up_down_vol_ratio=None, ignition_date=b["date"])
+                    up_down_vol_ratio=None, ignition_date=b["date"], ignition_floor=floor_of(t))
     # 3. ACTIVE_SHELF
     sh = _shelf_at(bars, t, ema, r)
     if sh:
         return dict(common, signal_type="ACTIVE_SHELF", base_or_shelf_high=sh["shelf_high"],
                     shelf_days=sh["shelf_days"], up_down_vol_ratio=sh["up_down_vol_ratio"],
-                    ignition_date=sh["ignition_date"])
+                    ignition_date=sh["ignition_date"], ignition_floor=floor_of(sh["ignition_index"]))
     return None
 
 

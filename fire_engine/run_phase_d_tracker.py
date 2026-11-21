@@ -51,13 +51,25 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS idx_phase_d_scan_date ON phase_d_signals(scan_date)",
 ]
 COLS = ("symbol", "scan_date", "signal_type", "close", "pct_change", "rvol", "turnover_pkr",
-        "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date")
+        "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date", "ema20", "ignition_floor")
+# additive columns (shown in the Breakouts tab's invalidation levels); added in place on existing tables
+ADDED_COLS = {"ema20": "DECIMAL(10,4)", "ignition_floor": "DECIMAL(10,4)"}
 
 
 def ensure_schema(conn):
-    """Idempotent migration (CREATE ... IF NOT EXISTS), same convention as batch_guard's DDL."""
+    """Idempotent migration (CREATE ... IF NOT EXISTS, then ADD COLUMN for any column the table lacks),
+    same convention as batch_guard's DDL."""
     for s in DDL:
         conn.execute(s)
+    def _name(r):
+        try:
+            return r["name"]
+        except (TypeError, KeyError, IndexError):
+            return r[1]
+    have = {_name(r) for r in conn.execute("PRAGMA table_info(phase_d_signals)").fetchall()}
+    for col, typ in ADDED_COLS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE phase_d_signals ADD COLUMN {col} {typ}")
     conn.commit()
 
 
@@ -116,7 +128,8 @@ def store(conn, session, sigs):
         stmts.append((ins, (x["symbol"], x["scan_date"], x["signal_type"], _round(x["close"], 4),
                             _round(x["pct_change"], 3), _round(x["rvol"], 3), _round(x["turnover_pkr"], 2),
                             _round(x["base_or_shelf_high"], 4), x["shelf_days"],
-                            _round(x["up_down_vol_ratio"], 3), x["ignition_date"])))
+                            _round(x["up_down_vol_ratio"], 3), x["ignition_date"],
+                            _round(x.get("ema20"), 4), _round(x.get("ignition_floor"), 4))))
     if hasattr(conn, "batch_query"):
         conn.batch_query(stmts)
     else:
@@ -236,19 +249,23 @@ def readback(conn):
     pick = lambda x: (x["d"] if not isinstance(x, (tuple, list)) else x[0]) if x else None
     d = max([v for v in (pick(row), pick(done)) if v], default=None)
     rows = conn.execute(
-        "SELECT symbol, signal_type, close, pct_change, rvol, turnover_pkr, shelf_days, ignition_date "
-        "FROM phase_d_signals WHERE scan_date = ? ORDER BY CASE signal_type WHEN 'SHELF_BREAKOUT' THEN 0 "
+        "SELECT symbol, signal_type, close, pct_change, rvol, turnover_pkr, shelf_days, ignition_date, "
+        "base_or_shelf_high, ema20, ignition_floor FROM phase_d_signals WHERE scan_date = ? ORDER BY CASE signal_type WHEN 'SHELF_BREAKOUT' THEN 0 "
         "WHEN 'SOS_IGNITION' THEN 1 WHEN 'ACTIVE_SHELF' THEN 2 ELSE 3 END, rvol DESC", (d,)).fetchall()
     rows = [dict(r) if not isinstance(r, (tuple, list)) else dict(zip(
-        ("symbol", "signal_type", "close", "pct_change", "rvol", "turnover_pkr", "shelf_days", "ignition_date"), r))
+        ("symbol", "signal_type", "close", "pct_change", "rvol", "turnover_pkr", "shelf_days", "ignition_date",
+         "base_or_shelf_high", "ema20", "ignition_floor"), r))
         for r in rows]
     print(f"\n### Breakouts tab (read back from phase_d_signals) — session {d}: {len(rows)} stock(s)\n")
-    print("| Symbol | Signal | Price | Day % | RVOL | Turnover (PKR) | Shelf Days | Ignition |")
-    print("|---|---|---|---|---|---|---|---|")
+    print("| Symbol | Signal | Price | Day % | RVOL | Turnover (PKR) | Shelf Days | Ignition | Ceiling | "
+          "20-EMA | Ignition floor | Cancel if close <= |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
     f = lambda v, n=2: "—" if v is None else f"{float(v):.{n}f}"
     for x in rows:
         print(f"| {x['symbol']} | {x['signal_type']} | {f(x['close'])} | {f(x['pct_change'])} | {f(x['rvol'])}x | "
-              f"{float(x['turnover_pkr'] or 0):,.0f} | {x['shelf_days']} | {x['ignition_date']} |")
+              f"{float(x['turnover_pkr'] or 0):,.0f} | {x['shelf_days']} | {x['ignition_date']} | "
+              f"{f(x['base_or_shelf_high'])} | {f(x['ema20'])} | {f(x['ignition_floor'])} | "
+              f"{f(max(v for v in (x['ema20'], x['ignition_floor']) if v is not None)) if (x['ema20'] or x['ignition_floor']) else '—'} |")
     totals = conn.execute("SELECT scan_date, signal_type, COUNT(*) AS n FROM phase_d_signals GROUP BY scan_date, "
                           "signal_type ORDER BY scan_date").fetchall()
     print("\nRows per session: " + "; ".join(
