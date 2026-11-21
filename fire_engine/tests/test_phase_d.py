@@ -202,6 +202,9 @@ def test_api_orders_by_priority_then_rvol_and_handles_zero_signal_day(tmp_path, 
                          env={**__import__('os').environ, "PSX_DB": str(p)})
     res = _j.loads(out.stdout.strip().splitlines()[-1])
     assert res["date"] == "2026-10-28" and [h["symbol"] for h in res["hits"]] == ["C", "D", "B", "A"]
+    need = {"symbol", "scan_date", "signal_type", "close", "pct_change", "rvol", "turnover_pkr",
+            "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date"}
+    assert all(need <= set(h) for h in res["hits"])                    # full Phase D row for the Breakouts tab
     # a later completed session with zero signals is shown as that session, with no hits
     c.execute("CREATE TABLE IF NOT EXISTS batch_runs (job TEXT NOT NULL, session_date TEXT NOT NULL, "
               "status TEXT NOT NULL, finished_at TEXT, detail TEXT, PRIMARY KEY (job, session_date))")

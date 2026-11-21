@@ -4,6 +4,8 @@ Breakout & Shelf Tracker.
 Self-contained and read-only: one GET (/patterns/phase-d-scan), no
 computation. Independent of the Patterns tab, which it does not touch.
 """
+from datetime import date, timedelta
+
 import pandas as pd
 import streamlit as st
 
@@ -16,27 +18,150 @@ DISCLAIMER = ("⚠️ **Completed-bar technical state tracker, not a buy recomme
 LABELS = {"SHELF_BREAKOUT": "SHELF BREAKOUT", "SOS_IGNITION": "SOS IGNITION", "ACTIVE_SHELF": "ACTIVE SHELF"}
 
 
+MAX_SHELF_DAY = 12
+INVALIDATION = ("Do not enter if price closes below its 20 EMA or falls back into the ignition base, "
+                "or if no breakout occurs by Day 12.")
+# (rank, short badge, stage name) -- display grouping only; the detector decides the signal
+TIERS = {
+    1: ("🟢 Entry triggered today", "Entry Triggered Today"),
+    2: ("🟠 Final breakout window", "Final Breakout Window (Days 9–12)"),
+    3: ("🔵 Building shelf", "Building Shelf (Days 3–8)"),
+    4: ("⚪ Fresh ignition — wait", "Fresh Ignition (Wait 3 Sessions for Shelf)"),
+}
+
+
+def tier(h):
+    t, d = h.get("signal_type"), int(h.get("shelf_days") or 0)
+    if t == "SHELF_BREAKOUT":
+        return 1
+    if t == "ACTIVE_SHELF":
+        return 2 if d >= 9 else 3
+    return 4
+
+
+def sort_hits(hits):
+    """Closest to an actionable entry first: breakouts (RVOL desc); shelves on days 9-12, then days 3-8
+    (shelf days desc, then RVOL desc); fresh ignitions (RVOL desc)."""
+    def key(h):
+        k, rv, d = tier(h), float(h.get("rvol") or 0), int(h.get("shelf_days") or 0)
+        return (k, 0 if k in (1, 4) else -d, -rv)
+    return sorted(hits or [], key=key)
+
+
+def add_trading_days(d, n):
+    """`d` plus `n` PSX trading weekdays (Mon-Fri; weekends skipped -- exchange holidays are not known here)."""
+    d = date.fromisoformat(d) if isinstance(d, str) else d
+    while n > 0:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            n -= 1
+    return d
+
+
+def _fmt_day(d):
+    return f"{d:%a}, {d:%b} {d.day}"
+
+
+def _fmt_range(a, b):
+    return _fmt_day(a) if a == b else f"{_fmt_day(a)} – {_fmt_day(b)}"
+
+
+def fmt_turnover(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    for div, suf in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(v) >= div:
+            return f"{v / div:.1f}{suf}"
+    return f"{v:.0f}"
+
+
+def watch(h, scan_date):
+    """(dates text, verdict) for one stock, from its scan date and shelf day."""
+    t, d = h.get("signal_type"), int(h.get("shelf_days") or 0)
+    if t == "SHELF_BREAKOUT":
+        return (f"Entry conditions satisfied on {_fmt_day(date.fromisoformat(scan_date))} (Day 1 of the breakout).",
+                f"Entry Triggered Today (shelf Day {d}) — every breakout condition was met on the latest close")
+    if t == "SOS_IGNITION":
+        a, b = add_trading_days(scan_date, 3), add_trading_days(scan_date, MAX_SHELF_DAY)
+        return (f"Shelf window opens {_fmt_day(a)} (Day 3) and runs to {_fmt_day(b)} (Day 12): "
+                f"{_fmt_range(a, b)}.",
+                "Fresh Ignition (Day 0) — Too early to chase; wait 3 sessions to see if a shelf forms")
+    # a breakout fires on the session AFTER a valid shelf day, so the last breakout chance is the
+    # session after Day 12 (the shelf must still be valid through Day 12)
+    first, last = add_trading_days(scan_date, 1), add_trading_days(scan_date, MAX_SHELF_DAY + 1 - d)
+    verdict = (f"Final Breakout Window (Day {d} of 12) — Watch closely for breakout trigger" if d >= 9 else
+               f"Building Shelf (Day {d} of 12) — Shelf still forming; watch for a breakout")
+    return (f"Breakout can trigger on: {_fmt_range(first, last)} — the last chance is the session after "
+            f"Day 12, and only while the shelf still holds.", verdict)
+
+
 def rows(scan, names):
     return pd.DataFrame([{
-        "symbol": h["symbol"], "company": names.get(h["symbol"], ""),
-        "signal": LABELS.get(h.get("signal_type"), h.get("signal_type")),
-        "rvol": h.get("rvol"), "turnover": h.get("turnover_pkr"), "price": h.get("close"),
-        "shelf days": h.get("shelf_days"), "chg %": h.get("pct_change"),
-        "base/shelf high": h.get("base_or_shelf_high"), "up/down vol": h.get("up_down_vol_ratio"),
-        "ignition": h.get("ignition_date"), "signal_type": h.get("signal_type"),
-    } for h in (scan.get("hits") or [])])
+        "symbol": h["symbol"], "status": TIERS[tier(h)][0],
+        "price": h.get("close"), "day %": h.get("pct_change"), "rvol": h.get("rvol"),
+        "ceiling": h.get("base_or_shelf_high"),
+        "day": f"{int(h.get('shelf_days') or 0)}/{MAX_SHELF_DAY}",
+        "turnover": fmt_turnover(h.get("turnover_pkr")), "company": names.get(h["symbol"], ""),
+    } for h in sort_hits(scan.get("hits") or [])])
 
 
 def column_config():
     return {
-        "symbol": "Symbol", "company": "Company", "signal": "Signal",
-        "rvol": st.column_config.NumberColumn("RVOL", format="%.2fx",
-                                              help="Volume ÷ average of the previous 20 sessions"),
-        "turnover": st.column_config.NumberColumn("Turnover (PKR)", format="localized", help="Close × volume"),
+        "symbol": st.column_config.TextColumn("Symbol", pinned=True),
+        "status": st.column_config.TextColumn("Stage / Action Status", help="Where the stock stands now"),
         "price": st.column_config.NumberColumn("Price", format="Rs %.2f"),
-        "shelf days": st.column_config.NumberColumn("Shelf Days", format="%d",
-                                                    help="Trading days since the ignition bar"),
+        "day %": st.column_config.NumberColumn("Day %", format="%.2f%%"),
+        "rvol": st.column_config.NumberColumn("RVOL", format="%.2fx",
+                                              help="Today's volume ÷ average of the previous 20 sessions"),
+        "ceiling": st.column_config.NumberColumn("Shelf Ceiling", format="Rs %.2f",
+                                                 help="Highest price of the shelf (for a fresh ignition: the "
+                                                      "ignition's 20-day base high)"),
+        "day": st.column_config.TextColumn("Day", help="Trading days since the ignition, out of the 12-day window"),
+        "turnover": st.column_config.TextColumn("Turnover", help="Close × volume, in PKR"),
+        "company": "Company",
     }
+
+
+def _open_research(sym):
+    st.session_state.research_symbol = sym
+    st.toast(f"Opened {sym} in Stock Research →", icon="🎯")
+
+
+def checklist(scan, names):
+    """One expander per stock, in the same order as the table."""
+    hits = sort_hits(scan.get("hits") or [])
+    sd = scan.get("date")
+    st.markdown("#### 📋 Stock-by-Stock Entry Checklist & Watch Dates")
+    for k, h in enumerate(hits):
+        sym, t, d = h["symbol"], h.get("signal_type"), int(h.get("shelf_days") or 0)
+        dates, verdict = watch(h, sd)
+        hi = h.get("base_or_shelf_high")
+        auto = k == 0 or t == "SHELF_BREAKOUT" or (t == "ACTIVE_SHELF" and d >= 10)
+        with st.expander(f"{TIERS[tier(h)][0].split(' ', 1)[0]} {sym} — {TIERS[tier(h)][1]}", expanded=auto):
+            co = names.get(sym)
+            if co:
+                st.caption(co)
+            st.markdown(f"**{verdict}**")
+            st.markdown(f"**📅 Dates to watch:** {dates}")
+            if t == "SOS_IGNITION":
+                ceiling = ("Close above the shelf ceiling — the highest price of the shelf, set once the shelf forms"
+                           + (f" (the ignition's 20-day base high was Rs. {hi:.2f})" if hi is not None else ""))
+            else:
+                ceiling = f"Close > **Rs. {hi:.2f}** (breaks the shelf ceiling)" if hi is not None else \
+                    "Close above the shelf ceiling"
+            head = ("**✅ Entry conditions (all met on the latest close):**" if t == "SHELF_BREAKOUT"
+                    else "**🎯 Entry conditions (all three on the same daily close):**")
+            st.markdown(f"{head}\n"
+                        f"- {ceiling}\n"
+                        f"- Volume ≥ **2.5×** the 20-day average (**RVOL ≥ 2.50×**; today {float(h.get('rvol') or 0):.2f}×)\n"
+                        f"- Strong close in the **top 30%** of the day's range (or a PSX upper lock)")
+            st.markdown(f"**⛔ Invalidation / cancel rule:** {INVALIDATION}")
+            st.caption(f"Price Rs. {float(h.get('close') or 0):.2f} · day {float(h.get('pct_change') or 0):+.2f}% · "
+                       f"turnover {fmt_turnover(h.get('turnover_pkr'))} · ignition {h.get('ignition_date') or '—'}")
+            st.button(f"🎯 Open {sym} in Stock Research", key=f"phase_d_open_{sym}", on_click=_open_research,
+                      args=(sym,))
 
 
 def rules():
@@ -67,8 +192,9 @@ def rules():
 
 
 def caption(scan):
-    return (f"Last completed scan: {scan.get('date') or '—'} · {len(scan.get('hits') or [])} stock(s) in a "
-            "Phase D state, ordered Shelf Breakout, SOS Ignition, Active Shelf, then RVOL.")
+    return (f"Last completed scan: {scan.get('date') or '—'} · {len(scan.get('hits') or [])} stock(s), closest to "
+            "an entry first: breakouts today, shelves in their final days (9–12), shelves still building (3–8), "
+            "then fresh ignitions.")
 
 
 def counts(scan):
@@ -96,8 +222,9 @@ def render_tab(get, company_names, render_table, scan_status_banner, refresh_par
             st.info(scan.get("reason") or f"No stock is in a Phase D state on {scan.get('date') or 'the latest scan'}.")
         else:
             st.caption(caption(scan))
-            df = rows(scan, company_names())
-            render_table(df[["symbol", "company", "signal", "rvol", "turnover", "price", "shelf days"]], None,
-                         "phase_d_scan_table", column_config())
+            names = company_names() or {}
+            df = rows(scan, names)
+            render_table(df, None, "phase_d_scan_table", column_config())
+            checklist(scan, names)
     with st.expander(f"📖 View Rules & Metrics for {TITLE}"):
         rules()
