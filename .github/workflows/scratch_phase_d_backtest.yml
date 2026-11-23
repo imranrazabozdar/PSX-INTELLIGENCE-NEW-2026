@@ -1,0 +1,21 @@
+name: Scratch - Phase D readback (read-only)
+on:
+  push:
+    branches: [scratch/phase-d-backtest]
+permissions:
+  contents: read
+jobs:
+  readback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+      LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests pyyaml pandas numpy
+      - run: python scratch/readback.py
