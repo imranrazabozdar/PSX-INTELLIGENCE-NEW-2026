@@ -341,3 +341,27 @@ def test_schema_migration_adds_level_columns_to_old_table(tmp_path):
     cols = [r[1] for r in c.execute("PRAGMA table_info(phase_d_signals)")]
     assert cols[-7:] == ["ema20", "ignition_floor", "coil_dryup", "w1_leader", "exhausted_pre_ign",
                          "price_tier", "setup_grade"]
+
+
+def test_invalidate_scan_cache_deletes_only_phase_d_scan(tmp_path):
+    conn = sqlite3.connect(str(tmp_path / "cache.db"))
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS analysis_cache(
+            cache_key TEXT PRIMARY KEY,
+            run_at TEXT, run_at_epoch REAL, result_json TEXT);
+    """)
+    conn.execute("INSERT INTO analysis_cache(cache_key, result_json) VALUES ('phase_d_scan', '{}')")
+    conn.execute("INSERT INTO analysis_cache(cache_key, result_json) VALUES ('fire_scan', '{}')")
+    conn.commit()
+    R._invalidate_scan_cache(conn, log=lambda *_: None)
+    keys = {r[0] for r in conn.execute("SELECT cache_key FROM analysis_cache")}
+    assert keys == {"fire_scan"}
+    conn.close()
+
+
+def test_invalidate_scan_cache_without_table_does_not_raise(tmp_path):
+    conn = sqlite3.connect(str(tmp_path / "empty.db"))
+    lines = []
+    R._invalidate_scan_cache(conn, log=lines.append)  # must not raise
+    assert lines and lines[0].startswith("[phase d] cache invalidate skipped: ")
+    conn.close()

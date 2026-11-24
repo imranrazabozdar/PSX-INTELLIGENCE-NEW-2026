@@ -238,6 +238,17 @@ def diagnose(conn, symbol, d_from, d_to):
           "throwback = no up day and shelf volume <= 0.40x the ignition bar's.")
 
 
+def _invalidate_scan_cache(conn, log=print):
+    """Drop the backend's cached Breakouts payload (analysis_cache key
+    'phase_d_scan') so the next view recomputes from the fresh rows.
+    Never fails the batch."""
+    try:
+        conn.execute("DELETE FROM analysis_cache WHERE cache_key = 'phase_d_scan'")
+        conn.commit()
+    except Exception as e:
+        log(f"[phase d] cache invalidate skipped: {type(e).__name__}")
+
+
 def run_session(conn, session, log=print):
     """One daily batch for `session`: scan, replace that session's rows, completion record."""
     import batch_guard
@@ -252,6 +263,7 @@ def run_session(conn, session, log=print):
         batch_guard.mark_done(JOB, session, f"{n_ok} scanned, {len(stale)} stale, {len(sigs)} signals", conn)
     else:
         log("[phase d] fewer than 90% of symbols current -- no completion record (a later run retries)")
+    _invalidate_scan_cache(conn, log)
     return sigs
 
 
