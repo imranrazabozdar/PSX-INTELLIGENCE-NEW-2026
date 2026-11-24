@@ -709,6 +709,18 @@ def _get(path, **params):
         return {"status": "error", "reason": f"{type(e).__name__}: {e}"}
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _get_ranked_opportunities(limit=40):
+    """Dedicated 30-min cache for /ranked-opportunities only (the generic
+    _get stays at 60s). This endpoint walks every liquid symbol and reads
+    daily_ohlc per symbol, so repeated Streamlit reruns must not re-hit it.
+    Raises on failure on purpose: st.cache_data does not cache exceptions,
+    whereas an error dict from _get() would be cached for the full 30 min."""
+    r = _http_session().get(f"{BACKEND}/ranked-opportunities", params={"limit": limit}, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
 def _post(path, **params):
     try:
         r = _http_session().post(f"{BACKEND}{path}", params=params, timeout=60)
@@ -1902,7 +1914,10 @@ with tab_screener:
                        "over every liquid symbol in the live market (not just the backfilled-history subset the "
                        "primary ranking above uses). Worth checking when it agrees or disagrees with the primary "
                        "ranking — it isn't a subset or a looser version of it.")
-            ranked = _get("/ranked-opportunities", limit=40)
+            try:
+                ranked = _get_ranked_opportunities(limit=40)
+            except Exception as e:
+                ranked = {"status": "error", "reason": f"{type(e).__name__}: {e}"}
             if isinstance(ranked, list) and ranked:
                 names_ = _company_names()
                 rdf = pd.DataFrame(ranked)

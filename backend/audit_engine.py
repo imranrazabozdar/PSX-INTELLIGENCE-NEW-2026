@@ -17,7 +17,7 @@ up as certainty.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import turso_db
 
@@ -70,9 +70,28 @@ def get_history(symbol, limit=30):
     return [dict(r) for r in rows]
 
 
-def save_snapshot(symbol, dss_result, wyckoff_events=None):
+_PKT = timezone(timedelta(hours=5))  # Pakistan has no DST; PSX calendar day
+
+
+def _pkt_day_bounds_utc(now=None):
+    """[start, next_day) of the PKT calendar day containing `now`, as UTC
+    ISO strings in the same format save_snapshot writes into saved_at, so
+    plain string comparison against saved_at is correct."""
+    now_pkt = (now or datetime.now(timezone.utc)).astimezone(_PKT)
+    start = now_pkt.replace(hour=0, minute=0, second=0, microsecond=0)
+    nxt = start + timedelta(days=1)
+    return (start.astimezone(timezone.utc).isoformat(),
+            nxt.astimezone(timezone.utc).isoformat())
+
+
+def save_snapshot(symbol, dss_result, wyckoff_events=None, now=None):
     """Saves the snapshot AFTER the caller has already fetched the prior one
-    for diffing — order matters, see app.py's call site."""
+    for diffing -- order matters, see app.py's call site.
+
+    Dedupe: at most ONE row per symbol per PKT calendar day. If today already
+    has a row for this symbol, that row is UPDATEd in place with the latest
+    payload (no INSERT, no DELETE). Callers are responsible for only calling
+    this from scheduled batch paths; HTTP GET page views must not call it."""
     ensure_tables()
     sym = symbol.upper()
     risk = dss_result.get("risk", {})
@@ -80,16 +99,28 @@ def save_snapshot(symbol, dss_result, wyckoff_events=None):
     if wyckoff_events:
         events = (wyckoff_events.get("accumulation", {}).get("sequence_found", []) +
                   wyckoff_events.get("distribution", {}).get("sequence_found", []))
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    day_start, next_day = _pkt_day_bounds_utc(now_utc)
+    values = (now_utc.isoformat(), dss_result.get("evidence_score"),
+              dss_result.get("confidence_grade"), dss_result.get("final_action"),
+              (dss_result.get("wyckoff") or {}).get("phase"), json.dumps(events),
+              (dss_result.get("quote") or {}).get("price"), risk.get("invalidation"),
+              risk.get("target_1"), risk.get("reward_risk"), json.dumps(dss_result))
     with _conn() as c:
-        c.execute("""INSERT INTO dss_history
-            (symbol, saved_at, evidence_score, confidence_grade, final_action, wyckoff_phase,
-             wyckoff_events, price, invalidation, target_1, reward_risk, raw_json)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (sym, datetime.now(timezone.utc).isoformat(), dss_result.get("evidence_score"),
-             dss_result.get("confidence_grade"), dss_result.get("final_action"),
-             (dss_result.get("wyckoff") or {}).get("phase"), json.dumps(events),
-             (dss_result.get("quote") or {}).get("price"), risk.get("invalidation"),
-             risk.get("target_1"), risk.get("reward_risk"), json.dumps(dss_result)))
+        today = c.execute(
+            "SELECT id FROM dss_history WHERE symbol=? AND saved_at >= ? AND saved_at < ? "
+            "ORDER BY id DESC LIMIT 1",
+            (sym, day_start, next_day)).fetchone()
+        if today:
+            c.execute("""UPDATE dss_history SET saved_at=?, evidence_score=?, confidence_grade=?,
+                final_action=?, wyckoff_phase=?, wyckoff_events=?, price=?, invalidation=?,
+                target_1=?, reward_risk=?, raw_json=? WHERE id=?""",
+                values + (today[0],))
+        else:
+            c.execute("""INSERT INTO dss_history
+                (symbol, saved_at, evidence_score, confidence_grade, final_action, wyckoff_phase,
+                 wyckoff_events, price, invalidation, target_1, reward_risk, raw_json)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (sym,) + values)
         c.commit()
 
 

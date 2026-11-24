@@ -167,7 +167,8 @@ def test_universe_alignment_excludes_and_reports_unavailable():
 
 def test_configured_universe_matches_fire_config():
     uni, exc = ve.configured_universe()
-    assert len(uni) == 153 and set(exc) <= set(uni)
+    # 153 + the 26 symbols added 2026-11-24 = 179 (fire_config.yaml stocks.universe)
+    assert len(uni) == 179 and set(exc) <= set(uni)
 
 
 # 6. 4-hour cache cannot leak future candles into a backfill ----------------

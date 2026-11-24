@@ -3265,6 +3265,13 @@ def _weekly_structure(a):
 
 @app.get("/dss/{symbol}")
 async def dss(symbol:str):
+    """Decision Support System -- HTTP view. Read-only: never writes to
+    dss_history (page views used to add one row per GET). Scheduled batch
+    callers use dss_compute(record=True) instead."""
+    return await dss_compute(symbol, record=False)
+
+
+async def dss_compute(symbol:str, record:bool=False):
     """Decision Support System — assembles market regime, sector regime,
     Wyckoff phase/effort-vs-result, structure, candlesticks, momentum,
     relative strength, psx_brain's trade plan and /decision's integrated
@@ -3334,7 +3341,10 @@ async def dss(symbol:str):
     result["since_last_check"] = _audit.diff_snapshots(prev_snapshot, result, wyckoff_events)
     result["signal_state"] = _audit.signal_state(wyckoff_events, result.get("final_action"))
     result["wyckoff_events"] = wyckoff_events
-    _audit.save_snapshot(sym, result, wyckoff_events)
+    if record:
+        # Batch callers only: at most one row per symbol per PKT day (see
+        # audit_engine.save_snapshot). HTTP GETs leave record=False.
+        _audit.save_snapshot(sym, result, wyckoff_events)
     return result
 
 
@@ -5169,7 +5179,7 @@ async def _run_watchlist_scan():
     errors = 0
     for sym in WATCHLIST_SYMBOLS:
         try:
-            result = await dss(sym)
+            result = await dss_compute(sym, record=True)
             if isinstance(result, dict):
                 results[sym] = result
             else:
@@ -5818,7 +5828,32 @@ def _start_bg_job(cache_key, compute_fn, save_key=None):
     return True
 
 
-def _serve_cached_and_refresh(cache_key, compute_fn, cached, max_age_seconds, force, admin_check):
+def _claim_daily_bg_refresh(scan_type):
+    """True at most once per scan type per PSX session date (PKT). The claim
+    is persisted in scan_run_log under the key '<scan_type>:bg_refresh' so a
+    process restart does not repeat it. The distinct key keeps it separate
+    from scan_ran_today()/mark_scan_complete(), which other heavy scans use to
+    mean "a completed run exists today". Fails closed (False) on DB errors:
+    the cached result is still served and the scheduler still refreshes."""
+    key = f"{scan_type}:bg_refresh"
+    now_pkt = datetime.now(PSX_TZ)
+    run_date = now_pkt.date().isoformat()
+    try:
+        c = db()
+        if c.execute("SELECT 1 FROM scan_run_log WHERE scan_type=? AND run_date=?",
+                     (key, run_date)).fetchone():
+            return False
+        c.execute("INSERT OR IGNORE INTO scan_run_log VALUES (?,?,?,0)",
+                  (key, run_date, now_pkt.isoformat()))
+        c.commit()
+        return True
+    except Exception as e:
+        print(f"[scan_cache] daily refresh claim failed for {scan_type}: {type(e).__name__}: {e}")
+        return False
+
+
+def _serve_cached_and_refresh(cache_key, compute_fn, cached, max_age_seconds, force, admin_check,
+                              daily_gate=False):
     """Stale-while-revalidate for every whole-universe scan/backtest endpoint.
 
     ALWAYS serves the last cached result immediately if one exists, even when
@@ -5843,7 +5878,10 @@ def _serve_cached_and_refresh(cache_key, compute_fn, cached, max_age_seconds, fo
         if blocked:
             return (cached, None) if cached is not None else (None, blocked)
         _start_bg_job(cache_key, compute_fn)
-    elif stale:
+    elif stale and (not daily_gate or _claim_daily_bg_refresh(cache_key)):
+        # daily_gate (whole-universe screeners): a stale GET starts at most
+        # ONE background recompute per PSX session date; otherwise the cache
+        # is served as-is and the scheduler / admin force=true own refreshes.
         _start_bg_job(cache_key, compute_fn)
     if cached is not None:
         return cached, None
@@ -5869,7 +5907,8 @@ def dss_scan(request:Request, force:bool=False, max_age_seconds:int=_scan_cache.
     """
     cached = _scan_cache.latest_scan()
     result, err = _serve_cached_and_refresh("dss_scan", _run_dss_scan, cached,
-                                             max_age_seconds, force, lambda: _require_admin(request))
+                                             max_age_seconds, force, lambda: _require_admin(request),
+                                             daily_gate=True)
     if err: return err
     rows = market_watch()
     quote_lookup = {x["symbol"]: x for x in rows}
@@ -5947,7 +5986,7 @@ def scan(request:Request, min_volume:int=MIN_VOLUME, limit:int=40, top:int=20, f
     cached = _scan_cache.latest("scan_brain")
     result, err = _serve_cached_and_refresh("scan_brain", lambda: _run_brain_scan(min_volume, limit, top),
                                              cached, _scan_cache.DEFAULT_MAX_AGE_SECONDS, force,
-                                             lambda: _require_admin(request))
+                                             lambda: _require_admin(request), daily_gate=True)
     if err: return err
     result = dict(result)
     result["_background_refresh_running"] = _bg_job_running("scan_brain")
