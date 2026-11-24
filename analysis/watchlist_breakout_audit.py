@@ -103,7 +103,7 @@ def open_db(a):
         if not os.getenv("LIBSQL_AUTH_TOKEN") and os.getenv("TURSO_AUTH_TOKEN"):
             os.environ["LIBSQL_AUTH_TOKEN"] = os.environ["TURSO_AUTH_TOKEN"]
         import turso_db
-        return ConnDB(turso_db.get_connection()), f"turso (LIBSQL_URL): {url.split('//')[-1].split('.')[0]}"
+        return ConnDB(turso_db.get_connection()), "turso (production, via LIBSQL_URL secret -- address not printed)"
     return HttpDB(a.host or DEFAULT_HOST), f"turso-http: {a.host or DEFAULT_HOST}"
 
 

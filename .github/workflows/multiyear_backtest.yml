@@ -5,6 +5,9 @@ name: Phase D multi-year backtest (read-only)
 # issues SELECTs only -- no table, scanner state or app file is written -- and
 # its CSV outputs are uploaded as a workflow artifact.
 on:
+  push:
+    branches: [ccr-6e647878-x7x7er]
+    paths: ['analysis/watchlist_breakout_audit.py', '.github/workflows/multiyear_backtest.yml']
   workflow_dispatch:
     inputs:
       audit:
@@ -38,13 +41,15 @@ jobs:
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
-          AUDIT: ${{ github.event.inputs.audit }}
+          AUDIT: ${{ github.event.inputs.audit || 'AB' }}
           SYMBOLS: ${{ github.event.inputs.symbols }}
         run: |
           mkdir -p out
           args=(--audit "$AUDIT" --out-dir out)
           if [ -n "$SYMBOLS" ]; then args+=(--symbols "$SYMBOLS"); fi
           python analysis/watchlist_breakout_audit.py "${args[@]}" | tee out/run_log.txt
+          echo "===== BEGIN multiyear_watchlist_breakouts.csv"; cat out/multiyear_watchlist_breakouts.csv; echo "===== END"
+          echo "===== BEGIN multiyear_tier_summary.csv"; cat out/multiyear_tier_summary.csv; echo "===== END"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
