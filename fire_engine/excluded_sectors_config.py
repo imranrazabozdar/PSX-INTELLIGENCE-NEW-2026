@@ -181,12 +181,11 @@ EXCLUDED_SECTORS_CONFIG = {
 }
 
 # ============================================================================
-# FLAT EXCLUSION LIST (All 519 symbols)
+# FLAT EXCLUSION LIST (applied filter)
 # ============================================================================
+# Intentionally empty: sector exclusions are disabled so every symbol in the
+# stocks.universe list is scanned. EXCLUDED_SECTORS_CONFIG above is retained
+# as reference data only and is NOT applied to any consumer. To re-enable,
+# rebuild this list from EXCLUDED_SECTORS_CONFIG (flatten, sorted(set(...))).
 
 EXCLUDED_SYMBOLS_FLAT = []
-for _sector_key, _sector_data in EXCLUDED_SECTORS_CONFIG.items():
-    EXCLUDED_SYMBOLS_FLAT.extend(_sector_data["symbols"])
-
-# Sort and deduplicate
-EXCLUDED_SYMBOLS_FLAT = sorted(set(EXCLUDED_SYMBOLS_FLAT))
