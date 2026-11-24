@@ -1,11 +1,6 @@
 name: Universe backfill + retention preview
 
 on:
-  push:
-    branches: [ccr-6e647878-x7x7er]
-    paths:
-      - 'analysis/universe_backfill_and_retention_preview.py'
-      - '.github/workflows/universe_backfill_preview.yml'
   workflow_dispatch:
 
 permissions:
