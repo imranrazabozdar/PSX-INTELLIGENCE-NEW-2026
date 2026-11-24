@@ -1,0 +1,3 @@
+symbol,ignition_date,breakout_date,news_lookup_window,shelf_days,signal_close,next_open,rvol_at_breakout,mfe_pct,mfe_date,exit_date,exit_price,rule2_return_pct,exit_reason,entry_flag
+PRL,2026-07-09,2026-07-20,2026-07-15 to 2026-07-22,6,49.05,50.99,3.34,113.38,2026-09-01,2026-09-08,86.0,68.66,10EMA_TRAIL,
+PASL,2026-10-14,2026-10-28,2026-10-23 to 2026-10-30,9,3.67,3.73,6.67,283.38,2026-11-19,2026-11-23,9.58,156.84,OPEN(10EMA_TRAIL),
