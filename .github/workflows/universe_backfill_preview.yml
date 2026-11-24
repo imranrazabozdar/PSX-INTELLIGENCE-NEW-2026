@@ -1,0 +1,30 @@
+name: Universe backfill + retention preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pyyaml pandas numpy
+
+      - name: Run backfill (26 new symbols) and read-only retention preview
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python analysis/universe_backfill_and_retention_preview.py

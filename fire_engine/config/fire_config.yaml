@@ -252,6 +252,33 @@ stocks:
     - NPL
     - NCPL
     - PAEL
+    # added 2026-11-24 (26 new equities, universe backfill task); none were present before
+    - ALTN
+    - EPQL
+    - KOHE
+    - LPL
+    - HTL
+    - TELE
+    - HUMNL
+    - OCTOPUS
+    - GGGL
+    - GCWL
+    - JSCL
+    - JSIL
+    - ABHI
+    - AGL
+    - BCL
+    - SGF
+    - QUICE
+    - NGLEL
+    - TSPL
+    - MACTER
+    - BFBIO
+    - AGSML
+    - UNITY
+    - ATRL
+    - FATIMA
+    - ICL
 
 exclusion:
   enabled: true

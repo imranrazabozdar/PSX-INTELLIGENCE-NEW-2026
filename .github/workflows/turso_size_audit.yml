@@ -1,0 +1,30 @@
+name: Turso size audit (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pyyaml pandas numpy
+
+      - name: Run read-only size audit
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python analysis/turso_size_audit.py
