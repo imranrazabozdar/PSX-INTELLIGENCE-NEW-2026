@@ -1,0 +1,52 @@
+name: Phase D multi-year backtest (read-only)
+
+# Manually started only. Runs analysis/watchlist_breakout_audit.py against the
+# production daily_ohlc (Turso, via LIBSQL_URL / LIBSQL_AUTH_TOKEN). The script
+# issues SELECTs only -- no table, scanner state or app file is written -- and
+# its CSV outputs are uploaded as a workflow artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      audit:
+        description: 'Audits to run: A (watchlist), B (full market), AB'
+        default: 'AB'
+      symbols:
+        description: 'Optional comma list overriding the Audit A watchlist'
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiyear-backtest
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests pyyaml pandas numpy
+      - name: Run multi-year audit
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          AUDIT: ${{ github.event.inputs.audit }}
+          SYMBOLS: ${{ github.event.inputs.symbols }}
+        run: |
+          mkdir -p out
+          args=(--audit "$AUDIT" --out-dir out)
+          if [ -n "$SYMBOLS" ]; then args+=(--symbols "$SYMBOLS"); fi
+          python analysis/watchlist_breakout_audit.py "${args[@]}" | tee out/run_log.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multiyear-backtest-${{ github.run_id }}
+          path: out/
