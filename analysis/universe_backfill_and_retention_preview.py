@@ -19,6 +19,7 @@ Step 3 (WRITE)   the repo's standard historical OHLC backfill
 Connection: LIBSQL_URL / LIBSQL_AUTH_TOKEN secrets (address is never printed);
 otherwise the local fallback psx_v2.db, read-only.
 """
+import argparse
 import os
 import re
 import sqlite3
@@ -73,20 +74,27 @@ class ReadOnlyDB:
         self._conn = conn
 
     def query(self, sql, params=()):
+        """Returns a list of dict rows keyed by column name on every backend.
+        Turso already yields dicts; plain sqlite3 yields tuples, which are
+        zipped with cursor.description here so callers never index by position."""
         head = sql.strip().split(None, 1)[0].upper() if sql.strip() else ""
         if head not in _READ_PREFIXES or _FORBIDDEN.search(sql):
             raise PermissionError(f"read helper refused non-read SQL: {sql[:60]!r}")
-        return self._conn.execute(sql, params).fetchall()
+        cur = self._conn.execute(sql, params)
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description] if cur.description else []
+        return [r if isinstance(r, dict) else dict(zip(cols, r)) for r in rows]
 
-    def scalar(self, sql, params=()):
+    def scalar(self, sql, col, params=()):
+        """Single value from the aliased column `col` of the first row."""
         rows = self.query(sql, params)
-        return rows[0][0] if rows else None
+        return rows[0][col] if rows else None
 
     def has_table(self, name):
         return bool(self.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)))
 
 
-def open_db():
+def open_db(local_path=None):
     """Production Turso when LIBSQL_URL + LIBSQL_AUTH_TOKEN are set (address not
     printed); otherwise the local fallback opened read-only. Returns
     (ReadOnlyDB, label, is_turso, raw_conn)."""
@@ -94,7 +102,7 @@ def open_db():
         import turso_db
         conn = turso_db.get_connection()
         return ReadOnlyDB(conn), "turso (production, via LIBSQL_URL secret -- address not printed)", True, conn
-    local = ROOT / "psx_v2.db"
+    local = Path(local_path).resolve() if local_path else ROOT / "psx_v2.db"
     conn = sqlite3.connect(f"file:{local}?mode=ro", uri=True)
     return ReadOnlyDB(conn), f"sqlite fallback (read-only): {local.name}", False, None
 
@@ -105,7 +113,8 @@ def step1_presence(db):
         print("daily_ohlc not present in this database -- every ticker counts as missing.")
         present = set()
     else:
-        present = {str(r[0]).upper() for r in db.query("SELECT DISTINCT symbol FROM daily_ohlc") if r[0]}
+        present = {str(r["symbol"]).upper()
+                   for r in db.query("SELECT DISTINCT symbol AS symbol FROM daily_ohlc") if r["symbol"]}
     dupes = sorted(s for s, n in Counter(t.strip().upper() for t in REQUESTED_104).items() if n > 1)
     unique = list(dict.fromkeys(t.strip().upper() for t in REQUESTED_104))
     print(f"requested entries: {len(REQUESTED_104)}  unique: {len(unique)}  "
@@ -122,9 +131,9 @@ def step1_presence(db):
 
 def _size_bytes(db, names):
     try:
-        rows = db.query("SELECT name, SUM(pgsize) FROM dbstat WHERE name IN (%s) GROUP BY name"
-                        % ",".join("?" * len(names)), tuple(names))
-        got = {r[0]: int(r[1] or 0) for r in rows}
+        rows = db.query("SELECT name AS name, SUM(pgsize) AS bytes FROM dbstat WHERE name IN (%s) "
+                        "GROUP BY name" % ",".join("?" * len(names)), tuple(names))
+        got = {r["name"]: int(r["bytes"] or 0) for r in rows}
         return got, sum(got.values())
     except Exception as e:  # dbstat not compiled into this SQLite build
         return {}, None
@@ -138,8 +147,8 @@ def step2_retention(db):
     print(CANDLES_DELETE_SQL)
     print("")
     if db.has_table("dss_history"):
-        total = int(db.scalar("SELECT COUNT(*) FROM dss_history") or 0)
-        dele = int(db.scalar(f"SELECT COUNT(*) FROM dss_history WHERE {DSS_PRED}") or 0)
+        total = int(db.scalar("SELECT COUNT(*) AS n FROM dss_history", "n") or 0)
+        dele = int(db.scalar(f"SELECT COUNT(*) AS n FROM dss_history WHERE {DSS_PRED}", "n") or 0)
         kept = total - dele
         sizes, tot_b = _size_bytes(db, ["dss_history", "ix_dss_history_symbol"])
         freed = (dele / total * tot_b / MIB) if (total and tot_b) else None
@@ -148,10 +157,10 @@ def step2_retention(db):
               f"{'unavailable (no dbstat)' if freed is None else f'{freed:.2f}'}")
     else:
         print("a) dss_history: table not present in this database")
-    cutoff = db.scalar("SELECT date('now','-35 days')") if db.has_table("market_candles") else None
+    cutoff = db.scalar("SELECT date('now','-35 days') AS cutoff", "cutoff") if db.has_table("market_candles") else None
     if db.has_table("market_candles"):
-        total = int(db.scalar("SELECT COUNT(*) FROM market_candles") or 0)
-        dele = int(db.scalar(f"SELECT COUNT(*) FROM market_candles WHERE {CANDLES_PRED}") or 0)
+        total = int(db.scalar("SELECT COUNT(*) AS n FROM market_candles", "n") or 0)
+        dele = int(db.scalar(f"SELECT COUNT(*) AS n FROM market_candles WHERE {CANDLES_PRED}", "n") or 0)
         kept = total - dele
         names = ["market_candles", "sqlite_autoindex_market_candles_1", "idx_candles_symbol_date"]
         sizes, tot_b = _size_bytes(db, names)
@@ -239,8 +248,9 @@ def step3_verify(db):
         return
     zero = []
     for sym in NEW_SYMBOLS:
-        n, mn, mx = db.query("SELECT COUNT(*), MIN(trade_date), MAX(trade_date) FROM daily_ohlc "
-                             "WHERE symbol=?", (sym,))[0]
+        row = db.query("SELECT COUNT(*) AS n, MIN(trade_date) AS lo, MAX(trade_date) AS hi "
+                       "FROM daily_ohlc WHERE symbol=?", (sym,))[0]
+        n, mn, mx = int(row["n"] or 0), row["lo"], row["hi"]
         print(f"  {sym:8s} bars={n:>6}  min={mn}  max={mx}")
         if not n:
             zero.append(sym)
@@ -248,7 +258,11 @@ def step3_verify(db):
 
 
 def main():
-    db, label, is_turso, raw = open_db()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--local-db", help="read-only local SQLite file to use instead of psx_v2.db "
+                                       "(ignored when LIBSQL_URL + LIBSQL_AUTH_TOKEN are set)")
+    args = ap.parse_args()
+    db, label, is_turso, raw = open_db(args.local_db)
     print(f"Database: {label}")
     present = step1_presence(db)
     step2_retention(db)
