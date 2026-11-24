@@ -1,0 +1,36 @@
+name: Retention cleanup (guarded, manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DELETE to run"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  retention:
+    if: github.event.inputs.confirm == 'DELETE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PSX_TURSO_USAGE_REPORT: "1"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pyyaml pandas numpy
+
+      - name: Run one-off retention (dss_history, market_candles)
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: python analysis/run_retention_once.py --confirm DELETE
