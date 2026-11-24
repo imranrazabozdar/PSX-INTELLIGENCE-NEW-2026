@@ -133,3 +133,14 @@ def test_priority_sort_and_weekend_dates_unit():
     dates, verdict = P.watch({"signal_type": "ACTIVE_SHELF", "shelf_days": 11}, "2026-11-20")
     assert "Mon, Nov 23 – Tue, Nov 24" in dates and "Day 11 of 12" in verdict
     assert P.fmt_turnover(404649683) == "404.6M" and P.fmt_turnover(4863226) == "4.9M"
+
+
+def test_badges_string_and_blank_for_older_rows():
+    import phase_d_ui as P
+    assert P.badges({"coil_dryup": 1, "w1_leader": 0, "exhausted_pre_ign": 1}) == "COIL·EXH"
+    assert P.badges({"coil_dryup": 0, "w1_leader": 1, "exhausted_pre_ign": 0}) == "1W"
+    assert P.badges({}) == "" and P.badges({"coil_dryup": None, "w1_leader": None}) == ""   # pre-badge rows
+    df = P.rows({"hits": [dict(HITS[3], setup_grade="A+ PRIME", price_tier="SWEET_SPOT", coil_dryup=1,
+                               w1_leader=0, exhausted_pre_ign=0), HITS[0]]}, {})
+    assert list(df.columns)[:8] == ["symbol", "status", "price", "day %", "rvol", "ceiling", "day", "turnover"]
+    assert list(df["setup_grade"]) == ["A+ PRIME", ""] and list(df["badges"]) == ["COIL", ""]

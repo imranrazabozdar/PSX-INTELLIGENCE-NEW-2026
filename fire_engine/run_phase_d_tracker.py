@@ -11,7 +11,8 @@ symbol from daily_ohlc (served from the job's local snapshot when
 PSX_DAILY_OHLC_SNAPSHOT is set -- 0 Turso reads -- else Turso); skips
 symbols with < 30 bars or whose newest bar is not the session date (stale);
 replaces that session's rows in phase_d_signals; writes the batch_runs
-'phase_d_batch' completion record when >= 90% of symbols were current.
+'phase_d_batch' completion record when >= 90% of symbols were current. Each signal also stores pre-ignition
+badges and a setup grade (fire_engine/phase_d_badges.py, 400 bars): display only, never a gate.
 
 --replay: READ-ONLY. Evaluates one symbol for every trading date in a range
 (each date on its own last-90-bars window, exactly as the batch would have)
@@ -29,6 +30,7 @@ for _p in (str(_ROOT), str(_ROOT / "backend")):
         sys.path.insert(0, _p)
 
 from fire_engine import phase_d_detector as D  # noqa: E402
+from fire_engine import phase_d_badges as PB  # noqa: E402
 
 JOB = "phase_d_batch"
 DDL = [
@@ -51,9 +53,14 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS idx_phase_d_scan_date ON phase_d_signals(scan_date)",
 ]
 COLS = ("symbol", "scan_date", "signal_type", "close", "pct_change", "rvol", "turnover_pkr",
-        "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date", "ema20", "ignition_floor")
-# additive columns (shown in the Breakouts tab's invalidation levels); added in place on existing tables
-ADDED_COLS = {"ema20": "DECIMAL(10,4)", "ignition_floor": "DECIMAL(10,4)"}
+        "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date", "ema20", "ignition_floor",
+        "coil_dryup", "w1_leader", "exhausted_pre_ign", "price_tier", "setup_grade")
+# additive columns (shown in the Breakouts tab's invalidation levels and pre-ignition badges); added in place on
+# existing tables. Badges (fire_engine/phase_d_badges.py) are display only and NULL when they could not be computed.
+ADDED_COLS = {"ema20": "DECIMAL(10,4)", "ignition_floor": "DECIMAL(10,4)",
+              "coil_dryup": "INTEGER", "w1_leader": "INTEGER", "exhausted_pre_ign": "INTEGER",
+              "price_tier": "TEXT", "setup_grade": "TEXT"}
+BADGE_KEYS = ("coil_dryup", "w1_leader", "exhausted_pre_ign", "price_tier", "setup_grade")
 
 
 def ensure_schema(conn):
@@ -110,12 +117,29 @@ def scan(conn, symbols, session, log=print):
             continue
         r = D.evaluate(bars)
         if r:
-            sigs.append(dict(r, symbol=s, scan_date=session))
+            sigs.append(dict(r, symbol=s, scan_date=session, **_badges(conn, s, session, r, log)))
     return sigs, stale, short
+
+
+def _badges(conn, symbol, session, sig, log=print):
+    """Pre-ignition badges + setup grade for one signal, from up to 400 bars ending at the session.
+    Non-blocking: any failure is logged in one line and leaves the badge columns NULL."""
+    if not sig.get("ignition_date"):
+        return dict.fromkeys(BADGE_KEYS)
+    try:
+        g = PB.compute_badges(load_bars(conn, symbol, session, n=PB.BARS), sig["ignition_date"], session)
+        return {k: g[k] for k in BADGE_KEYS}
+    except Exception as e:
+        log(f"{symbol}: badges skipped {e!r}")
+        return dict.fromkeys(BADGE_KEYS)
 
 
 def _round(v, n):
     return None if v is None else round(float(v), n)
+
+
+def _flag(v):
+    return None if v is None else int(bool(v))
 
 
 def store(conn, session, sigs):
@@ -129,7 +153,9 @@ def store(conn, session, sigs):
                             _round(x["pct_change"], 3), _round(x["rvol"], 3), _round(x["turnover_pkr"], 2),
                             _round(x["base_or_shelf_high"], 4), x["shelf_days"],
                             _round(x["up_down_vol_ratio"], 3), x["ignition_date"],
-                            _round(x.get("ema20"), 4), _round(x.get("ignition_floor"), 4))))
+                            _round(x.get("ema20"), 4), _round(x.get("ignition_floor"), 4),
+                            _flag(x.get("coil_dryup")), _flag(x.get("w1_leader")),
+                            _flag(x.get("exhausted_pre_ign")), x.get("price_tier"), x.get("setup_grade"))))
     if hasattr(conn, "batch_query"):
         conn.batch_query(stmts)
     else:
@@ -149,7 +175,7 @@ def replay(conn, symbol, d_from, d_to):
     allbars = D.as_bars(rows)
     print(f"Replay {symbol} {d_from} → {d_to} (read-only, {len(allbars)} bars loaded)")
     print(f"{'date':10}  {'signal':15} {'close':>9} {'chg%':>7} {'rvol':>6} {'turnover PKR':>14} "
-          f"{'base/shelf hi':>13} {'days':>4} {'up/dn':>6} ignition")
+          f"{'base/shelf hi':>13} {'days':>4} {'up/dn':>6} {'ignition':10}  setup grade")
     out = []
     for k, b in enumerate(allbars):
         if not (d_from <= b["date"] <= d_to):
@@ -159,9 +185,11 @@ def replay(conn, symbol, d_from, d_to):
         f = lambda v, n=2: "—" if v is None else f"{v:.{n}f}"
         if r:
             out.append(r)
+            grade = PB.compute_badges(allbars[max(0, k + 1 - PB.BARS):k + 1], r["ignition_date"], b["date"])
             print(f"{b['date']:10}  {r['signal_type']:15} {f(r['close']):>9} {f(r['pct_change']):>7} "
                   f"{f(r['rvol']):>6} {r['turnover_pkr']:>14,.0f} {f(r['base_or_shelf_high']):>13} "
-                  f"{r['shelf_days']:>4} {f(r['up_down_vol_ratio']):>6} {r['ignition_date']}")
+                  f"{r['shelf_days']:>4} {f(r['up_down_vol_ratio']):>6} {r['ignition_date']:10}  "
+                  f"{grade['setup_grade']}")
         else:
             print(f"{b['date']:10}  {'—':15} {f(b['close']):>9}")
     return out

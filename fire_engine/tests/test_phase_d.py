@@ -157,7 +157,11 @@ def test_scan_store_stale_short_and_idempotent(tmp_path):
     cols = [r[1] for r in c.execute("PRAGMA table_info(phase_d_signals)")]
     assert cols == ["id", "symbol", "scan_date", "signal_type", "close", "pct_change", "rvol", "turnover_pkr",
                     "base_or_shelf_high", "shelf_days", "up_down_vol_ratio", "ignition_date", "created_at",
-                        "ema20", "ignition_floor"]
+                    "ema20", "ignition_floor", "coil_dryup", "w1_leader", "exhausted_pre_ign", "price_tier",
+                    "setup_grade"]
+    grades = c.execute("SELECT symbol, price_tier, setup_grade FROM phase_d_signals WHERE scan_date=?",
+                       (session,)).fetchall()
+    assert [tuple(r) for r in grades] == [("AAA", "SWEET_SPOT", "WATCH_ONLY")]   # ~Rs 11, no weekly leader
     idx = [r[1] for r in c.execute("PRAGMA index_list(phase_d_signals)")]
     assert "idx_phase_d_scan_date" in idx
 
@@ -335,4 +339,5 @@ def test_schema_migration_adds_level_columns_to_old_table(tmp_path):
     R.ensure_schema(c)
     R.ensure_schema(c)                                                   # idempotent
     cols = [r[1] for r in c.execute("PRAGMA table_info(phase_d_signals)")]
-    assert cols[-2:] == ["ema20", "ignition_floor"]
+    assert cols[-7:] == ["ema20", "ignition_floor", "coil_dryup", "w1_leader", "exhausted_pre_ign",
+                         "price_tier", "setup_grade"]
