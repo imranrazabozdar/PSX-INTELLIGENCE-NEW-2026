@@ -2,6 +2,17 @@ name: Universe backfill + retention preview
 
 on:
   workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Comma-separated tickers to backfill (empty = script default list)"
+        required: false
+        default: ""
+        type: string
+      skip_preview:
+        description: "Skip the presence check and retention-preview counts (true/false)"
+        required: false
+        default: "true"
+        type: string
 
 permissions:
   contents: read
@@ -23,8 +34,14 @@ jobs:
       - name: Install dependencies
         run: pip install requests pyyaml pandas numpy
 
-      - name: Run backfill (26 new symbols) and read-only retention preview
+      - name: Run backfill and read-only retention preview
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
-        run: python analysis/universe_backfill_and_retention_preview.py
+          SYMBOLS: ${{ inputs.symbols }}
+          SKIP_PREVIEW: ${{ inputs.skip_preview }}
+        run: |
+          ARGS=()
+          if [ -n "$SYMBOLS" ]; then ARGS+=(--symbols "$SYMBOLS"); fi
+          if [ "$SKIP_PREVIEW" = "true" ]; then ARGS+=(--skip-preview); fi
+          python analysis/universe_backfill_and_retention_preview.py "${ARGS[@]}"

@@ -15,6 +15,10 @@ Step 3 (WRITE)   the repo's standard historical OHLC backfill
                  Nothing else is written; no DELETE/UPDATE/DROP/TRUNCATE anywhere.
 
   python analysis/universe_backfill_and_retention_preview.py
+  python analysis/universe_backfill_and_retention_preview.py --symbols X,Y --skip-preview
+    --symbols      comma list of tickers to backfill (default: NEW_SYMBOLS below)
+    --skip-preview skip the 104-ticker presence check and the retention-preview
+                   counts/dbstat (those scan ~1.3M rows); backfill + verify still run
 
 Connection: LIBSQL_URL / LIBSQL_AUTH_TOKEN secrets (address is never printed);
 otherwise the local fallback psx_v2.db, read-only.
@@ -205,8 +209,8 @@ def _insert_or_ignore(conn, good):
         conn.commit()
 
 
-def step3_backfill(db, raw_conn, is_turso):
-    print("\n=== STEP 3: standard historical OHLC backfill, 26 new symbols (WRITE) ===")
+def step3_backfill(db, raw_conn, is_turso, symbols):
+    print(f"\n=== STEP 3: standard historical OHLC backfill, {len(symbols)} symbols (WRITE) ===")
     if not is_turso:
         print("SKIPPED: not production Turso (no LIBSQL_URL/LIBSQL_AUTH_TOKEN). No write issued.")
         return
@@ -217,7 +221,7 @@ def step3_backfill(db, raw_conn, is_turso):
     import scs_daily
     start_run = time.monotonic()
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    for i, sym in enumerate(NEW_SYMBOLS):
+    for i, sym in enumerate(symbols):
         if time.monotonic() - start_run > BACKFILL_BUDGET_SECONDS:
             print(f"time budget reached before {sym}; remaining symbols need a re-run")
             break
@@ -237,17 +241,17 @@ def step3_backfill(db, raw_conn, is_turso):
             time.sleep(0.5)
             continue
         _insert_or_ignore(raw_conn, good)
-        print(f"  [{i + 1}/{len(NEW_SYMBOLS)}] {sym}: submitted {len(good)} bars (INSERT OR IGNORE)")
+        print(f"  [{i + 1}/{len(symbols)}] {sym}: submitted {len(good)} bars (INSERT OR IGNORE)")
         time.sleep(1.0)
 
 
-def step3_verify(db):
+def step3_verify(db, symbols):
     print("\n=== STEP 3b: bars per new symbol after backfill (SELECT) ===")
     if not db.has_table("daily_ohlc"):
         print("daily_ohlc not present in this database.")
         return
     zero = []
-    for sym in NEW_SYMBOLS:
+    for sym in symbols:
         row = db.query("SELECT COUNT(*) AS n, MIN(trade_date) AS lo, MAX(trade_date) AS hi "
                        "FROM daily_ohlc WHERE symbol=?", (sym,))[0]
         n, mn, mx = int(row["n"] or 0), row["lo"], row["hi"]
@@ -261,18 +265,29 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--local-db", help="read-only local SQLite file to use instead of psx_v2.db "
                                        "(ignored when LIBSQL_URL + LIBSQL_AUTH_TOKEN are set)")
+    ap.add_argument("--symbols", default="",
+                    help="comma list of tickers to backfill (default: NEW_SYMBOLS)")
+    ap.add_argument("--skip-preview", action="store_true",
+                    help="skip the 104-ticker presence check and retention-preview counts")
     args = ap.parse_args()
+    symbols = ([t.strip().upper() for t in args.symbols.split(",") if t.strip()]
+               if args.symbols.strip() else list(NEW_SYMBOLS))
+    symbols = list(dict.fromkeys(symbols))
     db, label, is_turso, raw = open_db(args.local_db)
     print(f"Database: {label}")
-    present = step1_presence(db)
-    step2_retention(db)
+    print(f"symbols: {len(symbols)} ({', '.join(symbols)})")
+    if not args.skip_preview:
+        step1_presence(db)
+        step2_retention(db)
+    else:
+        print("--skip-preview: presence check and retention-preview counts skipped")
     try:
-        step3_backfill(db, raw, is_turso)
+        step3_backfill(db, raw, is_turso, symbols)
     except Exception as e:
         print(f"WRITE STEP ERROR: {type(e).__name__}: {e}")
         if is_turso:
             return 1
-    step3_verify(db)
+    step3_verify(db, symbols)
     if is_turso:
         try:
             import turso_db

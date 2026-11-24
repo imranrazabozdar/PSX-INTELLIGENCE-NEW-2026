@@ -260,6 +260,35 @@ stocks:
     - HTL
     - TELE
     - HUMNL
+    # added 2026-11-24 (28 more equities, universe backfill task 2); none were present before
+    - JSMFETF
+    - MIIETF
+    - NBPGETF
+    - UBLPETF
+    - HGFA
+    - TSMF
+    - DBCI
+    - TPLRF1
+    - AGHA
+    - ITTEFAQ
+    - TPLL
+    - PIL
+    - UNIC
+    - CENI
+    - FDPL
+    - SIBL
+    - CJPL
+    - PGLC
+    - LEUL
+    - OML
+    - GAMON
+    - FPRM
+    - ORM
+    - FTMM
+    - FIBLM
+    - FECM
+    - TCORP
+    - SELECT
     - OCTOPUS
     - GGGL
     - GCWL
