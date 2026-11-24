@@ -5,7 +5,7 @@ Signals are the exact SHELF_BREAKOUT signals from watchlist_breakout_audit.break
 exits are A.simulate (Rule 2). Each trade is tagged with pre-signal features and assigned to 7 slices:
 
   0_PHASE_D_BASELINE    all trades
-  1_WITH_COIL_DRYUP     ATR14[t]/ATR14[t-14] <= 0.95 and volume dry-up <= 0.35
+  1_WITH_COIL_DRYUP     ATR14[t_ign-1]/ATR14[t_ign-15] <= 0.95 and volume dry-up <= 0.35
   2_WITH_1W_LEADER      completed weekly bar satisfies the C6 weekly-leader condition
   3_NO_EXHAUSTED_WARN   NOT (MFI14 > 80 or 10-day return > 12%)
   4_PRICE_CAP_100       signal close <= Rs 100
@@ -16,6 +16,11 @@ Only SELECTs are issued (local SQLite is opened with mode=ro); outputs are CSVs.
 
 No look-ahead: features use bars <= t only; the weekly value for the week ending on day t is
 attached to that week's last trading day and forward-filled, so it is visible from day t onward.
+
+The coil/dry-up and exhaustion features (atr_ratio, dryup, mfi14, ret10) are measured at the shelf's
+ignition bar t_ign (sig["ignition_date"]), not the signal bar t: they use bars t_ign-10..t_ign-1. Trades
+with t_ign < 21 (or an ignition date not found in the bars) get NaN for these features and are excluded
+from slices 1, 3 and 5.
 
   python analysis/phase_d_filter_ablation.py [--local-db PATH] [--host HOST] [--out-dir DIR]
 """
@@ -34,7 +39,8 @@ from three_pillar_backtest import ema, rsi, mfi, obv, atr  # noqa: E402
 
 SLICES = ["0_PHASE_D_BASELINE", "1_WITH_COIL_DRYUP", "2_WITH_1W_LEADER", "3_NO_EXHAUSTED_WARN",
           "4_PRICE_CAP_100", "4B_PRICE_LE_25", "5_CLEAN_COMBO"]
-TRADE_COLS = ["symbol", "signal_date", "year", "sample", "entry_flag", "next_open", "exit_date", "exit_price",
+TRADE_COLS = ["symbol", "signal_date", "ignition_date", "t_ign", "year", "sample", "entry_flag", "next_open",
+              "exit_date", "exit_price",
               "rule2_return_pct", "mfe_pct", "hold_days", "exit_reason", "atr_ratio", "dryup", "mfi14", "ret10",
               "close", "weekly_leader"] + SLICES
 SUM_COLS = ["slice", "total_signals", "fillable_trades", "win_pct", "mean_pct", "median_pct", "worst_pct",
@@ -45,7 +51,8 @@ SUM_COLS = ["slice", "total_signals", "fillable_trades", "win_pct", "mean_pct", 
 def slice_flags(f):
     coil = f["atr_ratio"] <= 0.95 and f["dryup"] <= 0.35
     lead = bool(f["weekly_leader"])
-    no_exh = not (f["mfi14"] > 80 or f["ret10"] > 0.12)
+    feats_ok = bool(np.isfinite(f["mfi14"]) and np.isfinite(f["ret10"]))
+    no_exh = feats_ok and not (f["mfi14"] > 80 or f["ret10"] > 0.12)
     cap100 = f["close"] <= 100
     return {"0_PHASE_D_BASELINE": True, "1_WITH_COIL_DRYUP": coil, "2_WITH_1W_LEADER": lead,
             "3_NO_EXHAUSTED_WARN": no_exh, "4_PRICE_CAP_100": cap100, "4B_PRICE_LE_25": f["close"] <= 25,
@@ -81,6 +88,7 @@ def run_symbol(sym, df):
     atr14 = atr(df["high"], df["low"], df["close"]).to_numpy(dtype=float)
     mfi14 = mfi(df["high"], df["low"], df["close"], df["volume"]).to_numpy(dtype=float)
     wk = weekly_leader_daily(df)
+    date_idx = {b["date"]: i for i, b in enumerate(bars)}
     out, busy_until = [], -1
     for t, sig in A.breakouts(bars):
         if t < busy_until:
@@ -89,12 +97,17 @@ def run_symbol(sym, df):
         if sim is None:
             continue
         busy_until = len(bars) if sim["reason"].startswith("OPEN") else sim["exit_i"]
-        f = {"atr_ratio": safe_div(atr14[t], atr14[t - 14]),
-             "dryup": safe_div(min(V[t - 2], V[t - 1], V[t]), V[t - 20:t].mean()),
-             "mfi14": float(mfi14[t]), "ret10": safe_div(C[t], C[t - 10]) - 1,
-             "close": float(C[t]), "weekly_leader": bool(wk[t])}
+        t_ign = date_idx.get(sig["ignition_date"])
+        if t_ign is not None and t_ign >= 21:
+            pre = {"atr_ratio": safe_div(atr14[t_ign - 1], atr14[t_ign - 15]),
+                   "dryup": safe_div(min(V[t_ign - 3], V[t_ign - 2], V[t_ign - 1]), V[t_ign - 21:t_ign - 1].mean()),
+                   "mfi14": float(mfi14[t_ign - 1]), "ret10": safe_div(C[t_ign - 1], C[t_ign - 11]) - 1}
+        else:
+            pre = {"atr_ratio": np.nan, "dryup": np.nan, "mfi14": np.nan, "ret10": np.nan}
+        f = {**pre, "close": float(C[t]), "weekly_leader": bool(wk[t])}
         yr = int(sig["date"][:4])
-        row = {"symbol": sym, "signal_date": sig["date"], "year": yr,
+        row = {"symbol": sym, "signal_date": sig["date"], "ignition_date": sig["ignition_date"],
+               "t_ign": t_ign, "year": yr,
                "sample": "OOS" if yr >= 2025 else "IS", "entry_flag": sim["flags"],
                "next_open": round(sim["next_open"], 2), "exit_date": sim["exit_date"],
                "exit_price": round(sim["exit_price"], 2), "rule2_return_pct": round(sim["ret"], 2),
