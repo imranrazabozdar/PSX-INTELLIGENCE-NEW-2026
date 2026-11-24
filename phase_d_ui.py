@@ -119,13 +119,23 @@ def invalidation(h, scan_date):
     return out
 
 
+BADGE_LABELS = (("coil_dryup", "COIL"), ("w1_leader", "1W"), ("exhausted_pre_ign", "EXH"))
+
+
+def badges(h):
+    """Compact pre-ignition badges, e.g. 'COIL·1W·EXH'. Blank when a row has none (older rows, or NULL)."""
+    return "·".join(lbl for key, lbl in BADGE_LABELS if h.get(key) in (1, True))
+
+
 def rows(scan, names):
     return pd.DataFrame([{
         "symbol": h["symbol"], "status": TIERS[tier(h)][0],
         "price": h.get("close"), "day %": h.get("pct_change"), "rvol": h.get("rvol"),
         "ceiling": h.get("base_or_shelf_high"),
         "day": f"{int(h.get('shelf_days') or 0)}/{MAX_SHELF_DAY}",
-        "turnover": fmt_turnover(h.get("turnover_pkr")), "company": names.get(h["symbol"], ""),
+        "turnover": fmt_turnover(h.get("turnover_pkr")),
+        "setup_grade": h.get("setup_grade") or "", "price_tier": h.get("price_tier") or "",
+        "badges": badges(h), "company": names.get(h["symbol"], ""),
     } for h in sort_hits(scan.get("hits") or [])])
 
 
@@ -142,6 +152,14 @@ def column_config():
                                                       "ignition's 20-day base high)"),
         "day": st.column_config.TextColumn("Day", help="Trading days since the ignition, out of the 12-day window"),
         "turnover": st.column_config.TextColumn("Turnover", help="Close × volume, in PKR"),
+        "setup_grade": st.column_config.TextColumn(
+            "Setup Grade", help="A+ PRIME: price ≤ Rs 100, not exhausted before the ignition, and a COIL or a 1W "
+                                "leader. STANDARD: 1W leader and price ≤ Rs 100. WATCH_ONLY: otherwise. Display only."),
+        "price_tier": st.column_config.TextColumn(
+            "Price Tier", help="SWEET_SPOT ≤ Rs 25 · MID_CAP ≤ Rs 100 · HEAVY_CAP_CAUTION above Rs 100"),
+        "badges": st.column_config.TextColumn(
+            "Pre-ignition", help="COIL = ATR contraction and volume dry-up before the ignition · 1W = weekly leader · "
+                                 "EXH = exhausted before the ignition (MFI14 > 80, or a >12% run in the 10 days before)"),
         "company": "Company",
     }
 

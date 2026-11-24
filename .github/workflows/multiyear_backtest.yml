@@ -1,13 +1,10 @@
 name: Phase D multi-year backtest (read-only)
 
-# Manually started only. Runs analysis/watchlist_breakout_audit.py against the
-# production daily_ohlc (Turso, via LIBSQL_URL / LIBSQL_AUTH_TOKEN). The script
-# issues SELECTs only -- no table, scanner state or app file is written -- and
-# its CSV outputs are uploaded as a workflow artifact.
+# Manually started only.
+# Runs the read-only analysis scripts against the production daily_ohlc (Turso, via
+# LIBSQL_URL / LIBSQL_AUTH_TOKEN). The scripts issue SELECTs only -- no table, scanner
+# state or app file is written -- and their CSV outputs are uploaded as a workflow artifact.
 on:
-  push:
-    branches: [ccr-6e647878-x7x7er]
-    paths: ['analysis/watchlist_breakout_audit.py', 'analysis/three_pillar_backtest.py', 'analysis/forensic_mover_study.py', 'analysis/phase_d_filter_ablation.py', '.github/workflows/multiyear_backtest.yml']
   workflow_dispatch:
     inputs:
       audit:
@@ -38,7 +35,6 @@ jobs:
           python-version: '3.12'
       - run: pip install requests pyyaml pandas numpy
       - name: Run multi-year audit
-        if: github.event_name == 'workflow_dispatch'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -52,7 +48,6 @@ jobs:
           echo "===== BEGIN multiyear_watchlist_breakouts.csv"; cat out/multiyear_watchlist_breakouts.csv; echo "===== END"
           echo "===== BEGIN multiyear_tier_summary.csv"; cat out/multiyear_tier_summary.csv; echo "===== END"
       - name: Run three-pillar backtest
-        if: github.event_name == 'workflow_dispatch'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -61,7 +56,6 @@ jobs:
           python analysis/three_pillar_backtest.py --out-dir out
           echo "===== BEGIN three_pillar_summary.csv"; cat out/three_pillar_summary.csv; echo "===== END"
       - name: Run forensic mover study
-        if: github.event_name == 'workflow_dispatch'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
