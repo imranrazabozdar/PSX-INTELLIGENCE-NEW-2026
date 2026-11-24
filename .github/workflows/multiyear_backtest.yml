@@ -7,7 +7,7 @@ name: Phase D multi-year backtest (read-only)
 on:
   push:
     branches: [ccr-6e647878-x7x7er]
-    paths: ['analysis/watchlist_breakout_audit.py', 'analysis/three_pillar_backtest.py', 'analysis/forensic_mover_study.py', '.github/workflows/multiyear_backtest.yml']
+    paths: ['analysis/watchlist_breakout_audit.py', 'analysis/three_pillar_backtest.py', 'analysis/forensic_mover_study.py', 'analysis/phase_d_filter_ablation.py', '.github/workflows/multiyear_backtest.yml']
   workflow_dispatch:
     inputs:
       audit:
@@ -61,6 +61,7 @@ jobs:
           python analysis/three_pillar_backtest.py --out-dir out
           echo "===== BEGIN three_pillar_summary.csv"; cat out/three_pillar_summary.csv; echo "===== END"
       - name: Run forensic mover study
+        if: github.event_name == 'workflow_dispatch'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -68,6 +69,14 @@ jobs:
           mkdir -p out
           python analysis/forensic_mover_study.py --out-dir out
           echo "===== BEGIN forensic_mover_summary.csv"; cat out/forensic_mover_summary.csv; echo "===== END"
+      - name: Run Phase D filter ablation
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+        run: |
+          mkdir -p out
+          python analysis/phase_d_filter_ablation.py --out-dir out
+          echo "===== BEGIN phase_d_ablation_summary.csv"; cat out/phase_d_ablation_summary.csv; echo "===== END"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
