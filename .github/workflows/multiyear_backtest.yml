@@ -39,7 +39,7 @@ jobs:
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
-          AUDIT:${{ github.event.inputs.audit || 'AB' }}
+          AUDIT: ${{ github.event.inputs.audit || 'AB' }}
           SYMBOLS: ${{ github.event.inputs.symbols }}
         run: |
           mkdir -p out
