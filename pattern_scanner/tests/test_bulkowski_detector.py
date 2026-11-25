@@ -111,3 +111,43 @@ def test_causality_future_bars_do_not_change_earlier_signals():
 
         assert confirmed_upto(prefix), "check must not be vacuous"
         assert confirmed_upto(full) == confirmed_upto(prefix)
+
+
+def _zigzag_rows(points, vol=100_000, breakout_idx=None, breakout_vol=300_000):
+    """points: [(bar_index, price)] turning points, linearly interpolated.
+    Bars: close = path price, high = +0.5, low = -0.5, open = prior close."""
+    import numpy as np
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    mids = np.interp(np.arange(xs[-1] + 1), xs, ys)
+    rows = []
+    for i, m in enumerate(mids):
+        v = breakout_vol if i == breakout_idx else vol
+        rows.append((float(m), float(m) + 0.5, float(m) - 0.5, v))
+    return rows
+
+
+def _broad_points(upper_mid_high=110.0):
+    """Diverging pivots: highs 110/115/120 (collinear, 3 upper touches), lows 98/94/88,
+    decline to 88 after the 120 peak, rise monotonically and close above 120 at bar 45."""
+    return [(0, 100.0), (10, upper_mid_high), (15, 98.0), (20, 115.0),
+            (25, 94.0), (30, 120.0), (35, 88.0), (45, 122.0)]
+
+
+def test_broadening_three_touch_partial_decline_confirmed():
+    rows = _zigzag_rows(_broad_points(110.0), breakout_idx=45)
+    sigs = scan_symbol("TEST", _frame(rows))
+    broad = [s for s in sigs if s["pattern"] == "BROADENING_BOTTOM"]
+    assert len(broad) == 1, broad
+    assert broad[0]["state"] == CONFIRMED
+    assert broad[0]["signal_date"] == _day(45)
+    assert broad[0]["formation_high"] == 120.5
+    assert broad[0]["rvol"] >= 1.5
+
+
+def test_broadening_diverging_without_touches_rejected():
+    # first peak 104 sits >1.5% off the upper line; first trough 98 sits >1.5% off the lower
+    # line, so each trendline has only 2 touches and the candidate is rejected.
+    rows = _zigzag_rows(_broad_points(104.0), breakout_idx=45)
+    sigs = scan_symbol("TEST", _frame(rows))
+    assert [s for s in sigs if s["pattern"] == "BROADENING_BOTTOM"] == []

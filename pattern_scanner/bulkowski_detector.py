@@ -147,22 +147,79 @@ def _flag_cands(t, A):
     return out
 
 
+TOUCH_TOL = 0.015        # pivot within 1.5% of a trendline counts as a touch
+DECLINE_TOL = 0.02       # decline leg must reach within 2% of the lower line ...
+PULLBACK_MIN = 0.10      # ... and pull back >= 10% from the formation peak
+
+
+def _line(x, x1, y1, x2, y2):
+    return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
+
+
 def _broad_cands(t, A):
-    h, l, c = A["high"], A["low"], A["close"]
+    """Broadening bottom at bar t. Returns [(BROAD, peak_idx, floor, peak_high, reversal_green)]
+    only when the structure holds: diverging pivots, >= 3 touches on one trendline, a decline
+    from the peak to the lower line (or a lower low than earlier pivots), a pivot low at or
+    after that decline, a close back near the peak, and a >= 10% pullback from the peak.
+    reversal_green (the bar after the last pre-breakout pivot low closes above its open) is
+    returned as a flag: CONFIRMED needs it, FORMING does not. All reads are at bars <= t."""
+    h, l, c, o = A["high"], A["low"], A["close"], A["open"]
     lo = max(0, t - 60)
     hp = [int(p) for p in np.flatnonzero(A["ph"][lo:t - 3]) + lo]   # confirmed by t-1
     lp = [int(p) for p in np.flatnonzero(A["pl"][lo:t - 3]) + lo]
     if len(hp) < 2 or len(lp) < 2:
         return []
-    hb, ha, lb_, la = hp[-1], hp[-2], lp[-1], lp[-2]
+    ha, hb = hp[-2], hp[-1]
+    la, lb_ = lp[-2], lp[-1]
     if not (h[hb] > h[ha] and l[lb_] < l[la]):   # rising highs, falling lows
         return []
     if not 15 <= max(hb, lb_) - min(ha, la) <= 60:
         return []
-    floor = l[lb_]
-    if (max(h[ha], h[hb]) - floor) / c[t] < 0.15:
+    peak, floor = h[hb], l[lb_]
+    if (max(h[ha], peak) - floor) / c[t] < 0.15:
         return []
-    return [(BROAD, hb, floor, h[hb])]
+
+    def up(x):
+        return _line(x, ha, h[ha], hb, peak)
+
+    def dn(x):
+        return _line(x, la, l[la], lb_, l[lb_])
+
+    # >= 3 touches on at least one trendline
+    up_touches = sum(1 for p in hp if abs(h[p] - up(p)) <= TOUCH_TOL * up(p))
+    dn_touches = sum(1 for p in lp if abs(l[p] - dn(p)) <= TOUCH_TOL * dn(p))
+    if max(up_touches, dn_touches) < 3:
+        return []
+
+    # (a) decline after the peak: reaches within 2% of the lower line, or a lower low than
+    #     the pivot lows formed before the peak
+    prior_lows = [l[p] for p in lp if p < hb]
+    if not prior_lows:
+        return []
+    ref = min(prior_lows)
+    k = None
+    for j in range(hb + 1, t):
+        if l[j] <= (1.0 + DECLINE_TOL) * dn(j) or l[j] < ref:
+            k = j
+            break
+    if k is None:
+        return []
+
+    # (b) turn up: a confirmed pivot low at or after the decline bar
+    troughs = [p for p in lp if p >= k]
+    if not troughs:
+        return []
+    p_last = troughs[-1]
+
+    # pullback of >= 10% from the peak before the breakout
+    if min(l[hb + 1:t]) > (1.0 - PULLBACK_MIN) * peak:
+        return []
+    # close back up to the upper line (evaluated at the formation peak) after the turn
+    if not any(c[j] >= 0.99 * peak for j in range(p_last + 1, t + 1)):
+        return []
+
+    reversal_green = bool(c[p_last + 1] > o[p_last + 1])
+    return [(BROAD, hb, floor, peak, reversal_green)]
 
 
 def _pipe_events(A, last):
@@ -227,9 +284,12 @@ def scan_symbol(symbol, df):
     for t in range(21, last + 1):
         if not med[t] >= LIQ_MIN_PKR:
             continue
-        for pat, key, floor, fh in _cup_cands(t, A) + _flag_cands(t, A) + _broad_cands(t, A):
+        for cand in _cup_cands(t, A) + _flag_cands(t, A) + _broad_cands(t, A):
+            pat, key, floor, fh = cand[:4]
             if c[t] > fh:
                 if pat == CUP and not rvol[t] >= 1.5:
+                    continue
+                if pat == BROAD and not (cand[4] and rvol[t] >= 1.5):
                     continue
                 if (pat, key) not in seen:
                     seen.add((pat, key))
