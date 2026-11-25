@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       audit:
-        description: 'Audits to run: A (watchlist), B (full market), AB, YTD (2026 year-to-date Phase D audit only), IGNITION_PATTERNS (2026 ignition pattern audit only), BULKOWSKI_PSX (Bulkowski chart-pattern audit on PSX daily_ohlc only), TIGHT_BRACKETS (read-only tight-bracket replay of Bulkowski + Phase D breakouts only), STOPPING_VOLUME (read-only stopping-volume / absorption-in-downtrend audit only), STOP_HUNT_ENTRY (read-only entry-method comparison: Baseline vs limit -3.5% vs sweep & reclaim only), POST_WAR_2025_2026 (read-only post-war setup comparison, entries 2025-06-01..2026-01-31 only)'
+        description: 'Audits to run: CHART_PATTERNS_SANITY (read-only chart-pattern sanity on daily_ohlc only), A (watchlist), B (full market), AB, YTD (2026 year-to-date Phase D audit only), IGNITION_PATTERNS (2026 ignition pattern audit only), BULKOWSKI_PSX (Bulkowski chart-pattern audit on PSX daily_ohlc only), TIGHT_BRACKETS (read-only tight-bracket replay of Bulkowski + Phase D breakouts only), STOPPING_VOLUME (read-only stopping-volume / absorption-in-downtrend audit only), STOP_HUNT_ENTRY (read-only entry-method comparison: Baseline vs limit -3.5% vs sweep & reclaim only), POST_WAR_2025_2026 (read-only post-war setup comparison, entries 2025-06-01..2026-01-31 only)'
         default: 'AB'
       symbols:
         description: 'Optional comma list overriding the Audit A watchlist'
@@ -35,7 +35,7 @@ jobs:
           python-version: '3.12'
       - run: pip install requests pyyaml pandas numpy
       - name: Run multi-year audit
-        if: github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
+        if: github.event.inputs.audit != 'CHART_PATTERNS_SANITY' && github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -49,7 +49,7 @@ jobs:
           echo "===== BEGIN multiyear_watchlist_breakouts.csv"; cat out/multiyear_watchlist_breakouts.csv; echo "===== END"
           echo "===== BEGIN multiyear_tier_summary.csv"; cat out/multiyear_tier_summary.csv; echo "===== END"
       - name: Run three-pillar backtest
-        if: github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
+        if: github.event.inputs.audit != 'CHART_PATTERNS_SANITY' && github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -58,7 +58,7 @@ jobs:
           python analysis/three_pillar_backtest.py --out-dir out
           echo "===== BEGIN three_pillar_summary.csv"; cat out/three_pillar_summary.csv; echo "===== END"
       - name: Run forensic mover study
-        if: github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
+        if: github.event.inputs.audit != 'CHART_PATTERNS_SANITY' && github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -67,7 +67,7 @@ jobs:
           python analysis/forensic_mover_study.py --out-dir out
           echo "===== BEGIN forensic_mover_summary.csv"; cat out/forensic_mover_summary.csv; echo "===== END"
       - name: Run Phase D filter ablation
-        if: github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
+        if: github.event.inputs.audit != 'CHART_PATTERNS_SANITY' && github.event.inputs.audit != 'YTD' && github.event.inputs.audit != 'IGNITION_PATTERNS' && github.event.inputs.audit != 'BULKOWSKI_PSX' && github.event.inputs.audit != 'TIGHT_BRACKETS' && github.event.inputs.audit != 'STOPPING_VOLUME' && github.event.inputs.audit != 'STOP_HUNT_ENTRY' && github.event.inputs.audit != 'POST_WAR_2025_2026'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -133,6 +133,14 @@ jobs:
           PSX_TURSO_USAGE_REPORT: "1"
         run: |
           mkdir -p out && python analysis/post_war_regime_audit.py --out-dir out && cat out/post_war_report.txt
+      - name: Chart-pattern sanity on daily_ohlc (read-only)
+        if: github.event.inputs.audit == 'CHART_PATTERNS_SANITY'
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PSX_TURSO_USAGE_REPORT: "1"
+        run: |
+          mkdir -p out && python analysis/chart_patterns_sanity.py --out-dir out && cat out/chart_patterns_sanity.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
