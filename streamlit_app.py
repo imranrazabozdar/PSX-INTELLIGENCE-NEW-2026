@@ -3976,20 +3976,104 @@ with tab_breakouts:
 
 
 # ---------------------------------------------------------- Chart Patterns ----
-# Bulkowski detector (pattern_scanner/bulkowski_detector.py). The data source is NOT wired:
-# no backend endpoint returns daily OHLC for a symbol list, so no signals are loaded here.
+# Bulkowski detector (pattern_scanner/bulkowski_detector.py) over daily_ohlc for the
+# stocks.universe list in fire_engine/config/fire_config.yaml. READ-ONLY: SELECT statements
+# through backend/turso_db.get_connection(), the connection this app already uses. Confluence
+# badges join the existing phase_d_signals rows and the analysis_cache 'obv_mfi_scan' result.
+CP_START = "2021-09-01"
+_CP_COLS = ["Symbol", "Pattern", "State", "Signal Date", "RVOL", "Median20 PKR", "Clear_Runway %",
+            "Runway flag", "Suggested Stop", "Breadth %", "Confluence"]
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _chart_pattern_scan():
+    """Raises on read failure on purpose (st.cache_data does not cache exceptions).
+    Per-source failures of the two confluence joins are returned as type names, not raised."""
+    import json as _json
+    import yaml
+    _root = os.path.dirname(os.path.abspath(__file__))
+    _bd = os.path.join(_root, "backend")
+    if _bd not in sys.path:
+        sys.path.insert(0, _bd)
+    import turso_db as _tdb
+    from pattern_scanner.bulkowski_detector import scan_universe
+    from pattern_scanner.confluence import build_badges, obv_symbols_from_result
+    with open(os.path.join(_root, "fire_engine", "config", "fire_config.yaml"), encoding="utf-8") as _f:
+        universe = [str(x).upper() for x in yaml.safe_load(_f)["stocks"]["universe"]]
+    conn = _tdb.get_connection()
+    by_sym = {}
+    for i in range(0, len(universe), 50):
+        chunk = universe[i:i + 50]
+        ph = ",".join("?" * len(chunk))
+        for r in conn.execute(
+                f"SELECT symbol, trade_date, open, high, low, close, volume FROM daily_ohlc "
+                f"WHERE symbol IN ({ph}) AND trade_date >= ? ORDER BY symbol, trade_date",
+                (*chunk, CP_START)).fetchall():
+            by_sym.setdefault(str(r["symbol"]).upper(), []).append(r)
+    frames = {}
+    for sym, rs in by_sym.items():
+        d = pd.DataFrame([{"date": r["trade_date"], "open": r["open"], "high": r["high"],
+                           "low": r["low"], "close": r["close"], "volume": r["volume"]} for r in rs])
+        for col in ("open", "high", "low", "close", "volume"):
+            d[col] = pd.to_numeric(d[col], errors="coerce")
+        d = d.dropna(subset=["close", "high", "low", "volume"])
+        if len(d):
+            frames[sym] = d
+    signals, breadth = scan_universe(frames)
+
+    latest = None
+    ph_rows, ph_err = [], None
+    try:
+        r = conn.execute("SELECT MAX(scan_date) AS d FROM phase_d_signals").fetchone()
+        latest = r["d"] if r else None
+        ph_rows = [dict(x) for x in conn.execute(
+            "SELECT symbol, scan_date, signal_type FROM phase_d_signals "
+            "WHERE signal_type IN (?, ?, ?) AND scan_date >= ?",
+            ("SHELF_BREAKOUT", "SOS_IGNITION", "ACTIVE_SHELF", CP_START)).fetchall()]
+    except Exception as _e:
+        ph_err = type(_e).__name__
+    obv_syms, obv_err = set(), None
+    try:
+        rows = conn.execute("SELECT result_json FROM analysis_cache WHERE cache_key=?",
+                            ("obv_mfi_scan",)).fetchall()
+        if rows:
+            obv_syms = obv_symbols_from_result(_json.loads(rows[0]["result_json"]))
+    except Exception as _e:
+        obv_err = type(_e).__name__
+    return {"signals": build_badges(signals, ph_rows, obv_syms, latest_session=latest),
+            "breadth": breadth, "universe": len(universe), "scanned": len(frames),
+            "latest_phase_d": latest, "phase_d_error": ph_err, "obv_error": obv_err,
+            "obv_count": len(obv_syms)}
+
+
 with tab_chart_patterns:
     st.markdown('<div class="psx-section-eyebrow">DAILY CHART PATTERNS</div>'
                 '<div class="psx-section-title">Chart Patterns</div>', unsafe_allow_html=True)
-    st.warning("Data source not wired yet. The detector needs daily OHLC for the whole universe; "
-               "/ohlc/{symbol} is per-symbol and capped at 260 rows, so no signals are shown.")
-    _cp_cols = ["Symbol", "Pattern", "State", "Signal Date", "RVOL", "Median20 PKR", "Clear_Runway %",
-                "Runway flag", "Suggested Stop", "Breadth %", "Confluence"]
-    for _cp_state in ("CONFIRMED", "FORMING"):
-        st.subheader(_cp_state)
-        st.dataframe(pd.DataFrame(columns=_cp_cols), hide_index=True)
-    st.caption("Confluence (PHASE_D, OBV_MFI) is blank: it needs signal rows to match. The OBV+MFI results "
-               "are served by /patterns/obv-mfi-scan; the detector itself is not connected to any endpoint.")
+    _cp = None
+    try:
+        _cp = _chart_pattern_scan()
+    except Exception as _e:
+        st.warning(f"Chart pattern data unavailable ({type(_e).__name__}).")
+    if _cp is not None:
+        st.caption(f"Daily bars from {CP_START} · {_cp['scanned']} of {_cp['universe']} universe symbols "
+                   f"had bars · 30-min cache · latest Phase D session: {_cp['latest_phase_d'] or 'none'}")
+        if _cp["phase_d_error"]:
+            st.caption(f"PHASE_D badge blank: phase_d_signals unreadable ({_cp['phase_d_error']}).")
+        if _cp["obv_error"]:
+            st.caption(f"OBV_MFI badge blank: analysis_cache unreadable ({_cp['obv_error']}).")
+        for _state in ("CONFIRMED", "FORMING"):
+            st.subheader(_state)
+            _rows = [{
+                "Symbol": s["symbol"], "Pattern": s["pattern"], "State": s["state"],
+                "Signal Date": s["signal_date"], "RVOL": s["rvol"], "Median20 PKR": s["median20_pkr"],
+                "Clear_Runway %": s["clear_runway_pct"], "Runway flag": s["runway_flag"],
+                "Suggested Stop": s["suggested_stop"], "Breadth %": s["universe_breadth_pct"],
+                "Confluence": s["confluence"],
+            } for s in _cp["signals"] if s["state"] == _state]
+            _df = (pd.DataFrame(_rows, columns=_CP_COLS).sort_values(["Signal Date", "Symbol"],
+                                                                     ascending=[False, True])
+                   if _rows else pd.DataFrame(columns=_CP_COLS))
+            st.dataframe(_df, hide_index=True)
 
 
 # ---------------------------------------------------------------- More ----
