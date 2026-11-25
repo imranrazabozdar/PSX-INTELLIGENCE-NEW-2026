@@ -3998,18 +3998,11 @@ def _chart_pattern_scan():
     import turso_db as _tdb
     from pattern_scanner.bulkowski_detector import scan_universe
     from pattern_scanner.confluence import build_badges, obv_symbols_from_result
+    from pattern_scanner.recent_bars import fetch_recent_bars
     with open(os.path.join(_root, "fire_engine", "config", "fire_config.yaml"), encoding="utf-8") as _f:
         universe = [str(x).upper() for x in yaml.safe_load(_f)["stocks"]["universe"]]
     conn = _tdb.get_connection()
-    by_sym = {}
-    for i in range(0, len(universe), 50):
-        chunk = universe[i:i + 50]
-        ph = ",".join("?" * len(chunk))
-        for r in conn.execute(
-                f"SELECT symbol, trade_date, open, high, low, close, volume FROM daily_ohlc "
-                f"WHERE symbol IN ({ph}) AND trade_date >= ? ORDER BY symbol, trade_date",
-                (*chunk, CP_START)).fetchall():
-            by_sym.setdefault(str(r["symbol"]).upper(), []).append(r)
+    by_sym = fetch_recent_bars(conn, universe)   # latest 250 sessions per symbol, ascending
     frames = {}
     for sym, rs in by_sym.items():
         d = pd.DataFrame([{"date": r["trade_date"], "open": r["open"], "high": r["high"],
@@ -4055,7 +4048,7 @@ with tab_chart_patterns:
     except Exception as _e:
         st.warning(f"Chart pattern data unavailable ({type(_e).__name__}).")
     if _cp is not None:
-        st.caption(f"Daily bars from {CP_START} · {_cp['scanned']} of {_cp['universe']} universe symbols "
+        st.caption(f"Latest 250 daily bars per symbol · {_cp['scanned']} of {_cp['universe']} universe symbols "
                    f"had bars · 30-min cache · latest Phase D session: {_cp['latest_phase_d'] or 'none'}")
         if _cp["phase_d_error"]:
             st.caption(f"PHASE_D badge blank: phase_d_signals unreadable ({_cp['phase_d_error']}).")
