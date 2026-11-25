@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       audit:
-        description: 'Audits to run: A (watchlist), B (full market), AB'
+        description: 'Audits to run: A (watchlist), B (full market), AB, YTD (2026 year-to-date Phase D audit only)'
         default: 'AB'
       symbols:
         description: 'Optional comma list overriding the Audit A watchlist'
@@ -35,6 +35,7 @@ jobs:
           python-version: '3.12'
       - run: pip install requests pyyaml pandas numpy
       - name: Run multi-year audit
+        if: github.event.inputs.audit != 'YTD'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -48,6 +49,7 @@ jobs:
           echo "===== BEGIN multiyear_watchlist_breakouts.csv"; cat out/multiyear_watchlist_breakouts.csv; echo "===== END"
           echo "===== BEGIN multiyear_tier_summary.csv"; cat out/multiyear_tier_summary.csv; echo "===== END"
       - name: Run three-pillar backtest
+        if: github.event.inputs.audit != 'YTD'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -56,6 +58,7 @@ jobs:
           python analysis/three_pillar_backtest.py --out-dir out
           echo "===== BEGIN three_pillar_summary.csv"; cat out/three_pillar_summary.csv; echo "===== END"
       - name: Run forensic mover study
+        if: github.event.inputs.audit != 'YTD'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -64,6 +67,7 @@ jobs:
           python analysis/forensic_mover_study.py --out-dir out
           echo "===== BEGIN forensic_mover_summary.csv"; cat out/forensic_mover_summary.csv; echo "===== END"
       - name: Run Phase D filter ablation
+        if: github.event.inputs.audit != 'YTD'
         env:
           LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
           LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
@@ -71,6 +75,16 @@ jobs:
           mkdir -p out
           python analysis/phase_d_filter_ablation.py --out-dir out
           echo "===== BEGIN phase_d_ablation_summary.csv"; cat out/phase_d_ablation_summary.csv; echo "===== END"
+      - name: Phase D YTD audit (read-only)
+        if: github.event.inputs.audit == 'YTD'
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          PSX_TURSO_USAGE_REPORT: "1"
+        run: |
+          mkdir -p out
+          python analysis/phase_d_ytd_audit.py --out-dir out
+          cat out/phase_d_ytd_report.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
