@@ -139,6 +139,8 @@ def state(s, i):
 def classify(bars, s, t, sig):
     d, O, L, C = s["d"], s["O"], s["L"], s["C"]
     e10, e20 = s["ema10"], s["ema20"]
+    if t < 30:                             # too little history for the 20-session swing-low window
+        return "UNCLASSIFIED"
     if sig and sig.get("signal_type") == "SHELF_BREAKOUT":
         ign = bisect.bisect_left(d, sig["ignition_date"])
         if 3 <= t - ign <= 12:
@@ -373,7 +375,8 @@ def main(argv=None):
         "16 STEADY: RVOL(T0)<2.0 and >=5 of T-10..T-1 closes above EMA20 (the 'T0 close' clause read as this count).",
         "17 Non-igniting sample = every 2026 symbol-day that is not a qualifying T0; its fingerprint uses the prior session (same lag as T-1).",
         "18 Section 3 'median' for % Above 200-SMA is reported as a share of days. Ratio = winners / non-igniting.",
-        "19 PRICE_TIER from compute_badges on bars through T0 (SWEET <=25, MID <=100, HEAVY >100).", "")
+        "19 PRICE_TIER from compute_badges on bars through T0 (SWEET <=25, MID <=100, HEAVY >100).",
+        "20 T0 with fewer than 30 bars of history in the data (short-listed symbols) is classified UNCLASSIFIED.", "")
     add("SKIPPED SYMBOLS (<60 bars in window): " + (", ".join(skipped) if skipped else "none"),
         f"Turso usage: {db_stats[0]} SELECT/PRAGMA statements, {db_stats[1]} non-read statements refused, rows written: 0")
     report = "\n".join(W) + "\n"
