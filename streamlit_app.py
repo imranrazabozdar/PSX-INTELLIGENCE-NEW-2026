@@ -1014,8 +1014,9 @@ if _health_db.get("on_local_fallback"):
 elif _health_banner.get("status") == "error":
     st.warning(f"⚠️ Backend unreachable: {_health_banner.get('reason')} — data below may be stale or missing.")
 
-tab_home, tab_intraday, tab_screener, tab_pulse, tab_dss, tab_patterns, tab_breakouts, tab_more = st.tabs(
-    ["🏠 Home", "⚡ Intraday", "🔍 Screener", "📰 Pulse", "🎯 Stock Research", "🕯️ Patterns", "🚀 Breakouts", "⚙️ More"]
+tab_home, tab_intraday, tab_screener, tab_pulse, tab_dss, tab_patterns, tab_breakouts, tab_chart_patterns, tab_more = st.tabs(
+    ["🏠 Home", "⚡ Intraday", "🔍 Screener", "📰 Pulse", "🎯 Stock Research", "🕯️ Patterns", "🚀 Breakouts",
+     "📐 Chart Patterns", "⚙️ More"]
 )
 
 
@@ -3972,6 +3973,23 @@ with tab_breakouts:
                                _pat_refresh_params)
     except Exception as _e:
         st.warning(f"Breakouts tab unavailable: {type(_e).__name__}: {_e}")
+
+
+# ---------------------------------------------------------- Chart Patterns ----
+# Bulkowski detector (pattern_scanner/bulkowski_detector.py). The data source is NOT wired:
+# no backend endpoint returns daily OHLC for a symbol list, so no signals are loaded here.
+with tab_chart_patterns:
+    st.markdown('<div class="psx-section-eyebrow">DAILY CHART PATTERNS</div>'
+                '<div class="psx-section-title">Chart Patterns</div>', unsafe_allow_html=True)
+    st.warning("Data source not wired yet. The detector needs daily OHLC for the whole universe; "
+               "/ohlc/{symbol} is per-symbol and capped at 260 rows, so no signals are shown.")
+    _cp_cols = ["Symbol", "Pattern", "State", "Signal Date", "RVOL", "Median20 PKR", "Clear_Runway %",
+                "Runway flag", "Suggested Stop", "Breadth %", "Confluence"]
+    for _cp_state in ("CONFIRMED", "FORMING"):
+        st.subheader(_cp_state)
+        st.dataframe(pd.DataFrame(columns=_cp_cols), hide_index=True)
+    st.caption("Confluence (PHASE_D, OBV_MFI) is blank: it needs signal rows to match. The OBV+MFI results "
+               "are served by /patterns/obv-mfi-scan; the detector itself is not connected to any endpoint.")
 
 
 # ---------------------------------------------------------------- More ----
