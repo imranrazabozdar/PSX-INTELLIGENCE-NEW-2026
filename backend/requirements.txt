@@ -10,3 +10,4 @@ plotly==7.0.0
 streamlit==1.62.0
 deap==1.4.4
 dill==0.4.1
+reportlab==5.0.1
