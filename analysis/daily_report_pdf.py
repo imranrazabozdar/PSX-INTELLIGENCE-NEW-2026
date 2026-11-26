@@ -61,6 +61,8 @@ PHASE_D_COLUMNS = [
 ]
 
 MARKET_BEHAVIOUR_SUB = "Market Behaviour"
+# Phase D stage shown as a pill (the app's tier labels carry emoji that the PDF font cannot draw).
+STAGE_PILL = {1: "ENTRY TRIGGERED", 2: "FINAL WINDOW", 3: "BUILDING SHELF", 4: "FRESH IGNITION"}
 MARKET_BEHAVIOUR_TITLE = "Wyckoff Institutional Accumulation"
 WYCKOFF_V1_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Signal", ["signal"]),
                       ("Score", ["score"]), ("Price", ["price"])]
@@ -535,6 +537,7 @@ def _vol_sections(conn, names, session):
     sec.append(_section("Patterns", VOL_SUB, "Historical Validation", sdisp,
                         "analysis_cache 'volatility_engine_stats'", snote, spec=VALIDATION_COLUMNS,
                         empty=(smeta or {}).get("reason") or "Not run yet."))
+    sec[0]["scanned"] = len(vrows)
     return sec
 
 
@@ -555,18 +558,47 @@ def _validation_rows(stats):
     return out
 
 
+WYCKOFF2_TIER = {"POTENTIAL BREAKOUT": 0, "ADVANCED ACCUMULATION": 0, "STRONG ACCUMULATION": 0,
+                 "DEVELOPING ACCUMULATION": 1, "FAILED ACCUMULATION": 1, "NO CLEAR ACCUMULATION": 2}
+WYCKOFF2_TIER_CAPTIONS = ("Potential breakout, advanced and strong accumulation",
+                          "Developing and failed accumulation",
+                          "No Clear Accumulation (Remaining Universe)")
+
+
+def _wyckoff2_tier(cls):
+    """Presentation tier for a Wyckoff 2.0 class. Unknown classes go to the last tier, so every stock stays shown."""
+    return WYCKOFF2_TIER.get(str(cls or "").strip().upper(), 2)
+
+
+def _blank(v):
+    return v is None or str(v).strip() == ""
+
+
 def _wyckoff2_section(conn, names):
     run_at, rows, meta = _cache_rows(conn, "wyckoff2_research_scan")
     disp = [{"symbol": r.get("symbol"), "company": names.get(r.get("symbol")) or "", "price": r.get("close"),
              "day": r.get("chg_pct"), "orig_score": r.get("orig_score"), "orig_class": r.get("orig_class"),
              "enh_class": r.get("enh_class")} for r in rows]
+    disp.sort(key=lambda r: _wyckoff2_tier(r["enh_class"]))  # presentation order only; stable within a tier
     note = (f"cached at {run_at}" if meta is not None else
             "cache key 'wyckoff2_research_scan' is not in analysis_cache: no data to show")
-    return _section("Patterns", WYCKOFF2_SUB, "Enhanced-class table (research)", disp,
-                    "analysis_cache 'wyckoff2_research_scan'",
-                    note=note + ". EXPERIMENTAL / NOT PRODUCTION: research scores are heuristics (0-100), not probabilities.",
-                    spec=WYCKOFF2_COLUMNS,
-                    empty="No symbol currently shows an enhanced Wyckoff 2.0 class in the research scan.")
+    sec = _section("Patterns", WYCKOFF2_SUB, "Enhanced-class table (research)", disp,
+                   "analysis_cache 'wyckoff2_research_scan'",
+                   note=note + ". EXPERIMENTAL / NOT PRODUCTION: research scores are heuristics (0-100), not probabilities.",
+                   spec=WYCKOFF2_COLUMNS,
+                   empty="No symbol currently shows an enhanced Wyckoff 2.0 class in the research scan.")
+    orig_blank = all(_blank(r["orig_score"]) and _blank(r["orig_class"]) for r in disp)
+    top_cols = (["Symbol", "Company", "Price", "Day %"] + ([] if orig_blank else ["Original Score", "Original Class"])
+                + ["Enhanced Class"])
+    layout = ((0, top_cols, 1), (1, ["Symbol", "Price", "Day %", "Enhanced Class"], 2),
+              (2, ["Symbol", "Price", "Day %"], 3))
+    tiers = []
+    for t, cols, per in layout:
+        part = [{c: r[c] for c in cols} for r in sec["rows"] if _wyckoff2_tier(r["Enhanced Class"]) == t]
+        if part:
+            tiers.append({"caption": WYCKOFF2_TIER_CAPTIONS[t], "cols": cols, "rows": part, "per_row": per})
+    sec["tiers"] = tiers
+    return sec
 
 
 def _breakouts_section(conn, session_date):
@@ -591,8 +623,15 @@ def _breakouts_section(conn, session_date):
         checklist.append(f"   Dates to watch: {dates}")
         for line in pdt.invalidation(h, pd_date) or []:
             checklist.append(f"   Cancel level: {line}")
+    cards = []
+    for h in hits:
+        dates, verdict = pdt.watch(h, pd_date)
+        cancel = [re.sub(r"The level is recalculated.*?evening\.\s*", "", x).strip()
+                  for x in pdt.invalidation(h, pd_date) or []]
+        cards.append({"symbol": h["symbol"], "grade": h.get("setup_grade") or "-", "window": dates,
+                      "entry": verdict, "cancel": cancel})
     recs = [{
-        "symbol": h["symbol"], "status": pdt.TIERS[pdt.tier(h)][0], "price": h.get("close"),
+        "symbol": h["symbol"], "status": STAGE_PILL[pdt.tier(h)], "price": h.get("close"),
         "day_pct": h.get("pct_change"), "rvol": h.get("rvol"), "ceiling": h.get("base_or_shelf_high"),
         "day": f"{int(h.get('shelf_days') or 0)}/{pdt.MAX_SHELF_DAY}",
         "turnover": pdt.fmt_turnover(h.get("turnover_pkr")),
@@ -601,10 +640,12 @@ def _breakouts_section(conn, session_date):
     note = (f"Last completed scan: {pd_date or 'none'} · {len(recs)} stock(s), closest to an entry first: "
             "breakouts today, shelves in their final days (9-12), shelves still building (3-8), then fresh "
             "ignitions.")
-    return _section("Breakouts", PHASE_D_SUB, f"Phase D breakouts and shelves (session {pd_date or 'none'})",
-                    recs, "phase_d_signals (scan_date)", note=note, date=pd_date or "none", spec=PHASE_D_COLUMNS,
-                    checklist=checklist, summary=summary,
-                    empty=f"No symbol currently shows a shelf breakout, SOS ignition or active shelf for {pd_date or 'none'}.")
+    sec = _section("Breakouts", PHASE_D_SUB, f"Phase D breakouts and shelves (session {pd_date or 'none'})",
+                   recs, "phase_d_signals (scan_date)", note=note, date=pd_date or "none", spec=PHASE_D_COLUMNS,
+                   checklist=checklist, summary=summary,
+                   empty=f"No symbol currently shows a shelf breakout, SOS ignition or active shelf for {pd_date or 'none'}.")
+    sec["cards"] = cards
+    return sec
 
 
 def load_company_names():
@@ -682,10 +723,41 @@ def collect_sections(conn, root_dir=ROOT, session_date=None, names=None):
     return session, sections
 
 
+def strip_latex(s):
+    """Remove LaTeX dollar delimiters and turn the common commands into plain text:
+    '$z=3$' -> 'z=3', '$\\ge\\sim217$' -> '>=~217'. Text without $...$ is unchanged."""
+    return re.sub(r"\$([^$\n]+)\$", lambda m: _tex_inner(m.group(1)).strip(), s)
+
+
+_TEX_CMDS = {"ge": ">=", "geq": ">=", "le": "<=", "leq": "<=", "lt": "<", "gt": ">", "sim": "~",
+             "approx": "~", "neq": "!=", "times": "x", "cdot": "*", "pm": "+/-"}
+
+
+def _tex_inner(s):
+    s = re.sub(r"\\([a-zA-Z]+)", lambda m: _TEX_CMDS.get(m.group(1), ""), s)
+    return s.replace("{", "").replace("}", "").replace("\\", "")
+
+
 def _safe(s):
+    s = strip_latex(s)
     for k, v in _SUBS.items():
         s = s.replace(k, v)
     return s.encode("latin-1", "replace").decode("latin-1")
+
+
+INSUFFICIENT_TEXT = "INSUFFICIENT HISTORICAL EVIDENCE"
+INSUFFICIENT_SHORT = "— (n<250)"
+
+
+def money_m(v):
+    """PKR value in millions, one decimal: 59407086 -> '59.4M'. Not a number -> '-'."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "-"
+    if f != f or f in (float("inf"), float("-inf")):
+        return "-"
+    return f"{f / 1e6:,.1f}M"
 
 
 def _cell(v):
@@ -708,7 +780,15 @@ def _cell(v):
         return "-"
     if len(s) > MAX_CELL:
         s = s[:MAX_CELL - 3] + "..."
+    s = s.replace(INSUFFICIENT_TEXT, INSUFFICIENT_SHORT)
     return _safe(s)
+
+
+def _pkr_cell(v):
+    """PKR columns: numbers in millions with one decimal (59407086 -> 59.4M)."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) >= 1e6:
+        return money_m(v)
+    return _cell(v)
 
 
 # Palette and badge mapping (styling only; text and data are never changed here).
@@ -718,16 +798,26 @@ ZEBRA_HEX = "#f4f7f9"
 INK_HEX = "#1e293b"
 MUTED_HEX = "#64748b"
 RULE_HEX = "#e2e8f0"
-BADGE_COLUMNS = ("Action", "Signal", "State")
+CRIMSON_SOFT_HEX = "#fdecec"
+AMBER_SOFT_HEX = "#fef6e4"
+BADGE_COLUMNS = ("Action", "Signal", "State", "Stage / Action Status", "Setup Grade")
+NOWRAP_COLUMNS = ("Symbol", "Date", "Signal Date")
 # value -> (text colour, pill fill)
 BADGE_STYLES = {
     "BUY SIGNAL": ("#15803d", "#dcfce7"),
     "CONFIRMED": ("#15803d", "#dcfce7"),
-    "READY": ("#15803d", "#dcfce7"),
-    "EXTREME": ("#15803d", "#dcfce7"),
+    "EXTREME": ("#b91c1c", "#fee2e2"),
+    "READY": ("#b45309", "#fef3c7"),
     "SHORT SIGNAL": ("#b91c1c", "#fee2e2"),
     "WAIT": ("#64748b", "#e2e8f0"),
     "WATCH": ("#b45309", "#fef3c7"),
+    "ENTRY TRIGGERED": ("#15803d", "#dcfce7"),
+    "FINAL WINDOW": ("#b45309", "#fef3c7"),
+    "BUILDING SHELF": ("#1d4ed8", "#dbeafe"),
+    "FRESH IGNITION": ("#64748b", "#e2e8f0"),
+    "A+ PRIME": ("#15803d", "#dcfce7"),
+    "STANDARD": ("#1d4ed8", "#dbeafe"),
+    "WATCH_ONLY": ("#b45309", "#fef3c7"),
 }
 _NUM_RE = re.compile(r"^[-+]?\d[\d,]*(\.\d+)?%?$")
 
@@ -738,8 +828,44 @@ def badge_style(value):
 
 
 def _numeric_column(texts):
-    hits = [t for t in texts if t != "-"]
+    hits = [t for t in texts if t not in ("-", "")]
     return bool(hits) and all(_NUM_RE.match(t) for t in hits)
+
+
+def _texts(cols, rows):
+    return [[(_pkr_cell(r.get(c)) if "PKR" in c else _cell(r.get(c))) for c in cols] for r in rows]
+
+
+def _row_tints(cols, rows):
+    """Wyckoff 1.0 only: EXTREME rows soft crimson, READY rows soft amber. None = zebra."""
+    if "Signal" not in cols:
+        return None
+    out = []
+    for r in rows:
+        sig = str(r.get("Signal") or "").strip().upper()
+        out.append(CRIMSON_SOFT_HEX if sig == "EXTREME" else AMBER_SOFT_HEX if sig == "READY" else None)
+    return out
+
+
+RECALC_FOOTER = "The level is recalculated after every close — check the updated figure each evening."
+
+
+def sub_kicker(s):
+    """Small teal kicker above each sub-heading."""
+    if s["group"] == "Chart Patterns":
+        return "CHART PATTERNS"
+    sub = s["sub"]
+    if sub == MARKET_BEHAVIOUR_SUB:
+        return "MARKET BEHAVIOUR"
+    if sub.startswith("Wyckoff Institutional Accumulation 2.0"):
+        return "ACCUMULATION FOOTPRINT"
+    if sub == VOL_SUB:
+        return "VOLATILITY"
+    if sub == PHASE_D_SUB or s["group"] == "Breakouts":
+        return "BREAKOUTS"
+    if sub == STRUCTURAL_SUB:
+        return "CHART PATTERNS"
+    return "CANDLESTICK PATTERNS"
 
 
 def render_pdf(path, session_date, sections, generated_at=None):
@@ -762,8 +888,11 @@ def render_pdf(path, session_date, sections, generated_at=None):
     NAVY, TEAL = colors.HexColor(NAVY_HEX), colors.HexColor(TEAL_HEX)
     ZEBRA, INK, MUTED = colors.HexColor(ZEBRA_HEX), colors.HexColor(INK_HEX), colors.HexColor(MUTED_HEX)
     RULE, WHITE = colors.HexColor(RULE_HEX), colors.white
+    TEAL_SOFT = colors.HexColor("#f0fdfa")
     header_text = f"PSX Daily Patterns Report  |  Session {session_date}  |  Generated {generated_at}"
     total_rows = sum(len(s["rows"]) for s in sections)
+    live = [s for s in sections if s["rows"]]
+    empty_names = [s["title"] for s in sections if not s["rows"]]
 
     h1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=28, leading=32, textColor=WHITE)
     cover_meta = ParagraphStyle("cover_meta", fontName="Helvetica", fontSize=9, leading=13,
@@ -777,6 +906,9 @@ def render_pdf(path, session_date, sections, generated_at=None):
     small = ParagraphStyle("small", fontName="Helvetica", fontSize=8.5, leading=11, textColor=INK)
     tiny = ParagraphStyle("tiny", fontName="Helvetica", fontSize=7, leading=9, textColor=MUTED)
     mono = ParagraphStyle("mono", fontName="Helvetica", fontSize=7.5, leading=10, textColor=MUTED)
+    callout = ParagraphStyle("callout", fontName="Helvetica", fontSize=7.8, leading=10.5, textColor=INK)
+    caption = ParagraphStyle("caption", fontName="Helvetica-Bold", fontSize=8, leading=11, textColor=NAVY,
+                             spaceBefore=2, spaceAfter=3)
     cell = ParagraphStyle("cell", fontName="Helvetica", fontSize=7.2, leading=9, textColor=INK)
     cell_r = ParagraphStyle("cell_r", parent=cell, alignment=TA_RIGHT)
     hcell = ParagraphStyle("hcell", parent=cell, fontName="Helvetica-Bold", textColor=WHITE)
@@ -787,12 +919,12 @@ def render_pdf(path, session_date, sections, generated_at=None):
                                  alignment=TA_CENTER)
 
     class _Pill(Flowable):
-        """Rounded coloured badge for Action / Signal / State values."""
+        """Rounded coloured badge with a dot, for Action / Signal / State / stage / grade values."""
 
         def __init__(self, text, fg, bg):
             Flowable.__init__(self)
             self.label, self.fg, self.bg = text, fg, bg
-            self.width = stringWidth(text, "Helvetica-Bold", 6.8) + 12
+            self.width = stringWidth(text, "Helvetica-Bold", 6.8) + 17
             self.height = 11
 
         def wrap(self, aw, ah):
@@ -803,8 +935,9 @@ def render_pdf(path, session_date, sections, generated_at=None):
             c.setFillColor(self.bg)
             c.roundRect(0, 0, self.width, self.height, 5.5, stroke=0, fill=1)
             c.setFillColor(self.fg)
+            c.circle(7, 5.5, 2, stroke=0, fill=1)
             c.setFont("Helvetica-Bold", 6.8)
-            c.drawString(6, 3, self.label)
+            c.drawString(13, 3, self.label)
 
     def on_page(canvas, doc):
         canvas.saveState()
@@ -839,37 +972,178 @@ def render_pdf(path, session_date, sections, generated_at=None):
                 _cv.Canvas.showPage(self)
             _cv.Canvas.save(self)
 
+    def make_table(headers, texts, tints=None):
+        """One table: repeated header row, rows never split, zebra or tinted rows, pills for badge columns."""
+        numeric = [_numeric_column([row[i] for row in texts]) for i in range(len(headers))]
+        data = [[Paragraph(_esc(_safe(h)), hcell_r if numeric[i] else hcell) for i, h in enumerate(headers)]]
+        for row in texts:
+            out = []
+            for i, h in enumerate(headers):
+                txt = row[i]
+                pair = badge_style(txt) if h in BADGE_COLUMNS else None
+                if pair:
+                    out.append(_Pill(txt, colors.HexColor(pair[0]), colors.HexColor(pair[1])))
+                elif h in NOWRAP_COLUMNS:
+                    out.append(txt)
+                else:
+                    out.append(Paragraph(_esc(txt), cell_r if numeric[i] else cell))
+            data.append(out)
+        weights = []
+        for i, h in enumerate(headers):
+            longest = max([len(row[i]) for row in texts[:300]] + [min(len(h), 14)])
+            weights.append(min(max(longest, 6), 40))
+        total = float(sum(weights))
+        widths = [max(width * w / total, 28) for w in weights]
+        scale = width / sum(widths)
+        widths = [w * scale for w in widths]
+        t = Table(data, colWidths=widths, repeatRows=1)
+        style = [("BACKGROUND", (0, 0), (-1, 0), NAVY),
+                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"), ("FONTSIZE", (0, 1), (-1, -1), 7.2),
+                 ("TOPPADDING", (0, 0), (-1, -1), 3.2), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.2),
+                 ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                 ("LINEBELOW", (0, 0), (-1, -1), 0.25, RULE)]
+        for i in range(len(headers)):
+            if numeric[i]:
+                style.append(("ALIGN", (i, 0), (i, -1), "RIGHT"))
+        for ri in range(len(texts)):
+            tint = tints[ri] if tints else None
+            if tint:
+                style.append(("BACKGROUND", (0, ri + 1), (-1, ri + 1), colors.HexColor(tint)))
+            elif ri % 2 == 1:
+                style.append(("BACKGROUND", (0, ri + 1), (-1, ri + 1), ZEBRA))
+        t.setStyle(TableStyle(style))
+        return t
+
+    def callout_box(text):
+        """Soft-tinted teal box for notes and disclaimers."""
+        t = Table([[Paragraph(_esc(_safe(text)), callout)]], colWidths=[width])
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), TEAL_SOFT),
+                               ("LINEBEFORE", (0, 0), (0, -1), 2.5, TEAL),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 10), ("TOPPADDING", (0, 0), (-1, -1), 5),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+        return t
+
+    def card(c, card_w):
+        """Compact Phase D checklist card: Symbol, Grade, Window, Entry Conditions, Cancel Levels."""
+        label_w = 30 * mm
+        rows_ = [[Paragraph(f"<b>{_esc(_safe(c['symbol']))}</b>  ·  {_esc(_safe(str(c['grade'])))}", small), ""],
+                 [Paragraph("WINDOW", tiny), Paragraph(_esc(_safe(c["window"])), small)],
+                 [Paragraph("ENTRY CONDITIONS", tiny), Paragraph(_esc(_safe(c["entry"])), small)],
+                 [Paragraph("CANCEL LEVELS", tiny), Paragraph(_esc(_safe(" ".join(c["cancel"]))), small)]]
+        t = Table(rows_, colWidths=[label_w, card_w - label_w])
+        t.setStyle(TableStyle([("SPAN", (0, 0), (-1, 0)), ("BACKGROUND", (0, 0), (-1, 0), ZEBRA),
+                               ("BOX", (0, 0), (-1, -1), 0.5, RULE), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                               ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 6)]))
+        return t
+
+    def card_grid(cards):
+        card_w = width / 2 - 4 * mm
+        items = [card(c, card_w) for c in cards]
+        if len(items) % 2:
+            items.append("")
+        grid = [items[i:i + 2] for i in range(0, len(items), 2)]
+        g = Table(grid, colWidths=[width / 2, width / 2])
+        g.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                               ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+        return g
+
+    def section_body(s):
+        out = []
+        if s.get("tiers"):
+            # Wyckoff 2.0: top tier full table, developing/failed as a two-up grid, no-clear as a three-up grid.
+            for tier in s["tiers"]:
+                cols, rows, per = tier["cols"], tier["rows"], tier["per_row"]
+                cap = Paragraph(_esc(_safe(f"{tier['caption']} ({len(rows)})")), caption)
+                if per == 1:
+                    tbl = make_table(cols, _texts(cols, rows))
+                else:
+                    grid = []
+                    for i in range(0, len(rows), per):
+                        chunk = rows[i:i + per]
+                        line = []
+                        for rec in chunk:
+                            line += _texts(cols, [rec])[0]
+                        line += [""] * len(cols) * (per - len(chunk))
+                        grid.append(line)
+                    tbl = make_table(cols * per, grid)
+                out.append(KeepTogether([cap, tbl]))
+                out.append(Spacer(1, 6))
+            return out
+        cols = s["columns"]
+        out.append(make_table(cols, _texts(cols, s["rows"]), _row_tints(cols, s["rows"])))
+        if s.get("cards"):
+            out.append(Spacer(1, 6))
+            out.append(card_grid(s["cards"]))
+            out.append(Paragraph(_esc(_safe(RECALC_FOOTER)), tiny))
+        elif s.get("checklist"):
+            for line in s["checklist"]:
+                out.append(Paragraph(_esc(_safe(line)), mono))
+        return out
+
+    # ---- cover -------------------------------------------------------------------------------
     story = [Spacer(1, 4 * mm)]
     banner = [Paragraph("PSX Daily Patterns Report", h1), Spacer(1, 8),
-              Paragraph("Covers Chart Patterns, Patterns and Breakouts. FIRE Engine content is excluded.",
-                        cover_meta)]
+              Paragraph(_esc(f"Covers Chart Patterns, Patterns and Breakouts. FIRE Engine content is excluded. "
+                             f"Generated {generated_at}."), cover_meta)]
     banner_tbl = Table([[banner]], colWidths=[width])
     banner_tbl.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY),
                                     ("LEFTPADDING", (0, 0), (-1, -1), 22), ("RIGHTPADDING", (0, 0), (-1, -1), 22),
                                     ("TOPPADDING", (0, 0), (-1, -1), 22), ("BOTTOMPADDING", (0, 0), (-1, -1), 20)]))
     story += [banner_tbl, Spacer(1, 10)]
-    tile_vals = [str(len(sections)), f"{total_rows:,}", session_date, generated_at]
-    tile_labels = ["Sections", "Rows", "Session date", "Generated"]
-    tiles = Table([[Paragraph(_esc(v), kpi_num) for v in tile_vals],
-                   [Paragraph(_esc(l.upper()), kpi_lbl) for l in tile_labels]],
+
+    breadth = next((r.get("Breadth %") for s in sections if s["group"] == "Chart Patterns" for r in s["rows"]
+                    if r.get("Breadth %") not in (None, "")), None)
+    scanned = next((s["scanned"] for s in sections if "scanned" in s), None)
+    kpi_vals = [session_date, f"{_cell(breadth)}%" if breadth is not None else "-", f"{total_rows:,}",
+                f"{scanned:,}" if scanned is not None else "-"]
+    kpi_lbls = ["Session Date", "Breadth %", "Active Signals", "Scanned Symbols"]
+    tiles = Table([[Paragraph(_esc(v), kpi_num) for v in kpi_vals],
+                   [Paragraph(_esc(l.upper()), kicker) for l in kpi_lbls]],
                   colWidths=[width / 4] * 4)
     tiles.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ZEBRA),
                                ("LINEABOVE", (0, 0), (-1, 0), 2, TEAL),
                                ("LEFTPADDING", (0, 0), (-1, -1), 12), ("TOPPADDING", (0, 0), (-1, 0), 10),
                                ("BOTTOMPADDING", (0, -1), (-1, -1), 10)]))
-    story += [tiles, Spacer(1, 16), Paragraph("Contents", grp), HRFlowable(width=width, thickness=1.5, color=TEAL),
+    story += [tiles, Spacer(1, 12)]
+
+    fresh = []
+    for s in live:
+        for r in s["rows"]:
+            d = str(r.get("Signal Date") or r.get("Date") or "")[:10]
+            if d == session_date:
+                fresh.append([s["title"], r.get("Symbol"), r.get("Pattern") or r.get("Action") or r.get("State"), d])
+    story += [Paragraph("Today's Fresh Session Signals", h2)]
+    if fresh:
+        story.append(make_table(["Table", "Symbol", "Signal", "Date"],
+                                [[_cell(x) for x in row] for row in fresh]))
+    else:
+        story.append(callout_box(f"No fresh signals dated {session_date}."))
+    story += [Spacer(1, 10), Paragraph("Contents", grp), HRFlowable(width=width, thickness=1.5, color=TEAL),
               Spacer(1, 6)]
-    for g, subs in heading_tree(sections):
-        story.append(Paragraph(_esc(g.upper()), kicker))
+    toc = []
+    for g, subs in heading_tree(live):
+        toc.append(Paragraph(_esc(g.upper()), kicker))
         for sub, tables in subs:
-            story.append(Paragraph(_esc(_safe(sub)), small))
+            toc.append(Paragraph(_esc(_safe(sub)), small))
             for title, n in tables:
-                story.append(Paragraph(f"{_esc(_safe(title))} ({n} rows)", tiny))
-        story.append(Spacer(1, 4))
+                toc.append(Paragraph(f"{_esc(_safe(title))} ({n} rows)", tiny))
+        toc.append(Spacer(1, 4))
+    if toc:
+        half = (len(toc) + 1) // 2
+        left, right = toc[:half], toc[half:] or [Spacer(1, 1)]
+        story.append(Table([[left, right]], colWidths=[width / 2, width / 2],
+                           style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+    if empty_names:
+        story += [Spacer(1, 6), callout_box("Scans with no rows this session (not printed): "
+                                            + " · ".join(empty_names))]
     story.append(PageBreak())
 
+    # ---- sections ----------------------------------------------------------------------------
     current_group = current_sub = None
-    for s in sections:
+    for s in live:
         if s["group"] != current_group:
             if current_group is not None:
                 story.append(PageBreak())
@@ -879,7 +1153,9 @@ def render_pdf(path, session_date, sections, generated_at=None):
         head = []
         if s["sub"] != current_sub:
             current_sub = s["sub"]
-            head += [Paragraph(_esc(s["group"].upper()), kicker), Paragraph(_esc(_safe(s["sub"])), h2)]
+            head += [Paragraph(_esc(sub_kicker(s)), kicker), Paragraph(_esc(_safe(s["sub"])), h2)]
+        if s["sub"] == MARKET_BEHAVIOUR_SUB:
+            head.append(Paragraph("ACCUMULATION", kicker))
         head.append(Paragraph(_esc(_safe(s["title"])), ttl))
         summary = " | ".join(s["summary"]) if s["summary"] else ""
         line = f"<b>Total rows:</b> {len(s['rows'])}."
@@ -887,57 +1163,12 @@ def render_pdf(path, session_date, sections, generated_at=None):
             line += " " + _esc(_safe(summary))
         head.append(Paragraph(line, small))
         if s.get("note"):
-            head.append(Paragraph(_esc(_safe(s["note"])), tiny))
+            head.append(Spacer(1, 3))
+            head.append(callout_box(s["note"]))
         head.append(Paragraph(_esc(_safe(f"Source: {s['source']}")), tiny))
         head.append(Spacer(1, 6))
-        body = []
-        if s["rows"] and s["columns"]:
-            cols = s["columns"]
-            texts = {c: [_cell(r.get(c)) for r in s["rows"]] for c in cols}
-            numeric = {c: _numeric_column(texts[c]) for c in cols}
-            data = [[Paragraph(_esc(_safe(c)), hcell_r if numeric[c] else hcell) for c in cols]]
-            for ri, r in enumerate(s["rows"]):
-                row = []
-                for c in cols:
-                    txt = texts[c][ri]
-                    style_pair = badge_style(txt) if c in BADGE_COLUMNS else None
-                    if style_pair:
-                        row.append(_Pill(txt, colors.HexColor(style_pair[0]), colors.HexColor(style_pair[1])))
-                    else:
-                        row.append(Paragraph(_esc(txt), cell_r if numeric[c] else cell))
-                data.append(row)
-            weights = []
-            for c in cols:
-                longest = max([len(t) for t in texts[c][:300]] + [min(len(c), 14)])
-                weights.append(min(max(longest, 6), 40))
-            total = float(sum(weights))
-            widths = [max(width * w / total, 28) for w in weights]
-            scale = width / sum(widths)
-            widths = [w * scale for w in widths]
-            t = Table(data, colWidths=widths, repeatRows=1)
-            style = [("BACKGROUND", (0, 0), (-1, 0), NAVY),
-                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                     ("TOPPADDING", (0, 0), (-1, -1), 3.2), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.2),
-                     ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                     ("LINEBELOW", (0, 0), (-1, -1), 0.25, RULE)]
-            for ci, c in enumerate(cols):
-                if numeric[c]:
-                    style.append(("ALIGN", (ci, 0), (ci, -1), "RIGHT"))
-            for i in range(2, len(data), 2):
-                style.append(("BACKGROUND", (0, i), (-1, i), ZEBRA))
-            t.setStyle(TableStyle(style))
-            body.append(t)
-        else:
-            box = Table([[Paragraph(_esc(_safe(s["empty_text"])), empty_style)]], colWidths=[width])
-            box.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                                     ("BOX", (0, 0), (-1, -1), 0.5, RULE),
-                                     ("TOPPADDING", (0, 0), (-1, -1), 12),
-                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 12)]))
-            body.append(box)
-        for line in s.get("checklist") or []:
-            body.append(Paragraph(_esc(_safe(line)), mono))
         story.append(KeepTogether(head))
-        story += body
+        story += section_body(s)
         story.append(Spacer(1, 14))
 
     doc = SimpleDocTemplate(path, pagesize=page, leftMargin=margin, rightMargin=margin, topMargin=margin,

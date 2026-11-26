@@ -174,7 +174,7 @@ def test_pdf_renders_with_empty_wyckoff_and_chart_sections():
                                            generated_at="2026-11-26 06:00 UTC")
         with open(path, "rb") as f:
             assert f.read(5) == b"%PDF-"
-        assert pages >= 3
+        assert pages >= 1  # empty scans are listed in the cover status bar, not printed
 
 
 def test_session_date_rejects_bad_format():
@@ -309,3 +309,54 @@ def test_number_formatter_thousands_separators_no_scientific_notation():
     assert "e" not in big.lower() and big.startswith("100,000,000,000,000,000,000")
     small = rpt._cell(0.000012)
     assert "e" not in small.lower()
+
+
+def test_money_millions_formatter():
+    assert rpt.money_m(59407086) == "59.4M"
+    assert rpt.money_m(59407086.0) == "59.4M"
+    assert rpt._pkr_cell(59407086.0) == "59.4M"
+    assert rpt._pkr_cell(None) == "-" and rpt.money_m("n/a") == "-"
+    assert "e" not in rpt._pkr_cell(1e20).lower()
+
+
+def test_latex_dollar_delimiters_are_stripped():
+    assert rpt.strip_latex("$z=3$") == "z=3"
+    assert rpt.strip_latex(r"$\ge\sim217$") == ">=~217"
+    assert rpt._cell(r"threshold $\le 5$ met") == "threshold <= 5 met"
+    assert "$" not in rpt._cell("cost $z=3$ and $\\ge\\sim217$")
+    assert rpt.strip_latex("no maths here, PKR 100") == "no maths here, PKR 100"
+
+
+def test_wyckoff2_presentation_order_top_then_developing_then_no_clear():
+    with tempfile.TemporaryDirectory() as d:
+        db = _local_db_with(d)
+        c = sqlite3.connect(db)
+        rows = [{"symbol": "AAA", "close": 1.0, "enh_class": "NO CLEAR ACCUMULATION"},
+                {"symbol": "BBB", "close": 2.0, "enh_class": "FAILED ACCUMULATION"},
+                {"symbol": "CCC", "close": 3.0, "enh_class": "POTENTIAL BREAKOUT"},
+                {"symbol": "DDD", "close": 4.0, "enh_class": "DEVELOPING ACCUMULATION"},
+                {"symbol": "EEE", "close": 5.0, "enh_class": "STRONG ACCUMULATION"},
+                {"symbol": "FFF", "close": 6.0, "enh_class": "NO CLEAR ACCUMULATION"}]
+        c.execute("INSERT INTO analysis_cache VALUES ('wyckoff2_research_scan', '2026-11-25T06:00Z', ?)",
+                  (json.dumps({"rows": rows}),))
+        c.commit()
+        c.close()
+        conn = rpt.ReadOnlyConnection(_connect(db))
+        _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
+        w2 = [s for s in sections if s["sub"].startswith("Wyckoff Institutional Accumulation 2.0")][0]
+        assert len(w2["rows"]) == 6  # every stock stays present
+        assert [r["Symbol"] for r in w2["rows"]] == ["CCC", "EEE", "BBB", "DDD", "AAA", "FFF"]
+        tiers = w2["tiers"]
+        assert [t["caption"] for t in tiers] == list(rpt.WYCKOFF2_TIER_CAPTIONS)
+        assert [t["per_row"] for t in tiers] == [1, 2, 3]
+        assert "Original Score" not in tiers[0]["cols"]  # every original value blank -> dropped
+        assert tiers[1]["cols"] == ["Symbol", "Price", "Day %", "Enhanced Class"]
+        assert tiers[2]["cols"] == ["Symbol", "Price", "Day %"]
+
+
+def test_phase_d_stage_and_grade_pills_and_wyckoff_tints():
+    for v in ("FINAL WINDOW", "BUILDING SHELF", "FRESH IGNITION", "A+ PRIME", "STANDARD", "WATCH_ONLY"):
+        assert rpt.badge_style(v) is not None
+    assert rpt._row_tints(["Signal"], [{"Signal": "EXTREME"}, {"Signal": "READY"}, {"Signal": "WATCH"}]) == [
+        rpt.CRIMSON_SOFT_HEX, rpt.AMBER_SOFT_HEX, None]
+    assert rpt.STAGE_PILL[2] == "FINAL WINDOW"
