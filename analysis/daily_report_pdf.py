@@ -872,6 +872,7 @@ HOT_HEADERS = ["Symbol", "Company", "Price", "Bullish Setups Triggered", "Count"
 BEAR_HEADERS = ["Symbol", "Company", "Price", "Bearish Setups Triggered"]
 CAUTION_HEADERS = ["Symbol", "Company", "Price", "Risk / Conflict Reason"]
 SUMMARY_DISCLAIMER = "Signal overlaps from the scanners, not recommendations."
+CONFLICT_REASON = "Conflicting signals (bullish + bearish trigger)"
 NO_QUALIFYING = "No qualifying symbols for this session"
 
 
@@ -947,14 +948,18 @@ def page1_summary(sections, session_date):
     for sym in regress:
         if bull.get(sym):
             add(caution, sym, "Regression-Channel Triangle Squeeze vs bullish setup")
-
+    # Any active bearish trigger on a bullish symbol is a conflict: Caution only, never Hot Bullish.
+    for sym in bear:
+        if bull.get(sym):
+            add(caution, sym, CONFLICT_REASON)
+    # Caution takes precedence: a symbol is never in both the Bearish table and Caution.
     hot = [{"Symbol": s, "Company": names.get(s, ""), "Price": prices.get(s),
             "Bullish Setups Triggered": "; ".join(bull[s]), "Count": len(bull[s])}
-           for s in bull if len(bull[s]) >= 2]
+           for s in bull if len(bull[s]) >= 2 and s not in caution and s not in bear]
     hot.sort(key=lambda r: (-r["Count"], r["Symbol"]))
     bear_rows = [{"Symbol": s, "Company": names.get(s, ""), "Price": prices.get(s),
                   "Bearish Setups Triggered": ("Multi-module: " if len(bear[s]) >= 2 else "") + "; ".join(bear[s]),
-                  "_n": len(bear[s])} for s in bear]
+                  "_n": len(bear[s])} for s in bear if s not in caution]
     bear_rows.sort(key=lambda r: (-r["_n"], r["Symbol"]))
     for r in bear_rows:
         del r["_n"]
@@ -973,12 +978,12 @@ def render_pdf(path, session_date, sections, generated_at=None):
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.pdfgen import canvas as _cv
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable,
-                                    KeepTogether, HRFlowable)
+                                    KeepTogether, CondPageBreak, HRFlowable)
     from xml.sax.saxutils import escape as _esc
 
     generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    page = landscape(A4)
-    margin = 14 * mm
+    page = landscape(A4)  # every page is A4 landscape; wide tables use the same template with 10 mm margins
+    margin = 10 * mm
     width = page[0] - 2 * margin
     NAVY, TEAL = colors.HexColor(NAVY_HEX), colors.HexColor(TEAL_HEX)
     ZEBRA, INK, MUTED = colors.HexColor(ZEBRA_HEX), colors.HexColor(INK_HEX), colors.HexColor(MUTED_HEX)
@@ -1008,6 +1013,11 @@ def render_pdf(path, session_date, sections, generated_at=None):
     cell_r = ParagraphStyle("cell_r", parent=cell, alignment=TA_RIGHT)
     hcell = ParagraphStyle("hcell", parent=cell, fontName="Helvetica-Bold", textColor=WHITE)
     hcell_r = ParagraphStyle("hcell_r", parent=hcell, alignment=TA_RIGHT)
+    # Wide landscape tables (Bullish/Bearish Expansion, Wyckoff x Volatility): 6.8 pt text, compact headers.
+    cell_w = ParagraphStyle("cell_w", parent=cell, fontSize=6.8, leading=8.4)
+    cell_w_r = ParagraphStyle("cell_w_r", parent=cell_w, alignment=TA_RIGHT)
+    hcell_w = ParagraphStyle("hcell_w", parent=hcell, fontSize=6.8, leading=8.2)
+    hcell_w_r = ParagraphStyle("hcell_w_r", parent=hcell_w, alignment=TA_RIGHT)
     kpi_num = ParagraphStyle("kpi_num", fontName="Helvetica-Bold", fontSize=14, leading=18, textColor=NAVY)
     kpi_lbl = ParagraphStyle("kpi_lbl", parent=kicker, fontSize=7, leading=9)
     empty_style = ParagraphStyle("empty", fontName="Helvetica", fontSize=8.5, leading=11, textColor=MUTED,
@@ -1020,7 +1030,7 @@ def render_pdf(path, session_date, sections, generated_at=None):
             Flowable.__init__(self)
             self.label, self.fg, self.bg = text, fg, bg
             self.width = stringWidth(text, "Helvetica-Bold", 6.8) + 17
-            self.height = 11
+            self.height = 10
 
         def wrap(self, aw, ah):
             return self.width, self.height
@@ -1074,7 +1084,11 @@ def render_pdf(path, session_date, sections, generated_at=None):
         widths, Symbol 62 and Company 135 points, with 4pt vertical and 6pt horizontal padding."""
         numeric = [_numeric_column([row[i] for row in texts]) for i in range(len(headers))]
         wide = len(headers) >= 12 and "Company" in headers
-        data = [[Paragraph(_esc(_safe(h)), hcell_r if numeric[i] else hcell) for i, h in enumerate(headers)]]
+        # Wide tables: Symbol, Price, Last Candle and numeric columns never wrap (304.22, EXTREME, READY stay whole).
+        keep_line = [wide and (h in NOWRAP_COLUMNS or h in ("Price", "Last Candle") or numeric[i])
+                     for i, h in enumerate(headers)]
+        data = [[Paragraph(_esc(_safe(h)), (hcell_w_r if numeric[i] else hcell_w) if wide
+                           else (hcell_r if numeric[i] else hcell)) for i, h in enumerate(headers)]]
         for row in texts:
             out = []
             for i, h in enumerate(headers):
@@ -1082,8 +1096,10 @@ def render_pdf(path, session_date, sections, generated_at=None):
                 pair = badge_style(txt) if h in BADGE_COLUMNS else None
                 if pair:
                     out.append(_Pill(txt, colors.HexColor(pair[0]), colors.HexColor(pair[1])))
-                elif nowrap or h in NOWRAP_COLUMNS:
+                elif nowrap or h in NOWRAP_COLUMNS or keep_line[i]:
                     out.append(txt)
+                elif wide:
+                    out.append(Paragraph(_esc(txt), cell_w_r if numeric[i] else cell_w))
                 else:
                     out.append(Paragraph(_esc(txt), cell_r if numeric[i] else cell))
             data.append(out)
@@ -1092,22 +1108,47 @@ def render_pdf(path, session_date, sections, generated_at=None):
             longest = max([len(row[i]) for row in texts[:300]] + [min(len(h), 14)])
             weights.append(min(max(longest, 6), 40))
         if wide:
-            fixed = {"Symbol": 62.0, "Company": 135.0}
-            rest_w = width - sum(fixed.get(h, 0) for h in headers)
-            rest_total = float(sum(w for w, h in zip(weights, headers) if h not in fixed)) or 1.0
-            widths = [fixed[h] if h in fixed else rest_w * w / rest_total for w, h in zip(weights, headers)]
+            # Pinned columns (Symbol, Company, Price, numbers, badges) get the width of their longest value, so they
+            # never wrap. Other text columns get at least their longest word, so no word or number breaks mid-way.
+            pinned, minw = {"Symbol": 62.0, "Company": 120.0}, {}
+            for i, h in enumerate(headers):
+                if h in pinned:
+                    continue
+                samples = [row[i] for row in texts[:300]] or [""]
+                # Headers may wrap only between words: every column is at least as wide as its longest header word.
+                head_word = max(stringWidth(w_, "Helvetica-Bold", 6.8) for w_ in h.split()) + 6
+                if h in BADGE_COLUMNS and any(badge_style(t_) for t_ in samples):
+                    pinned[h] = max(max(stringWidth(t_, "Helvetica-Bold", 6.8) + 17 for t_ in samples) + 6, head_word)
+                elif keep_line[i]:
+                    pinned[h] = max(max(stringWidth(t_, "Helvetica", 6.8) for t_ in samples) + 6, head_word)
+                else:
+                    longest = max(max((stringWidth(w_, "Helvetica", 6.8) for w_ in t_.split()), default=0)
+                                  for t_ in samples)
+                    minw[h] = max(longest + 6, head_word)
+            rest = width - sum(pinned.values()) - sum(minw.values())
+            if rest < 0:  # too many columns for one line each: scale every column down evenly
+                k = width / (sum(pinned.values()) + sum(minw.values()))
+                pinned = {h: w * k for h, w in pinned.items()}
+                minw = {h: w * k for h, w in minw.items()}
+                rest = 0.0
+            flex_total = float(sum(w for w, h in zip(weights, headers) if h in minw)) or 1.0
+            widths = [pinned[h] if h in pinned else
+                      minw[h] + rest * w / flex_total for w, h in zip(weights, headers)]
         else:
             total = float(sum(weights))
             widths = [max(width * w / total, 28) for w in weights]
             scale = width / sum(widths)
             widths = [w * scale for w in widths]
         t = Table(data, colWidths=widths, repeatRows=1)
+        # Long tables use tighter rows so a 28-row table plus its title and disclaimer fit one landscape page.
+        pad = 4 if wide else 1.0 if len(texts) > 20 else 3.2
         style = [("BACKGROUND", (0, 0), (-1, 0), NAVY),
                  ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"), ("FONTSIZE", (0, 1), (-1, -1), 7.2),
-                 ("TOPPADDING", (0, 0), (-1, -1), 4 if wide else 3.2),
-                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4 if wide else 3.2),
-                 ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                 ("FONTSIZE", (0, 1), (-1, -1), 6.8 if wide else 7.2),
+                 ("TOPPADDING", (0, 0), (-1, -1), pad),
+                 ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
+                 ("LEFTPADDING", (0, 0), (-1, -1), 3 if wide else 6), ("RIGHTPADDING", (0, 0), (-1, -1), 3 if wide else 6),
                  ("LINEBELOW", (0, 0), (-1, -1), 0.25, RULE)]
         for idx in separators:
             style.append(("LINEAFTER", (idx, 0), (idx, -1), 1.5, colors.HexColor("#CBD5E1")))
@@ -1123,11 +1164,12 @@ def render_pdf(path, session_date, sections, generated_at=None):
         t.setStyle(TableStyle(style))
         return t
 
-    def callout_box(text):
-        """Soft-tinted teal box for notes and disclaimers."""
+    def callout_box(text, amber=False):
+        """Soft-tinted box for notes and disclaimers: teal by default, amber for the Wyckoff 1.0 disclaimer."""
+        edge, fill = (colors.HexColor("#d97706"), colors.HexColor(AMBER_SOFT_HEX)) if amber else (TEAL, TEAL_SOFT)
         t = Table([[Paragraph(_esc(_safe(text)), callout)]], colWidths=[width])
-        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), TEAL_SOFT),
-                               ("LINEBEFORE", (0, 0), (0, -1), 2.5, TEAL),
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), fill),
+                               ("LINEBEFORE", (0, 0), (0, -1), 2.5, edge),
                                ("LEFTPADDING", (0, 0), (-1, -1), 10), ("TOPPADDING", (0, 0), (-1, -1), 5),
                                ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
         return t
@@ -1264,12 +1306,25 @@ def render_pdf(path, session_date, sections, generated_at=None):
         head.append(Paragraph(line, small))
         if s.get("note"):
             head.append(Spacer(1, 3))
-            head.append(callout_box(s["note"]))
+            head.append(callout_box(s["note"], amber=s["sub"] == MARKET_BEHAVIOUR_SUB))
         head.append(Paragraph(_esc(_safe(f"Source: {s['source']}")), tiny))
         head.append(Spacer(1, 6))
-        story.append(KeepTogether(head))
-        story += section_body(s)
-        story.append(Spacer(1, 14))
+        body = section_body(s)
+        flows = head + body
+        try:
+            height = sum(f.wrap(width, page[1])[1] + f.getSpaceBefore() + f.getSpaceAfter() for f in flows)
+        except Exception:  # container flowables (Wyckoff 2.0 tiers) cannot be measured here: keep the header only
+            height = float("inf")
+        # Each section opens with its own spacer, placed after its page-break check (no trailing spacer, which
+        # could spill onto a new page and leave a blank page).
+        if height <= page[1] - 2 * margin - 10:
+            # Whole section fits one page: title, disclaimer and table move together onto the same page.
+            story += [CondPageBreak(height + 10), Spacer(1, 10)] + flows
+        elif s.get("tiers"):
+            # Wyckoff 2.0: the header stays with the first tier's table, so it is never stranded at a page bottom.
+            story += [Spacer(1, 10), KeepTogether(head + body[:1])] + body[1:]
+        else:
+            story += [Spacer(1, 10), KeepTogether(head)] + body
 
     doc = SimpleDocTemplate(path, pagesize=page, leftMargin=margin, rightMargin=margin, topMargin=margin,
                             bottomMargin=margin, title="PSX Daily Patterns Report", author="PSX Intelligence",

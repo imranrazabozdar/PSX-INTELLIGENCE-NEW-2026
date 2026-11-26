@@ -464,3 +464,122 @@ def test_latex_cleaner_on_sample_strings():
     assert rpt.strip_latex("$z=3$") == "z=3"
     assert "$" not in rpt._cell("Wyckoff $READY=25$ of $n=771$")
     assert rpt._cell("Wyckoff $READY=25$") == "Wyckoff READY=25"
+
+
+def _bear_candle(title, rows):
+    return rpt._section("Patterns", "Long-Side (Bullish)", title, rows, "synthetic", spec=rpt.SHORT_COLUMNS)
+
+
+def test_bullish_and_bearish_symbol_goes_to_caution_only():
+    # AAA is bullish (Bullish Engulfing + OBV+MFI, 2 modules) and has a Bearish Engulfing SHORT SIGNAL.
+    sections = _overlap_sections() + [_bear_candle("Bearish Engulfing", [
+        {"symbol": "AAA", "company": "Alpha", "action": "SHORT SIGNAL", "date": "2026-11-25"},
+        {"symbol": "FFF", "company": "Foxtrot", "action": "SHORT SIGNAL", "date": "2026-11-25"},
+    ])]
+    summary = rpt.page1_summary(sections, "2026-11-25")
+    hot = {r["Symbol"] for r in summary["hot"]}
+    bear = {r["Symbol"] for r in summary["bear"]}
+    caution = {r["Symbol"]: r for r in summary["caution"]}
+    assert "AAA" not in hot and "AAA" not in bear
+    assert caution["AAA"]["Risk / Conflict Reason"] == rpt.CONFLICT_REASON
+    assert "BBB" in hot and "BBB" not in caution  # bullish-only symbols are unaffected
+    assert "FFF" in bear and "FFF" not in caution  # bearish-only symbol stays in the Bearish table
+
+
+def test_bearish_symbol_with_caution_flag_leaves_bearish_table():
+    alerts = rpt._section("Patterns", "Volatility Intelligence", "Alerts", [
+        {"symbol": "EEE", "company": "Echo", "note": "FAILED BULLISH BREAKOUT"}], "synthetic",
+        spec=[("Symbol", ["symbol"]), ("Company", ["company"]), ("Note", ["note"])])
+    sections = [_bear_candle("Bearish Engulfing", [
+        {"symbol": "EEE", "company": "Echo", "action": "SHORT SIGNAL", "date": "2026-11-25"}]), alerts]
+    summary = rpt.page1_summary(sections, "2026-11-25")
+    assert "EEE" not in {r["Symbol"] for r in summary["bear"]}
+    assert "EEE" in {r["Symbol"] for r in summary["caution"]}
+
+
+def test_no_symbol_in_both_hot_or_bearish_and_caution():
+    sections = _overlap_sections() + [_bear_candle("Bearish Engulfing", [
+        {"symbol": "AAA", "company": "Alpha", "action": "SHORT SIGNAL", "date": "2026-11-25"}])]
+    summary = rpt.page1_summary(sections, "2026-11-25")
+    caution = {r["Symbol"] for r in summary["caution"]}
+    assert not caution & {r["Symbol"] for r in summary["hot"]}
+    assert not caution & {r["Symbol"] for r in summary["bear"]}
+
+
+def _page_chunks(path):
+    """Decoded content stream of each page-level stream, kept separate so one page can be checked."""
+    import base64
+    data = open(path, "rb").read()
+    chunks, i = [], 0
+    while True:
+        s = data.find(b"stream", i)
+        if s < 0:
+            break
+        i = s + 6
+        if data[s - 3:s] == b"end":
+            continue
+        st = s + 6
+        st += 2 if data[st:st + 2] == b"\r\n" else 1 if data[st:st + 1] == b"\n" else 0
+        raw = data[st:data.find(b"endstream", st)].strip()
+        if raw.endswith(b"~>"):
+            raw = raw[:-2]
+        try:
+            chunks.append(zlib.decompress(base64.a85decode(raw, ignorechars=b" \t\r\n\x0b\x0c")))
+        except Exception:
+            pass
+    return chunks
+
+
+def test_latex_strings_are_stripped_in_rendered_pdf(tmp_path):
+    sample = "$=3,$ and $READY=25$ with $n=771$ at $10/12$ or $0/12$"
+    rows = [{"symbol": "ZZZ", "company": "Zulu $n=771$", "signal": "READY", "score": 72, "price": 10.0}]
+    sec = rpt._section("Patterns", rpt.MARKET_BEHAVIOUR_SUB, "Wyckoff test", rows, "synthetic",
+                       note=sample, spec=rpt.WYCKOFF_V1_COLUMNS, summary=[sample])
+    path, _, _ = rpt.render_pdf(str(tmp_path / "latex.pdf"), "2026-11-25", [sec],
+                                generated_at="2026-11-26 06:00 UTC")
+    text = b"\n".join(_page_chunks(path))  # decoded page content only, not the compressed bytes
+    assert b"READY=25" in text and b"n=771" in text and b"10/12" in text and b"0/12" in text
+    assert b"=3," in text
+    assert b"$" not in text
+    assert rpt.strip_latex("$=3,$") == "=3,"
+    assert rpt.strip_latex("$READY=25$") == "READY=25"
+    assert rpt.strip_latex("$n=771$") == "n=771"
+    assert rpt.strip_latex("$10/12$") == "10/12"
+    assert rpt.strip_latex("$0/12$") == "0/12"
+
+
+def test_wyckoff1_header_is_on_the_same_page_as_its_table(tmp_path):
+    filler = rpt._section("Patterns", "Long-Side (Bullish)", "Filler", [
+        {"symbol": f"F{i:02d}", "company": "x", "action": "BUY SIGNAL", "date": "2026-11-25"} for i in range(40)],
+        "synthetic", spec=rpt.LONG_COLUMNS)
+    rows = [{"symbol": f"WY{i:02d}", "company": "Co", "signal": "READY", "score": 70 + i % 10, "price": 5.0 + i}
+            for i in range(28)]
+    wy = rpt._section("Patterns", rpt.MARKET_BEHAVIOUR_SUB, rpt.MARKET_BEHAVIOUR_TITLE + " (scan 2026-11-25)",
+                      rows, "synthetic", note="WATCH = score 60-69, READY = 70-84, EXTREME = 85+.",
+                      spec=rpt.WYCKOFF_V1_COLUMNS)
+    path, _, _ = rpt.render_pdf(str(tmp_path / "wy.pdf"), "2026-11-25", [filler, wy],
+                                generated_at="2026-11-26 06:00 UTC")
+    chunks = _page_chunks(path)
+    title = rpt.MARKET_BEHAVIOUR_TITLE.encode()
+    # Title, disclaimer and first table row share one page, and the title comes before the rows.
+    pages = [c for c in chunks if title in c]
+    assert pages, "Wyckoff 1.0 title not found"
+    page = pages[0]
+    assert page.index(title) < page.index(b"WATCH = score 60-69") < page.index(b"WY00")
+    assert b"WY00" in page and b"WY27" in page
+
+
+def test_wyckoff2_potential_breakout_rows_are_one_table_row_each(tmp_path):
+    names = ["SCBPL", "NATF", "FCEPL", "HMB", "CSIL"]
+    tiers = [{"caption": rpt.WYCKOFF2_TIER_CAPTIONS[0], "per_row": 1,
+              "cols": ["Symbol", "Price", "Day %", "Enhanced Class"],
+              "rows": [{"Symbol": n, "Price": 10.0 + i, "Day %": "1.00", "Enhanced Class": "POTENTIAL BREAKOUT"}
+                       for i, n in enumerate(names)]}]
+    sec = rpt._section("Patterns", rpt.WYCKOFF2_SUB, "Enhanced-class table (research)", tiers[0]["rows"],
+                       "synthetic")
+    sec["tiers"] = tiers
+    path, _, _ = rpt.render_pdf(str(tmp_path / "w2.pdf"), "2026-11-25", [sec],
+                                generated_at="2026-11-26 06:00 UTC")
+    text = _pdf_text(path)
+    for n in names:
+        assert n.encode() in text
