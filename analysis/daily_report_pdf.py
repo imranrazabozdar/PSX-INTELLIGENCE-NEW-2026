@@ -117,18 +117,30 @@ def _section(group, sub, title, rows, source, note=None):
             "rows": kept, "summary": summary, "note": note, "excluded_fire": len(rows) - len(kept)}
 
 
-def collect_sections(conn, root_dir=ROOT):
-    """Read every section through the guarded connection. Returns (session_date, sections)."""
+def collect_sections(conn, root_dir=ROOT, session_date=None):
+    """Read every section through the guarded connection. Returns (session_date, sections).
+
+    session_date (YYYY-MM-DD) pins the report to that session instead of MAX(...) for the
+    header, the file name, phase_d_signals and wyckoff_accumulation. None keeps the default.
+    """
     conn = conn if isinstance(conn, ReadOnlyConnection) else ReadOnlyConnection(conn)
-    r = _rows(conn, "SELECT MAX(trade_date) AS d FROM daily_ohlc")
-    session = str(r[0]["d"])[:10] if r and r[0]["d"] else None
+    if session_date is not None:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", session_date):
+            raise ValueError(f"--session-date must be YYYY-MM-DD, got {session_date!r}")
+        session = session_date
+    else:
+        r = _rows(conn, "SELECT MAX(trade_date) AS d FROM daily_ohlc")
+        session = str(r[0]["d"])[:10] if r and r[0]["d"] else None
     if not session:
         raise RuntimeError("daily_ohlc has no trade_date; cannot name the report")
     sections = []
 
     # Breakouts tab: phase_d_signals for the latest scanned session, all signal types and grades.
-    latest = _rows(conn, "SELECT MAX(scan_date) AS d FROM phase_d_signals")
-    pd_date = latest[0]["d"] if latest else None
+    if session_date is not None:
+        pd_date = session_date
+    else:
+        latest = _rows(conn, "SELECT MAX(scan_date) AS d FROM phase_d_signals")
+        pd_date = latest[0]["d"] if latest else None
     pd_rows = _rows(conn, "SELECT * FROM phase_d_signals WHERE scan_date = ? ORDER BY signal_type, symbol",
                     (pd_date,)) if pd_date else []
     sections.append(_section("Breakouts", "Phase D", f"Phase D breakouts and shelves (session {pd_date or 'none'})",
@@ -136,8 +148,11 @@ def collect_sections(conn, root_dir=ROOT):
 
     for group, sub, title, key in ANALYSIS_SECTIONS:
         if key == "__wyckoff_table__":
-            w = _rows(conn, "SELECT MAX(scan_date) AS d FROM wyckoff_accumulation")
-            wd = w[0]["d"] if w else None
+            if session_date is not None:
+                wd = session_date
+            else:
+                w = _rows(conn, "SELECT MAX(scan_date) AS d FROM wyckoff_accumulation")
+                wd = w[0]["d"] if w else None
             wrows = _rows(conn, "SELECT * FROM wyckoff_accumulation WHERE scan_date = ? "
                                 "ORDER BY accumulation_score DESC", (wd,)) if wd else []
             sections.append(_section(group, sub, f"{title} (scan {wd or 'none'})", wrows,
@@ -259,8 +274,8 @@ def render_pdf(path, session_date, sections, generated_at=None):
     return path, pages, size
 
 
-def build_report(conn, out_dir=None, root_dir=ROOT):
-    session, sections = collect_sections(conn, root_dir)
+def build_report(conn, out_dir=None, root_dir=ROOT, session_date=None):
+    session, sections = collect_sections(conn, root_dir, session_date)
     out_dir = out_dir or os.path.join(root_dir, "out")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, report_filename(session))
@@ -282,9 +297,11 @@ def main(argv=None):
     ap.add_argument("--local-db", help="read a local SQLite file instead of Turso (tests)")
     ap.add_argument("--out-dir", help="output folder (default: <repo>/out)")
     ap.add_argument("--dry-run", action="store_true", help="write the PDF only; no delivery step exists")
+    ap.add_argument("--session-date", metavar="YYYY-MM-DD",
+                    help="report this session date instead of the latest one in the database")
     args = ap.parse_args(argv)
     conn = ReadOnlyConnection(_open_connection(args.local_db))
-    session, sections, path, pages, size = build_report(conn, args.out_dir)
+    session, sections, path, pages, size = build_report(conn, args.out_dir, session_date=args.session_date)
     print(f"report: {os.path.basename(path)}")
     print(f"session: {session}  sections: {len(sections)}  rows: {sum(len(s['rows']) for s in sections)}")
     print(f"pages: {pages}  size: {size // 1024} KB  path: {path}")
