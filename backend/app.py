@@ -4136,7 +4136,7 @@ def patterns_confluence(scope: str = "market"):
     excluded for having only 1 agreeing indicator; a symbol with an equal
     bull/bear vote count (a genuine split) is excluded from BOTH lists.
 
-    scope="watchlist" restricts to WATCHLIST_SYMBOLS (89 symbols);
+    scope="watchlist" restricts to WATCHLIST_SYMBOLS (93 symbols);
     scope="market" (default) covers every symbol any family scanned.
     Reads only already-cached scan results (one Turso round trip via
     scan_cache_engine.latest_many) -- makes no live detector calls, so
@@ -5000,6 +5000,7 @@ WATCHLIST_SYMBOLS = [
     'SAZEW', 'WAHDAT', 'STCL', 'GLAXO', 'TGL', 'MCB', 'JSBL', 'IMAGE', 'SCBPL', 'BOK',
     'AGTL', 'ECPL', 'BIPL', 'HMB', 'FABL', 'SBL', 'ASTL', 'EFERT', 'DGKC', 'LUCK',
     'TBL', 'STL', 'STLR', 'MLCF', 'CHCC', 'WTL', 'PTC', 'QTECH', 'ITANZ',
+    'ICL', 'MEBL', 'NML', 'SITC',
 ]
 WATCHLIST_REFRESH_INTERVAL = int(os.getenv("PSX_WATCHLIST_REFRESH_INTERVAL", "1800"))  # 30 min
 # User-confirmed PSX session times. Each weekday maps to a LIST of
