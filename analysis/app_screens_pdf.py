@@ -148,24 +148,21 @@ def render(plan, out_path, date_str, captured_line, generated_at, shots_dir, dow
     c.setFont("Helvetica-Bold", 14)
     c.drawString(MARGIN * 2, y, "Contents")
     y -= 22
-    # Page numbers: cover is page 1, screenshot i is page i + 2.
-    page_of = {name: idx + 2 for idx, (name, _, _) in enumerate(plan)}
-    current_section = None
-    for name, section, sub in plan:
-        if section != current_section:
-            current_section = section
-            if y < MARGIN * 4:
-                c.showPage(); header(); y = page_h - 90
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(MARGIN * 2, y, section)
-            y -= 16
-        if y < MARGIN * 4:
-            c.showPage(); header(); y = page_h - 90
-        c.setFont("Helvetica", 9)
-        label = f"{sub}"
-        c.drawString(MARGIN * 3, y, label)
-        c.drawRightString(page_w - MARGIN * 2, y, f"p. {page_of[name]}")
-        y -= 13
+    # One line per sub-heading, pointing at the page of its first screenshot.
+    # Cover is page 1, screenshot i (0-based in plan) is page i + 2.
+    first_page = {}
+    for idx, (_, _, sub) in enumerate(plan):
+        first_page.setdefault(sub, idx + 2)
+    for section, subs in contents_mapping(plan):
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(MARGIN * 2, y, section)
+        y -= 16
+        for sub in subs:
+            c.setFont("Helvetica", 9)
+            c.drawString(MARGIN * 3, y, sub)
+            c.drawRightString(page_w - MARGIN * 2, y, f"p. {first_page[sub]}")
+            y -= 13
+        y -= 6
     c.showPage()
 
     # One screenshot per page.
