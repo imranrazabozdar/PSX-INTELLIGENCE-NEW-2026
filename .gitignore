@@ -58,3 +58,4 @@ backend/tools/cloudflared.exe
 
 # Document vault (binary source documents; never committed)
 psx_document_vault/
+out/
