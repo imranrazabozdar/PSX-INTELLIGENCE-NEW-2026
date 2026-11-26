@@ -726,7 +726,17 @@ def collect_sections(conn, root_dir=ROOT, session_date=None, names=None):
 def strip_latex(s):
     """Remove LaTeX dollar delimiters and turn the common commands into plain text:
     '$z=3$' -> 'z=3', '$\\ge\\sim217$' -> '>=~217'. Text without $...$ is unchanged."""
+    # 'n $\\lambda=1759$' -> 'n=1759' (the lambda is the sample-size symbol; the value is kept as written).
+    s = re.sub(r"\bn\s*\$\s*\\lambda\s*=\s*([^$\n]+?)\s*\$", r"n=\1", s)
     return re.sub(r"\$([^$\n]+)\$", lambda m: _tex_inner(m.group(1)).strip(), s)
+
+
+def keep_with_next(flows):
+    """Mark banner flowables so the platypus builder keeps each with the flowable after it: a tab or
+    section banner never sits alone at the bottom of a page ahead of its table. Returns the same list."""
+    for f in flows:
+        f.keepWithNext = 1
+    return flows
 
 
 _TEX_CMDS = {"ge": ">=", "geq": ">=", "le": "<=", "leq": "<=", "lt": "<", "gt": ">", "sim": "~",
@@ -1290,8 +1300,8 @@ def render_pdf(path, session_date, sections, generated_at=None):
             if current_group is not None:
                 story.append(PageBreak())
             current_group, current_sub = s["group"], None
-            story += [Paragraph(_esc(_safe(s["group"])), grp), HRFlowable(width=width, thickness=1.5, color=TEAL),
-                      Spacer(1, 6)]
+            story += keep_with_next([Paragraph(_esc(_safe(s["group"])), grp),
+                                     HRFlowable(width=width, thickness=1.5, color=TEAL)]) + [Spacer(1, 6)]
         head = []
         if s["sub"] != current_sub:
             current_sub = s["sub"]
@@ -1319,12 +1329,12 @@ def render_pdf(path, session_date, sections, generated_at=None):
         # could spill onto a new page and leave a blank page).
         if height <= page[1] - 2 * margin - 10:
             # Whole section fits one page: title, disclaimer and table move together onto the same page.
-            story += [CondPageBreak(height + 10), Spacer(1, 10)] + flows
+            story += [CondPageBreak(height + 10), Spacer(1, 10)] + keep_with_next(flows)
         elif s.get("tiers"):
             # Wyckoff 2.0: the header stays with the first tier's table, so it is never stranded at a page bottom.
-            story += [Spacer(1, 10), KeepTogether(head + body[:1])] + body[1:]
+            story += [Spacer(1, 10), KeepTogether(keep_with_next(head) + body[:1])] + body[1:]
         else:
-            story += [Spacer(1, 10), KeepTogether(head)] + body
+            story += [Spacer(1, 10), KeepTogether(keep_with_next(head))] + body
 
     doc = SimpleDocTemplate(path, pagesize=page, leftMargin=margin, rightMargin=margin, topMargin=margin,
                             bottomMargin=margin, title="PSX Daily Patterns Report", author="PSX Intelligence",

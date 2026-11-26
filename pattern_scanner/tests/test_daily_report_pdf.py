@@ -583,3 +583,27 @@ def test_wyckoff2_potential_breakout_rows_are_one_table_row_each(tmp_path):
     text = _pdf_text(path)
     for n in names:
         assert n.encode() in text
+
+
+def test_history_lambda_sample_size_becomes_plain_n_equals():
+    assert rpt.strip_latex(r"n $\lambda=1759$") == "n=1759"
+    assert rpt.strip_latex(r"history n $\lambda=12$ ok") == "history n=12 ok"
+
+
+def test_history_remaining_dollar_delimiters_are_stripped_numbers_unchanged():
+    assert rpt.strip_latex("$|=10$") == "|=10"
+    assert rpt.strip_latex("$10/12$") == "10/12"
+    assert rpt.strip_latex("$0/12$") == "0/12"
+    assert rpt.strip_latex(r"n $\lambda=1759$, $|=10$, $10/12$, $0/12$") == "n=1759, |=10, 10/12, 0/12"
+    assert "$" not in rpt.strip_latex(r"n $\lambda=1759$, $|=10$, $10/12$, $0/12$")
+
+
+def test_banners_are_marked_keep_with_next():
+    from reportlab.platypus import HRFlowable, Paragraph, Spacer
+    from reportlab.lib.styles import ParagraphStyle
+    banner = Paragraph("Bullish Expansion", ParagraphStyle("t"))
+    rule = HRFlowable(width=100)
+    out = rpt.keep_with_next([banner, rule])
+    assert out == [banner, rule]
+    assert banner.keepWithNext == 1 and rule.keepWithNext == 1
+    assert not getattr(Spacer(1, 1), "keepWithNext", 0)
