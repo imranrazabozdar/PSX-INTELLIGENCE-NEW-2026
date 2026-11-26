@@ -75,7 +75,7 @@ def test_session_date_option_pins_session_and_scan_dates():
         pd = [s for s in sections if s["group"] == "Breakouts"][0]
         assert "2026-11-25" in pd["title"]
         assert pd["rows"] == []  # no phase_d rows for that scan date
-        wy = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation v1")][0]
+        wy = [s for s in sections if s["sub"] == "Market Behaviour"][0]
         assert "2026-11-25" in wy["title"]
 
 
@@ -97,7 +97,44 @@ def test_headings_order_chart_patterns_patterns_breakouts():
         assert [g for g, _ in tree] == ["Chart Patterns", "Patterns", "Breakouts"]
         patterns_subs = [sub for g, subs in tree if g == "Patterns" for sub, _ in subs]
         assert patterns_subs == ["Long-Side (Bullish)", "Short-Side (Bearish)", "Structural Patterns",
-                                 "Volatility Intelligence", "Market Behaviour"]
+                                 "Volatility Intelligence", "Wyckoff Institutional Accumulation 2.0 (RESEARCH)",
+                                 "Market Behaviour"]
+        assert [g for g, _ in tree] == ["Chart Patterns", "Patterns", "Breakouts"]
+
+
+def test_wyckoff_2_is_its_own_subheading_outside_long_side():
+    with tempfile.TemporaryDirectory() as d:
+        conn = rpt.ReadOnlyConnection(_connect(_local_db_with(d)))
+        _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
+        w2 = [s for s in sections if s["sub"].startswith("Wyckoff Institutional Accumulation 2.0")]
+        assert w2 and all(s["sub"] != "Long-Side (Bullish)" for s in w2)
+        long_titles = [s["title"] for s in sections if s["sub"] == "Long-Side (Bullish)"]
+        assert long_titles[0] == "OBV+MFI Setup with ATR Contraction"
+        assert "Level Break Out (Resistance Breakout)" in long_titles
+
+
+def test_empty_section_prints_no_rows_line():
+    s = rpt._section("Patterns", "Market Behaviour", "Wyckoff", [], "x", date="2026-11-25")
+    assert s["empty_text"] == "No rows for 2026-11-25" and s["rows"] == []
+
+
+def test_breakouts_checklist_matches_app_wording_when_streamlit_available():
+    pytest.importorskip("streamlit")
+    import importlib
+    pdt = importlib.import_module("pattern_scanner.phase_d_text")
+    P = importlib.import_module("phase_d_ui")
+    h = {"symbol": "ABC", "signal_type": "ACTIVE_SHELF", "shelf_days": 10, "ema20": 12.0,
+         "ignition_floor": 11.0, "base_or_shelf_high": 14.0, "rvol": 2.0}
+    assert pdt.watch(h, "2026-11-25") == P.watch(h, "2026-11-25")
+    assert pdt.tier(h) == P.tier(h) and pdt.sort_hits([h]) == P.sort_hits([h])
+    assert [x.replace("**", "") for x in P.invalidation(h, "2026-11-25")] == pdt.invalidation(h, "2026-11-25")
+
+
+def test_chart_pattern_subheadings_confirmed_forming():
+    with tempfile.TemporaryDirectory() as d:
+        conn = rpt.ReadOnlyConnection(_connect(_local_db_with(d)))
+        _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
+        tree = rpt.heading_tree(sections)
         chart_subs = [sub for g, subs in tree if g == "Chart Patterns" for sub, _ in subs]
         assert chart_subs == ["CONFIRMED", "FORMING"]
 
@@ -106,8 +143,8 @@ def test_wyckoff_sections_present_even_when_empty():
     with tempfile.TemporaryDirectory() as d:
         conn = rpt.ReadOnlyConnection(_connect(_local_db_with(d)))
         _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
-        wy_v1 = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation v1")]
-        wy_20 = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation 2.0")]
+        wy_v1 = [s for s in sections if s["sub"] == "Market Behaviour"]
+        wy_20 = [s for s in sections if s["sub"].startswith("Wyckoff Institutional Accumulation 2.0")]
         assert len(wy_v1) == 1 and wy_v1[0]["rows"] == []
         assert wy_v1[0]["empty_text"] == "No rows for 2026-11-25"
         assert len(wy_20) == 1 and wy_20[0]["rows"] == []
@@ -124,8 +161,8 @@ def test_cache_rows_empty_rows_list_is_not_replaced_by_scalars():
         c.close()
         conn = rpt.ReadOnlyConnection(_connect(db))
         _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
-        w2 = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation 2.0")][0]
-        assert w2["rows"] == [] and "status" not in w2["columns"]
+        w2 = [s for s in sections if s["sub"].startswith("Wyckoff Institutional Accumulation 2.0")][0]
+        assert w2["rows"] == [] and "status" not in w2["columns"] and "enhanced class" in w2["columns"]
 
 
 def test_pdf_renders_with_empty_wyckoff_and_chart_sections():
