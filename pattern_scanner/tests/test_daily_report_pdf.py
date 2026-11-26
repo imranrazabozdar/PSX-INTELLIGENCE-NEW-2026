@@ -360,3 +360,107 @@ def test_phase_d_stage_and_grade_pills_and_wyckoff_tints():
     assert rpt._row_tints(["Signal"], [{"Signal": "EXTREME"}, {"Signal": "READY"}, {"Signal": "WATCH"}]) == [
         rpt.CRIMSON_SOFT_HEX, rpt.AMBER_SOFT_HEX, None]
     assert rpt.STAGE_PILL[2] == "FINAL WINDOW"
+
+
+# ---- page 1 summary, Contents removal, LaTeX cleaner -------------------------------------------
+import zlib
+
+
+def _pdf_text(path):
+    """Everything drawn in the PDF: reportlab writes ASCII85 + Flate content streams, so decode both."""
+    import base64
+    data = open(path, "rb").read()
+    out = [data]
+    i = 0
+    while True:
+        s = data.find(b"stream", i)
+        if s < 0:
+            break
+        i = s + 6
+        if data[s - 3:s] == b"end":
+            continue
+        st = s + 6
+        if data[st:st + 2] == b"\r\n":
+            st += 2
+        elif data[st:st + 1] == b"\n":
+            st += 1
+        raw = data[st:data.find(b"endstream", st)].strip()
+        if raw.endswith(b"~>"):
+            raw = raw[:-2]
+        try:
+            out.append(zlib.decompress(base64.a85decode(raw, ignorechars=b" \t\r\n\x0b\x0c")))
+        except Exception:
+            pass
+    return b"\n".join(out)
+
+
+def _candle(title, rows):
+    return rpt._section("Patterns", "Long-Side (Bullish)", title, rows, "synthetic", spec=rpt.LONG_COLUMNS)
+
+
+def _overlap_sections():
+    engulf = _candle("Bullish Engulfing", [
+        {"symbol": "AAA", "company": "Alpha", "action": "BUY SIGNAL", "date": "2026-11-25"},
+        {"symbol": "BBB", "company": "Beta", "action": "BUY SIGNAL", "date": "2026-11-25"},
+        {"symbol": "CCC", "company": "Gamma", "action": "WAIT (No Setup)", "date": "2026-11-25"},
+        {"symbol": "DDD", "company": "Delta", "action": "BUY SIGNAL", "date": "2026-11-25"},
+    ])
+    obv = _candle("OBV+MFI Setup with ATR Contraction", [
+        {"symbol": "AAA", "company": "Alpha", "action": "BUY SIGNAL", "date": "2026-11-25"},
+        {"symbol": "BBB", "company": "Beta", "action": "BUY SIGNAL", "date": "2026-11-25"},
+        {"symbol": "CCC", "company": "Gamma", "action": "WAIT (No Setup)", "date": "2026-11-25"},
+    ])
+    struct = rpt._section("Patterns", rpt.STRUCTURAL_SUB, rpt.STRUCTURAL_TITLE, [
+        {"symbol": "BBB", "company": "Beta", "pattern": "Double Bottom", "action": "BUY SIGNAL"},
+    ], "synthetic", spec=rpt.STRUCTURAL_COLUMNS)
+    phase_d = rpt._section("Breakouts", rpt.PHASE_D_SUB, "Phase D breakouts and shelves (session 2026-11-25)", [
+        {"symbol": "CCC", "status": "ENTRY TRIGGERED", "price": 10.0, "setup_grade": "A+ PRIME"},
+        {"symbol": "DDD", "status": "BUILDING SHELF", "price": 5.0, "setup_grade": "B"},
+    ], "synthetic", spec=rpt.PHASE_D_COLUMNS)
+    return [engulf, obv, struct, phase_d]
+
+
+def test_page1_tables_exclude_wait_no_setup_rows():
+    summary = rpt.page1_summary(_overlap_sections(), "2026-11-25")
+    for key in ("hot", "bear", "caution"):
+        for r in summary[key]:
+            assert "WAIT" not in " ".join(str(v) for v in r.values()).upper()
+    # CCC is WAIT (No Setup) on the Bullish Engulfing and OBV+MFI tables: those rows never count.
+    assert "WAIT" not in str(summary)
+    assert "CCC" not in {r["Symbol"] for r in summary["hot"]}  # its only qualifying module is Phase D (1 module)
+
+
+def test_hot_favourites_need_two_modules_and_sort_by_count_desc():
+    summary = rpt.page1_summary(_overlap_sections(), "2026-11-25")
+    hot = summary["hot"]
+    assert [r["Symbol"] for r in hot] == ["BBB", "AAA"]  # BBB: 3 modules, AAA: 2; DDD and CCC have one each
+    assert [r["Count"] for r in hot] == [3, 2]
+    assert list(hot[0].keys()) == rpt.HOT_HEADERS
+    assert hot[0]["Company"] == "Beta" and hot[0]["Price"] is None
+    assert "Structural BUY SIGNAL" in hot[0]["Bullish Setups Triggered"]
+
+
+def test_empty_summary_tables_are_empty_lists_not_errors():
+    assert rpt.page1_summary([], "2026-11-25") == {"hot": [], "bear": [], "caution": []}
+
+
+def test_contents_section_absent_and_empty_scans_footnote_present():
+    with tempfile.TemporaryDirectory() as d:
+        empty = rpt._section("Patterns", "Long-Side (Bullish)", "Morning Star", [], "synthetic",
+                             spec=rpt.LONG_COLUMNS, empty="none")
+        path, pages, size = rpt.render_pdf(os.path.join(d, "p1.pdf"), "2026-11-25",
+                                           _overlap_sections() + [empty], generated_at="2026-11-26 06:00 UTC")
+        text = _pdf_text(path)
+        assert b"(Contents)" not in text
+        assert b"Scans with no rows this session" in text
+        assert b"Hot Bullish Favourites" in text and b"Caution" in text
+        assert b"Signal overlaps from the scanners, not recommendations." in text
+
+
+def test_latex_cleaner_on_sample_strings():
+    assert rpt.strip_latex("$READY=25$") == "READY=25"
+    assert rpt.strip_latex("$n=771$") == "n=771"
+    assert rpt.strip_latex("$10/12$ and $0/12$") == "10/12 and 0/12"
+    assert rpt.strip_latex("$z=3$") == "z=3"
+    assert "$" not in rpt._cell("Wyckoff $READY=25$ of $n=771$")
+    assert rpt._cell("Wyckoff $READY=25$") == "Wyckoff READY=25"
