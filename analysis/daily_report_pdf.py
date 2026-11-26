@@ -25,16 +25,27 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# Top-level headings, in report order: Chart Patterns, Patterns, Breakouts.
+GROUP_ORDER = ("Chart Patterns", "Patterns", "Breakouts")
+# Chart Patterns tab: these four Bulkowski patterns only, each as a CONFIRMED and a FORMING table.
+CHART_PATTERN_NAMES = ("CUP_WITH_HANDLE", "HIGH_TIGHT_FLAG_PSX", "PIPE_BOTTOM_1D", "BROADENING_BOTTOM")
+CHART_STATES = ("CONFIRMED", "FORMING")
+
 # (group, sub-group, title, analysis_cache key or None for a table read)
+# Patterns sub-groups follow the Patterns tab in streamlit_app.py (Long-Side, Short-Side,
+# Structural Patterns, Volatility Intelligence, plus the Wyckoff v1 Market Behaviour block).
 ANALYSIS_SECTIONS = [
-    ("Patterns", "Long-Side", "Wyckoff Institutional Accumulation 2.0 (research)", "wyckoff2_research_scan"),
-    ("Patterns", "Long-Side", "Bullish Engulfing", "bullish_engulfing_scan"),
-    ("Patterns", "Long-Side", "Morning Star", "morning_star_scan"),
-    ("Patterns", "Long-Side", "Bullish Three-Line Strike", "three_line_strike_scan"),
-    ("Patterns", "Short-Side", "Bearish Engulfing", "bearish_engulfing_scan"),
-    ("Patterns", "Short-Side", "Evening Star", "evening_star_scan"),
-    ("Patterns", "Short-Side", "Regression-Channel Triangle Squeeze", "triangle_regression_scan"),
-    ("Patterns", "Short-Side", "Level Break Out", "level_breakout_scan"),
+    ("Patterns", "Long-Side (Bullish)", "Wyckoff Institutional Accumulation 2.0 (research)", "wyckoff2_research_scan"),
+    ("Patterns", "Long-Side (Bullish)", "Bullish Engulfing", "bullish_engulfing_scan"),
+    ("Patterns", "Long-Side (Bullish)", "Morning Star", "morning_star_scan"),
+    ("Patterns", "Long-Side (Bullish)", "Bullish Three-Line Strike", "three_line_strike_scan"),
+    ("Patterns", "Short-Side (Bearish)", "Bearish Engulfing", "bearish_engulfing_scan"),
+    ("Patterns", "Short-Side (Bearish)", "Evening Star", "evening_star_scan"),
+    ("Patterns", "Short-Side (Bearish)", "Regression-Channel Triangle Squeeze", "triangle_regression_scan"),
+    ("Patterns", "Short-Side (Bearish)", "Level Break Out", "level_breakout_scan"),
+    # Structural Patterns tab: /patterns/advanced-scan and /patterns/hstop-scan.
+    ("Patterns", "Structural Patterns", "Inverse H&S and Double Bottom (IHS, Double Bottom)", "advanced_pattern_scan"),
+    ("Patterns", "Structural Patterns", "Head & Shoulders Top", "hstop_scan"),
     ("Patterns", "Volatility Intelligence", "Alerts (volatility engine scan)", "volatility_engine_scan"),
     ("Patterns", "Volatility Intelligence", "Historical Validation", "volatility_engine_stats"),
     ("Patterns", "Volatility Intelligence", "Wyckoff x Volatility", "volatility_wyckoff_combined"),
@@ -83,6 +94,10 @@ def _cache_rows(conn, key):
         return run_at, [r for r in result if isinstance(r, dict)]
     if not isinstance(result, dict):
         return run_at, []
+    # A result with an explicit "rows" list (e.g. wyckoff2_research_scan) is authoritative, even
+    # when empty; otherwise an empty list would fall through to the scalar fields below.
+    if isinstance(result.get("rows"), list):
+        return run_at, [r for r in result["rows"] if isinstance(r, dict)]
     lists = [v for v in result.values() if isinstance(v, list) and v and all(isinstance(x, dict) for x in v)]
     if lists:
         return run_at, max(lists, key=len)
@@ -98,8 +113,9 @@ def _is_fire(row):
     return False
 
 
-def _section(group, sub, title, rows, source, note=None):
+def _section(group, sub, title, rows, source, note=None, date=None):
     kept = [r for r in rows if not _is_fire(r)]
+    empty_text = f"No rows for {date}" if date else "No rows for this section."
     cols = []
     for r in kept:
         for k in r:
@@ -114,7 +130,21 @@ def _section(group, sub, title, rows, source, note=None):
                 counts[v] = counts.get(v, 0) + 1
             summary.append(f"{key}: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     return {"group": group, "sub": sub, "title": title, "source": source, "columns": cols,
-            "rows": kept, "summary": summary, "note": note, "excluded_fire": len(rows) - len(kept)}
+            "rows": kept, "summary": summary, "note": note, "excluded_fire": len(rows) - len(kept),
+            "empty_text": empty_text}
+
+
+def heading_tree(sections):
+    """Ordered (group, sub, [(title, row_count), ...]) tree the PDF is built from."""
+    tree = []
+    for s in sections:
+        if not tree or tree[-1][0] != s["group"]:
+            tree.append((s["group"], []))
+        subs = tree[-1][1]
+        if not subs or subs[-1][0] != s["sub"]:
+            subs.append((s["sub"], []))
+        subs[-1][1].append((s["title"], len(s["rows"])))
+    return tree
 
 
 def collect_sections(conn, root_dir=ROOT, session_date=None):
@@ -144,7 +174,7 @@ def collect_sections(conn, root_dir=ROOT, session_date=None):
     pd_rows = _rows(conn, "SELECT * FROM phase_d_signals WHERE scan_date = ? ORDER BY signal_type, symbol",
                     (pd_date,)) if pd_date else []
     sections.append(_section("Breakouts", "Phase D", f"Phase D breakouts and shelves (session {pd_date or 'none'})",
-                             pd_rows, "phase_d_signals (latest scan_date)"))
+                             pd_rows, "phase_d_signals (latest scan_date)", date=pd_date or "none"))
 
     for group, sub, title, key in ANALYSIS_SECTIONS:
         if key == "__wyckoff_table__":
@@ -156,21 +186,27 @@ def collect_sections(conn, root_dir=ROOT, session_date=None):
             wrows = _rows(conn, "SELECT * FROM wyckoff_accumulation WHERE scan_date = ? "
                                 "ORDER BY accumulation_score DESC", (wd,)) if wd else []
             sections.append(_section(group, sub, f"{title} (scan {wd or 'none'})", wrows,
-                                     "wyckoff_accumulation (latest scan_date)"))
+                                     "wyckoff_accumulation (latest scan_date)", date=wd or "none"))
             continue
         run_at, rows = _cache_rows(conn, key)
         note = f"cached at {run_at}" if run_at else "no cached result yet"
-        sections.append(_section(group, sub, title, rows, f"analysis_cache '{key}'", note))
+        sections.append(_section(group, sub, title, rows, f"analysis_cache '{key}'", note, date=session))
 
-    # Chart Patterns tab: same Bulkowski scan the Streamlit tab uses, via the shared helper.
+    # Chart Patterns: same Bulkowski scan the Streamlit view uses (shared helper). Four patterns
+    # only, one CONFIRMED table and one FORMING table.
     from pattern_scanner.chart_scan import scan_chart_patterns
     cp = scan_chart_patterns(conn, root_dir)
-    cp_rows = [s for s in cp["signals"] if str(s.get("state", "")).upper() in ("CONFIRMED", "FORMING")]
-    cp_rows.sort(key=lambda s: (0 if str(s.get("state", "")).upper() == "CONFIRMED" else 1,
-                                str(s.get("pattern", "")), str(s.get("symbol", ""))))
-    sections.append(_section("Chart Patterns", "CONFIRMED then FORMING",
-                             "Chart Patterns (Bulkowski, last 250 daily bars)", cp_rows,
-                             "pattern_scanner.chart_scan.scan_chart_patterns (daily_ohlc)"))
+    for state in CHART_STATES:
+        cp_rows = [s for s in cp["signals"]
+                   if str(s.get("state", "")).upper() == state
+                   and str(s.get("pattern", "")).upper() in CHART_PATTERN_NAMES]
+        cp_rows.sort(key=lambda s: (str(s.get("pattern", "")), str(s.get("symbol", ""))))
+        sections.append(_section("Chart Patterns", state, "Chart Patterns (Bulkowski, last 250 daily bars)",
+                                 cp_rows, "pattern_scanner.chart_scan.scan_chart_patterns (daily_ohlc)",
+                                 date=session))
+
+    # Top-level order is fixed: Chart Patterns, Patterns, Breakouts (stable sort keeps sub-order).
+    sections.sort(key=lambda s: GROUP_ORDER.index(s["group"]))
     return session, sections
 
 
@@ -197,13 +233,16 @@ def render_pdf(path, session_date, sections, generated_at=None):
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak)
+    from xml.sax.saxutils import escape as _esc
 
     generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     page = landscape(A4)
     width = page[0] - 56
     ss = getSampleStyleSheet()
     h1 = ParagraphStyle("h1", parent=ss["Title"], fontSize=22, leading=26)
-    h2 = ParagraphStyle("h2", parent=ss["Heading2"], fontSize=13, leading=16, spaceAfter=4)
+    grp = ParagraphStyle("grp", parent=ss["Heading1"], fontSize=18, leading=22, spaceBefore=4, spaceAfter=6)
+    h2 = ParagraphStyle("h2", parent=ss["Heading2"], fontSize=13, leading=16, spaceBefore=6, spaceAfter=4)
+    ttl = ParagraphStyle("ttl", parent=ss["Heading3"], fontSize=10, leading=13, spaceAfter=2)
     small = ParagraphStyle("small", parent=ss["Normal"], fontSize=8, leading=10)
     tiny = ParagraphStyle("tiny", parent=ss["Normal"], fontSize=6.5, leading=8)
     dark = colors.HexColor("#1f2d3d")
@@ -223,16 +262,28 @@ def render_pdf(path, session_date, sections, generated_at=None):
              Paragraph(f"<b>Generated:</b> {generated_at}", small),
              Paragraph("Covers Breakouts, Patterns and Chart Patterns. FIRE Engine content is excluded.", small),
              Spacer(1, 18), Paragraph("Contents", h2)]
-    for i, s in enumerate(sections, 1):
-        story.append(Paragraph(f"{i}. {s['group']} / {s['sub']}: {s['title']} ({len(s['rows'])} rows)", small))
+    for g, subs in heading_tree(sections):
+        story.append(Paragraph(f"<b>{_esc(g)}</b>", small))
+        for sub, tables in subs:
+            story.append(Paragraph(f"&nbsp;&nbsp;{_esc(sub)}", tiny))
+            for title, n in tables:
+                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{_esc(title)} ({n} rows)", tiny))
     story.append(PageBreak())
 
+    current_group = current_sub = None
     for s in sections:
-        story.append(Paragraph(f"{s['group']} / {s['sub']}", small))
-        story.append(Paragraph(s["title"], h2))
+        if s["group"] != current_group:
+            if current_group is not None:
+                story.append(PageBreak())
+            current_group, current_sub = s["group"], None
+            story.append(Paragraph(_esc(s["group"]), grp))
+        if s["sub"] != current_sub:
+            current_sub = s["sub"]
+            story.append(Paragraph(_esc(s["sub"]), h2))
+        story.append(Paragraph(_esc(s["title"]), ttl))
         summary = " | ".join(s["summary"]) if s["summary"] else "no rows"
-        story.append(Paragraph(f"<b>Total rows:</b> {len(s['rows'])}. {summary}", small))
-        story.append(Paragraph(f"Source: {s['source']}" + (f". {s['note']}" if s.get("note") else ""), tiny))
+        story.append(Paragraph(f"<b>Total rows:</b> {len(s['rows'])}. {_esc(summary)}", small))
+        story.append(Paragraph(_esc(f"Source: {s['source']}" + (f". {s['note']}" if s.get("note") else "")), tiny))
         story.append(Spacer(1, 6))
         if s["rows"]:
             cols = s["columns"]
@@ -261,8 +312,8 @@ def render_pdf(path, session_date, sections, generated_at=None):
             t.setStyle(TableStyle(style))
             story.append(t)
         else:
-            story.append(Paragraph("No rows for this section.", small))
-        story.append(PageBreak())
+            story.append(Paragraph(_esc(s["empty_text"]), small))
+        story.append(Spacer(1, 14))
 
     doc = SimpleDocTemplate(path, pagesize=page, leftMargin=28, rightMargin=28, topMargin=32, bottomMargin=28,
                             title="PSX Daily Patterns Report", author="PSX Intelligence",

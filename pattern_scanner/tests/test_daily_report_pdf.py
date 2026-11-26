@@ -72,7 +72,7 @@ def test_session_date_option_pins_session_and_scan_dates():
         session, sections = rpt.collect_sections(conn, session_date="2026-11-25")
         assert session == "2026-11-25"
         assert rpt.report_filename(session) == "PSX_Daily_Report_2026-11-25.pdf"
-        pd = sections[0]
+        pd = [s for s in sections if s["group"] == "Breakouts"][0]
         assert "2026-11-25" in pd["title"]
         assert pd["rows"] == []  # no phase_d rows for that scan date
         wy = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation v1")][0]
@@ -85,7 +85,58 @@ def test_session_date_default_unchanged_uses_max():
         conn = rpt.ReadOnlyConnection(_connect(db))
         session, sections = rpt.collect_sections(conn)
         assert session == "2026-11-26"
-        assert [r["symbol"] for r in sections[0]["rows"]] == ["BBB"]
+        pd = [s for s in sections if s["group"] == "Breakouts"][0]
+        assert [r["symbol"] for r in pd["rows"]] == ["BBB"]
+
+
+def test_headings_order_chart_patterns_patterns_breakouts():
+    with tempfile.TemporaryDirectory() as d:
+        conn = rpt.ReadOnlyConnection(_connect(_local_db_with(d)))
+        _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
+        tree = rpt.heading_tree(sections)
+        assert [g for g, _ in tree] == ["Chart Patterns", "Patterns", "Breakouts"]
+        patterns_subs = [sub for g, subs in tree if g == "Patterns" for sub, _ in subs]
+        assert patterns_subs == ["Long-Side (Bullish)", "Short-Side (Bearish)", "Structural Patterns",
+                                 "Volatility Intelligence", "Market Behaviour"]
+        chart_subs = [sub for g, subs in tree if g == "Chart Patterns" for sub, _ in subs]
+        assert chart_subs == ["CONFIRMED", "FORMING"]
+
+
+def test_wyckoff_sections_present_even_when_empty():
+    with tempfile.TemporaryDirectory() as d:
+        conn = rpt.ReadOnlyConnection(_connect(_local_db_with(d)))
+        _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
+        wy_v1 = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation v1")]
+        wy_20 = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation 2.0")]
+        assert len(wy_v1) == 1 and wy_v1[0]["rows"] == []
+        assert wy_v1[0]["empty_text"] == "No rows for 2026-11-25"
+        assert len(wy_20) == 1 and wy_20[0]["rows"] == []
+        assert wy_20[0]["empty_text"] == "No rows for 2026-11-25"
+
+
+def test_cache_rows_empty_rows_list_is_not_replaced_by_scalars():
+    with tempfile.TemporaryDirectory() as d:
+        db = _local_db_with(d)
+        c = sqlite3.connect(db)
+        c.execute("INSERT INTO analysis_cache VALUES ('wyckoff2_research_scan', '2026-11-25T06:00Z', "
+                  "'{\"status\": \"ok\", \"label\": \"RESEARCH\", \"rows\": []}')")
+        c.commit()
+        c.close()
+        conn = rpt.ReadOnlyConnection(_connect(db))
+        _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
+        w2 = [s for s in sections if s["title"].startswith("Wyckoff Institutional Accumulation 2.0")][0]
+        assert w2["rows"] == [] and "status" not in w2["columns"]
+
+
+def test_pdf_renders_with_empty_wyckoff_and_chart_sections():
+    with tempfile.TemporaryDirectory() as d:
+        conn = rpt.ReadOnlyConnection(_connect(_local_db_with(d)))
+        _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
+        path, pages, size = rpt.render_pdf(os.path.join(d, "t.pdf"), "2026-11-25", sections,
+                                           generated_at="2026-11-26 06:00 UTC")
+        with open(path, "rb") as f:
+            assert f.read(5) == b"%PDF-"
+        assert pages >= 3
 
 
 def test_session_date_rejects_bad_format():
