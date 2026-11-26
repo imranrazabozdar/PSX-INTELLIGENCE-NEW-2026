@@ -711,50 +711,161 @@ def _cell(v):
     return _safe(s)
 
 
+# Palette and badge mapping (styling only; text and data are never changed here).
+NAVY_HEX = "#0f172a"
+TEAL_HEX = "#14b8a6"
+ZEBRA_HEX = "#f4f7f9"
+INK_HEX = "#1e293b"
+MUTED_HEX = "#64748b"
+RULE_HEX = "#e2e8f0"
+BADGE_COLUMNS = ("Action", "Signal", "State")
+# value -> (text colour, pill fill)
+BADGE_STYLES = {
+    "BUY SIGNAL": ("#15803d", "#dcfce7"),
+    "CONFIRMED": ("#15803d", "#dcfce7"),
+    "READY": ("#15803d", "#dcfce7"),
+    "EXTREME": ("#15803d", "#dcfce7"),
+    "SHORT SIGNAL": ("#b91c1c", "#fee2e2"),
+    "WAIT": ("#64748b", "#e2e8f0"),
+    "WATCH": ("#b45309", "#fef3c7"),
+}
+_NUM_RE = re.compile(r"^[-+]?\d[\d,]*(\.\d+)?%?$")
+
+
+def badge_style(value):
+    """(text colour, fill colour) for a pill badge, or None when the value is not a badge."""
+    return BADGE_STYLES.get(str(value or "").strip().upper())
+
+
+def _numeric_column(texts):
+    hits = [t for t in texts if t != "-"]
+    return bool(hits) and all(_NUM_RE.match(t) for t in hits)
+
+
 def render_pdf(path, session_date, sections, generated_at=None):
     """Write the report to `path`. `sections` are dicts from _section(). Returns (path, pages, bytes)."""
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak)
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.pdfgen import canvas as _cv
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable,
+                                    KeepTogether, HRFlowable)
     from xml.sax.saxutils import escape as _esc
 
     generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     page = landscape(A4)
-    width = page[0] - 56
-    ss = getSampleStyleSheet()
-    h1 = ParagraphStyle("h1", parent=ss["Title"], fontSize=22, leading=26)
-    grp = ParagraphStyle("grp", parent=ss["Heading1"], fontSize=18, leading=22, spaceBefore=4, spaceAfter=6)
-    h2 = ParagraphStyle("h2", parent=ss["Heading2"], fontSize=13, leading=16, spaceBefore=6, spaceAfter=4)
-    ttl = ParagraphStyle("ttl", parent=ss["Heading3"], fontSize=10, leading=13, spaceAfter=2)
-    small = ParagraphStyle("small", parent=ss["Normal"], fontSize=8, leading=10)
-    tiny = ParagraphStyle("tiny", parent=ss["Normal"], fontSize=6.5, leading=8)
-    mono = ParagraphStyle("mono", parent=ss["Normal"], fontSize=7, leading=9)
-    cell = ParagraphStyle("cell", parent=ss["Normal"], fontName="Helvetica", fontSize=6.5, leading=8)
-    hcell = ParagraphStyle("hcell", parent=cell, fontName="Helvetica-Bold", textColor=colors.white)
-    dark = colors.HexColor("#1f2d3d")
-    band = colors.HexColor("#eef2f6")
+    margin = 14 * mm
+    width = page[0] - 2 * margin
+    NAVY, TEAL = colors.HexColor(NAVY_HEX), colors.HexColor(TEAL_HEX)
+    ZEBRA, INK, MUTED = colors.HexColor(ZEBRA_HEX), colors.HexColor(INK_HEX), colors.HexColor(MUTED_HEX)
+    RULE, WHITE = colors.HexColor(RULE_HEX), colors.white
     header_text = f"PSX Daily Patterns Report  |  Session {session_date}  |  Generated {generated_at}"
+    total_rows = sum(len(s["rows"]) for s in sections)
+
+    h1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=28, leading=32, textColor=WHITE)
+    cover_meta = ParagraphStyle("cover_meta", fontName="Helvetica", fontSize=9, leading=13,
+                                textColor=colors.HexColor("#cbd5e1"))
+    kicker = ParagraphStyle("kicker", fontName="Helvetica-Bold", fontSize=7.5, leading=10, textColor=TEAL)
+    grp = ParagraphStyle("grp", fontName="Helvetica-Bold", fontSize=20, leading=24, textColor=NAVY)
+    h2 = ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=NAVY,
+                        spaceBefore=4, spaceAfter=4)
+    ttl = ParagraphStyle("ttl", fontName="Helvetica-BoldOblique", fontSize=10, leading=13, textColor=NAVY,
+                         spaceAfter=2)
+    small = ParagraphStyle("small", fontName="Helvetica", fontSize=8.5, leading=11, textColor=INK)
+    tiny = ParagraphStyle("tiny", fontName="Helvetica", fontSize=7, leading=9, textColor=MUTED)
+    mono = ParagraphStyle("mono", fontName="Helvetica", fontSize=7.5, leading=10, textColor=MUTED)
+    cell = ParagraphStyle("cell", fontName="Helvetica", fontSize=7.2, leading=9, textColor=INK)
+    cell_r = ParagraphStyle("cell_r", parent=cell, alignment=TA_RIGHT)
+    hcell = ParagraphStyle("hcell", parent=cell, fontName="Helvetica-Bold", textColor=WHITE)
+    hcell_r = ParagraphStyle("hcell_r", parent=hcell, alignment=TA_RIGHT)
+    kpi_num = ParagraphStyle("kpi_num", fontName="Helvetica-Bold", fontSize=14, leading=18, textColor=NAVY)
+    kpi_lbl = ParagraphStyle("kpi_lbl", parent=kicker, fontSize=7, leading=9)
+    empty_style = ParagraphStyle("empty", fontName="Helvetica", fontSize=8.5, leading=11, textColor=MUTED,
+                                 alignment=TA_CENTER)
+
+    class _Pill(Flowable):
+        """Rounded coloured badge for Action / Signal / State values."""
+
+        def __init__(self, text, fg, bg):
+            Flowable.__init__(self)
+            self.label, self.fg, self.bg = text, fg, bg
+            self.width = stringWidth(text, "Helvetica-Bold", 6.8) + 12
+            self.height = 11
+
+        def wrap(self, aw, ah):
+            return self.width, self.height
+
+        def draw(self):
+            c = self.canv
+            c.setFillColor(self.bg)
+            c.roundRect(0, 0, self.width, self.height, 5.5, stroke=0, fill=1)
+            c.setFillColor(self.fg)
+            c.setFont("Helvetica-Bold", 6.8)
+            c.drawString(6, 3, self.label)
 
     def on_page(canvas, doc):
         canvas.saveState()
+        canvas.setFillColor(NAVY)
+        canvas.rect(0, page[1] - 22, page[0], 22, stroke=0, fill=1)
         canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(colors.HexColor("#555555"))
-        canvas.drawString(28, page[1] - 18, _safe(header_text))
-        canvas.drawRightString(page[0] - 28, 14, f"Page {doc.page}")
+        canvas.setFillColor(WHITE)
+        canvas.drawString(margin, page[1] - 14, _safe(header_text))
         canvas.restoreState()
 
-    story = [Spacer(1, 60), Paragraph("PSX Daily Patterns Report", h1), Spacer(1, 8),
-             Paragraph(f"<b>Session date:</b> {_esc(session_date)}", small),
-             Paragraph(f"<b>Generated:</b> {_esc(generated_at)}", small),
-             Paragraph("Covers Chart Patterns, Patterns and Breakouts. FIRE Engine content is excluded.", small),
-             Spacer(1, 18), Paragraph("Contents", h2)]
+    class _NumberedCanvas(_cv.Canvas):
+        """Two-pass canvas so the footer can print 'Page x of y'."""
+
+        def __init__(self, *args, **kwargs):
+            _cv.Canvas.__init__(self, *args, **kwargs)
+            self._page_states = []
+
+        def showPage(self):
+            self._page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._page_states)
+            for state in self._page_states:
+                self.__dict__.update(state)
+                self.setStrokeColor(RULE)
+                self.line(margin, 24, page[0] - margin, 24)
+                self.setFont("Helvetica", 7)
+                self.setFillColor(MUTED)
+                self.drawString(margin, 14, f"Session {session_date}")
+                self.drawRightString(page[0] - margin, 14, f"Page {self._pageNumber} of {total}")
+                _cv.Canvas.showPage(self)
+            _cv.Canvas.save(self)
+
+    story = [Spacer(1, 4 * mm)]
+    banner = [Paragraph("PSX Daily Patterns Report", h1), Spacer(1, 8),
+              Paragraph("Covers Chart Patterns, Patterns and Breakouts. FIRE Engine content is excluded.",
+                        cover_meta)]
+    banner_tbl = Table([[banner]], colWidths=[width])
+    banner_tbl.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY),
+                                    ("LEFTPADDING", (0, 0), (-1, -1), 22), ("RIGHTPADDING", (0, 0), (-1, -1), 22),
+                                    ("TOPPADDING", (0, 0), (-1, -1), 22), ("BOTTOMPADDING", (0, 0), (-1, -1), 20)]))
+    story += [banner_tbl, Spacer(1, 10)]
+    tile_vals = [str(len(sections)), f"{total_rows:,}", session_date, generated_at]
+    tile_labels = ["Sections", "Rows", "Session date", "Generated"]
+    tiles = Table([[Paragraph(_esc(v), kpi_num) for v in tile_vals],
+                   [Paragraph(_esc(l.upper()), kpi_lbl) for l in tile_labels]],
+                  colWidths=[width / 4] * 4)
+    tiles.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ZEBRA),
+                               ("LINEABOVE", (0, 0), (-1, 0), 2, TEAL),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 12), ("TOPPADDING", (0, 0), (-1, 0), 10),
+                               ("BOTTOMPADDING", (0, -1), (-1, -1), 10)]))
+    story += [tiles, Spacer(1, 16), Paragraph("Contents", grp), HRFlowable(width=width, thickness=1.5, color=TEAL),
+              Spacer(1, 6)]
     for g, subs in heading_tree(sections):
-        story.append(Paragraph(f"<b>{_esc(g)}</b>", small))
+        story.append(Paragraph(_esc(g.upper()), kicker))
         for sub, tables in subs:
-            story.append(Paragraph(f"&nbsp;&nbsp;{_esc(_safe(sub))}", tiny))
+            story.append(Paragraph(_esc(_safe(sub)), small))
             for title, n in tables:
-                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{_esc(_safe(title))} ({n} rows)", tiny))
+                story.append(Paragraph(f"{_esc(_safe(title))} ({n} rows)", tiny))
+        story.append(Spacer(1, 4))
     story.append(PageBreak())
 
     current_group = current_sub = None
@@ -763,54 +874,76 @@ def render_pdf(path, session_date, sections, generated_at=None):
             if current_group is not None:
                 story.append(PageBreak())
             current_group, current_sub = s["group"], None
-            story.append(Paragraph(_esc(s["group"]), grp))
+            story += [Paragraph(_esc(s["group"]), grp), HRFlowable(width=width, thickness=1.5, color=TEAL),
+                      Spacer(1, 6)]
+        head = []
         if s["sub"] != current_sub:
             current_sub = s["sub"]
-            story.append(Paragraph(_esc(_safe(s["sub"])), h2))
-        story.append(Paragraph(_esc(_safe(s["title"])), ttl))
+            head += [Paragraph(_esc(s["group"].upper()), kicker), Paragraph(_esc(_safe(s["sub"])), h2)]
+        head.append(Paragraph(_esc(_safe(s["title"])), ttl))
         summary = " | ".join(s["summary"]) if s["summary"] else ""
         line = f"<b>Total rows:</b> {len(s['rows'])}."
         if summary:
             line += " " + _esc(_safe(summary))
-        story.append(Paragraph(line, small))
+        head.append(Paragraph(line, small))
         if s.get("note"):
-            story.append(Paragraph(_esc(_safe(s["note"])), tiny))
-        story.append(Paragraph(_esc(_safe(f"Source: {s['source']}")), tiny))
-        story.append(Spacer(1, 6))
+            head.append(Paragraph(_esc(_safe(s["note"])), tiny))
+        head.append(Paragraph(_esc(_safe(f"Source: {s['source']}")), tiny))
+        head.append(Spacer(1, 6))
+        body = []
         if s["rows"] and s["columns"]:
             cols = s["columns"]
-            data = [[Paragraph(_esc(_safe(c)), hcell) for c in cols]]
-            for r in s["rows"]:
-                data.append([Paragraph(_esc(_cell(r.get(c))), cell) for c in cols])
+            texts = {c: [_cell(r.get(c)) for r in s["rows"]] for c in cols}
+            numeric = {c: _numeric_column(texts[c]) for c in cols}
+            data = [[Paragraph(_esc(_safe(c)), hcell_r if numeric[c] else hcell) for c in cols]]
+            for ri, r in enumerate(s["rows"]):
+                row = []
+                for c in cols:
+                    txt = texts[c][ri]
+                    style_pair = badge_style(txt) if c in BADGE_COLUMNS else None
+                    if style_pair:
+                        row.append(_Pill(txt, colors.HexColor(style_pair[0]), colors.HexColor(style_pair[1])))
+                    else:
+                        row.append(Paragraph(_esc(txt), cell_r if numeric[c] else cell))
+                data.append(row)
             weights = []
             for c in cols:
-                longest = max([len(_cell(r.get(c))) for r in s["rows"][:300]] + [min(len(c), 14)])
+                longest = max([len(t) for t in texts[c][:300]] + [min(len(c), 14)])
                 weights.append(min(max(longest, 6), 40))
             total = float(sum(weights))
             widths = [max(width * w / total, 28) for w in weights]
             scale = width / sum(widths)
             widths = [w * scale for w in widths]
             t = Table(data, colWidths=widths, repeatRows=1)
-            style = [("FONT", (0, 0), (-1, -1), "Helvetica", 6.5),
-                     ("BACKGROUND", (0, 0), (-1, 0), dark),
-                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                     ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
-                     ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2)]
-            for i in range(1, len(data)):
-                if i % 2 == 0:
-                    style.append(("BACKGROUND", (0, i), (-1, i), band))
+            style = [("BACKGROUND", (0, 0), (-1, 0), NAVY),
+                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                     ("TOPPADDING", (0, 0), (-1, -1), 3.2), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.2),
+                     ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                     ("LINEBELOW", (0, 0), (-1, -1), 0.25, RULE)]
+            for ci, c in enumerate(cols):
+                if numeric[c]:
+                    style.append(("ALIGN", (ci, 0), (ci, -1), "RIGHT"))
+            for i in range(2, len(data), 2):
+                style.append(("BACKGROUND", (0, i), (-1, i), ZEBRA))
             t.setStyle(TableStyle(style))
-            story.append(t)
+            body.append(t)
         else:
-            story.append(Paragraph(_esc(_safe(s["empty_text"])), small))
+            box = Table([[Paragraph(_esc(_safe(s["empty_text"])), empty_style)]], colWidths=[width])
+            box.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                                     ("BOX", (0, 0), (-1, -1), 0.5, RULE),
+                                     ("TOPPADDING", (0, 0), (-1, -1), 12),
+                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 12)]))
+            body.append(box)
         for line in s.get("checklist") or []:
-            story.append(Paragraph(_esc(_safe(line)), mono))
+            body.append(Paragraph(_esc(_safe(line)), mono))
+        story.append(KeepTogether(head))
+        story += body
         story.append(Spacer(1, 14))
 
-    doc = SimpleDocTemplate(path, pagesize=page, leftMargin=28, rightMargin=28, topMargin=32, bottomMargin=28,
-                            title="PSX Daily Patterns Report", author="PSX Intelligence",
+    doc = SimpleDocTemplate(path, pagesize=page, leftMargin=margin, rightMargin=margin, topMargin=margin,
+                            bottomMargin=margin, title="PSX Daily Patterns Report", author="PSX Intelligence",
                             subject=f"Session {session_date}", pageCompression=1)
-    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page, canvasmaker=_NumberedCanvas)
     size = os.path.getsize(path)
     with open(path, "rb") as f:
         pages = len(re.findall(rb"/Type\s*/Page(?!s)", f.read()))

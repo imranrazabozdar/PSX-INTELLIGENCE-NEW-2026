@@ -291,3 +291,21 @@ def test_pdf_renders_wide_tables_landscape_and_text():
         path, pages, size = rpt.render_pdf(os.path.join(d, "wide.pdf"), "2026-11-25", [sec],
                                            generated_at="2026-11-26 06:00 UTC")
         assert pages >= 2 and size < 1024 * 1024
+
+
+def test_badge_colours_for_buy_short_and_wait():
+    assert rpt.badge_style("BUY SIGNAL")[0] == "#15803d"
+    assert rpt.badge_style("SHORT SIGNAL")[0] == "#b91c1c"
+    assert rpt.badge_style("WAIT")[0] == "#64748b"
+    assert rpt.badge_style("  buy signal ")[0] == "#15803d"
+    assert rpt.badge_style("Some other text") is None
+
+
+def test_number_formatter_thousands_separators_no_scientific_notation():
+    assert rpt._cell(1234567.891) == "1,234,567.89"
+    assert rpt._cell(543943293.0) == "543,943,293.00"
+    assert rpt._cell(12345) == "12,345"
+    big = rpt._cell(1e20)
+    assert "e" not in big.lower() and big.startswith("100,000,000,000,000,000,000")
+    small = rpt._cell(0.000012)
+    assert "e" not in small.lower()
