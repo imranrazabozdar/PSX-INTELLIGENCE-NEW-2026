@@ -1,0 +1,52 @@
+name: Daily PSX report email
+
+# Emails the daily PSX patterns PDF (Breakouts, Patterns, Chart Patterns; FIRE excluded).
+# Runs after the Original Wyckoff 1.0 daily workflow succeeds, or on manual dispatch.
+# Read-only against the database; no push trigger.
+
+on:
+  workflow_run:
+    workflows: ["Original Wyckoff 1.0 daily (after pattern refresh)"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      session_date:
+        description: "Session date YYYY-MM-DD (empty = latest session)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  email:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests pyyaml pandas numpy reportlab pypdf
+
+      - name: Build and email report
+        env:
+          LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+          LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SESSION_DATE: ${{ github.event.inputs.session_date }}
+        run: |
+          if [ -n "$SESSION_DATE" ]; then
+            python analysis/send_daily_report.py --session-date "$SESSION_DATE"
+          else
+            python analysis/send_daily_report.py
+          fi
