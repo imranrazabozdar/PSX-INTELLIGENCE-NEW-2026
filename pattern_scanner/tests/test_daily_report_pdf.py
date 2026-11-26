@@ -1,5 +1,6 @@
 """Tests for analysis/daily_report_pdf.py: synthetic rows only, no database."""
 import importlib.util
+import json
 import os
 import sqlite3
 import tempfile
@@ -86,7 +87,7 @@ def test_session_date_default_unchanged_uses_max():
         session, sections = rpt.collect_sections(conn)
         assert session == "2026-11-26"
         pd = [s for s in sections if s["group"] == "Breakouts"][0]
-        assert [r["symbol"] for r in pd["rows"]] == ["BBB"]
+        assert [r["Symbol"] for r in pd["rows"]] == ["BBB"]
 
 
 def test_headings_order_chart_patterns_patterns_breakouts():
@@ -96,9 +97,9 @@ def test_headings_order_chart_patterns_patterns_breakouts():
         tree = rpt.heading_tree(sections)
         assert [g for g, _ in tree] == ["Chart Patterns", "Patterns", "Breakouts"]
         patterns_subs = [sub for g, subs in tree if g == "Patterns" for sub, _ in subs]
-        assert patterns_subs == ["Long-Side (Bullish)", "Short-Side (Bearish)", "Structural Patterns",
-                                 "Volatility Intelligence", "Wyckoff Institutional Accumulation 2.0 (RESEARCH)",
-                                 "Market Behaviour"]
+        assert patterns_subs == ["Market Behaviour", "Long-Side (Bullish)", "Short-Side (Bearish)",
+                                 "Structural Patterns", "Volatility Intelligence",
+                                 "Wyckoff Institutional Accumulation 2.0 (RESEARCH)"]
         assert [g for g, _ in tree] == ["Chart Patterns", "Patterns", "Breakouts"]
 
 
@@ -146,9 +147,9 @@ def test_wyckoff_sections_present_even_when_empty():
         wy_v1 = [s for s in sections if s["sub"] == "Market Behaviour"]
         wy_20 = [s for s in sections if s["sub"].startswith("Wyckoff Institutional Accumulation 2.0")]
         assert len(wy_v1) == 1 and wy_v1[0]["rows"] == []
-        assert wy_v1[0]["empty_text"] == "No rows for 2026-11-25"
+        assert wy_v1[0]["empty_text"] == "No WATCH/READY/EXTREME setups in the most recent completed daily batch."
         assert len(wy_20) == 1 and wy_20[0]["rows"] == []
-        assert wy_20[0]["empty_text"] == "No rows for 2026-11-25"
+        assert wy_20[0]["empty_text"].startswith("No symbol currently shows")
 
 
 def test_cache_rows_empty_rows_list_is_not_replaced_by_scalars():
@@ -162,7 +163,7 @@ def test_cache_rows_empty_rows_list_is_not_replaced_by_scalars():
         conn = rpt.ReadOnlyConnection(_connect(db))
         _, sections = rpt.collect_sections(conn, session_date="2026-11-25")
         w2 = [s for s in sections if s["sub"].startswith("Wyckoff Institutional Accumulation 2.0")][0]
-        assert w2["rows"] == [] and "status" not in w2["columns"] and "enhanced class" in w2["columns"]
+        assert w2["rows"] == [] and "Stage / Action Status" not in w2["columns"] and "Enhanced Class" in w2["columns"]
 
 
 def test_pdf_renders_with_empty_wyckoff_and_chart_sections():
@@ -196,3 +197,97 @@ def test_read_only_guard_refuses_writes():
                 "SELECT 1; DROP TABLE t", "DROP TABLE t", "WITH x AS (SELECT 1) DELETE FROM t"):
         with pytest.raises(rpt.ReadOnlyError):
             guard.execute(bad)
+
+
+def test_no_scientific_notation_in_cells():
+    for v in (1e-7, 2.5e-9, 1.5e12, 3.0e20, 0.0001234, 12345.678):
+        s = rpt._cell(v)
+        assert "e" not in s.lower(), s
+    assert rpt._cell(1234567.5) == "1,234,567.50"
+    assert rpt._cell(10.0) == "10.00"
+    assert rpt._cell(None) == "-"
+    assert rpt._cell(True) == "Yes"
+
+
+def test_candlestick_labels_and_action_values():
+    names = {"AAA": "Alpha Ltd"}
+    short = rpt._candle_rows([{"symbol": "AAA", "classification": "VALID_BEARISH_ENGULFING",
+                               "entry_price": 10.0, "stop_loss": 10.5, "target_1": 8.0,
+                               "risk_reward_measured": 3.9, "pattern_date": "2026-11-24"},
+                              {"symbol": "BBB", "classification": "INVALID_BEARISH_ENGULFING"}], names, "BEAR")
+    assert [r["action"] for r in short] == ["SHORT SIGNAL", "WAIT (No Setup)"]
+    assert short[0]["company"] == "Alpha Ltd" and short[1]["company"] == ""
+    assert short[0]["rr"] == "3.9x" and short[1]["rr"] is None
+    assert [label for label, _ in rpt.SHORT_COLUMNS] == ["Symbol", "Company", "Action", "Entry",
+                                                         "Stop-Loss (Risk)", "Target (Reward)", "Date"]
+    assert [label for label, _ in rpt.LONG_COLUMNS] == ["Symbol", "Company", "Action", "Date", "Stop",
+                                                        "Target", "R:R"]
+    assert [label for label, _ in rpt.PHASE_D_COLUMNS][:2] == ["Symbol", "Stage / Action Status"]
+
+
+def test_fourteen_day_filter_keeps_recent_and_undated_rows():
+    rows = [{"signal_date": "2026-11-25"}, {"signal_date": "2026-11-11"}, {"signal_date": "2026-11-10"},
+            {"signal_date": ""}]
+    kept = rpt._recent(rows, ("signal_date",), "2026-11-25")
+    assert [r["signal_date"] for r in kept] == ["2026-11-25", "2026-11-11", ""]
+
+
+def test_structural_table_applies_fourteen_day_window(monkeypatch):
+    with tempfile.TemporaryDirectory() as d:
+        db = _local_db_with(d)
+        c = sqlite3.connect(db)
+        c.execute("INSERT INTO analysis_cache VALUES ('advanced_pattern_scan', '2026-11-25T10:00:00', ?)",
+                  (json.dumps({"hits": [
+                      {"symbol": "NEW", "pattern_type": "DOUBLE_BOTTOM", "signal_date": "2026-11-20",
+                       "entry_price": 5.0, "stop_loss": 4.5, "target_1": 6.0, "risk_reward_measured": 2.0},
+                      {"symbol": "OLD", "pattern_type": "INVERSE_HS", "signal_date": "2026-10-30"}]}),))
+        c.commit()
+        c.close()
+        conn = rpt.ReadOnlyConnection(_connect(db))
+        sec = rpt._structural_section(conn, {}, "2026-11-25")
+        assert [r["Symbol"] for r in sec["rows"]] == ["NEW"]
+        assert sec["rows"][0]["Pattern"] == "Double Bottom" and sec["rows"][0]["Action"] == "BUY SIGNAL"
+
+
+def test_no_fire_or_technical_field_names_in_labels():
+    labels = []
+    for spec in (rpt.CHART_COLUMNS, rpt.PHASE_D_COLUMNS, rpt.WYCKOFF_V1_COLUMNS, rpt.LONG_COLUMNS,
+                 rpt.SHORT_COLUMNS, rpt.STRUCTURAL_COLUMNS, rpt.EARLY_COLUMNS, rpt.EXPANSION_COLUMNS,
+                 rpt.WYCKOFF_VOL_COLUMNS, rpt.VALIDATION_COLUMNS, rpt.WYCKOFF2_COLUMNS):
+        labels += [label for label, _ in spec]
+    assert "signal_date" not in labels and "Median20 PKR" in labels
+    assert all("_" not in x or x in ("Clear_Runway %",) for x in labels)
+    assert "day %" not in labels and "Day %" in labels
+
+
+def test_wyckoff_v1_default_filter_is_watch_ready_extreme():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "w.db")
+        c = sqlite3.connect(path)
+        c.row_factory = sqlite3.Row
+        c.executescript("""
+            CREATE TABLE daily_ohlc (symbol TEXT, trade_date TEXT, close REAL);
+            CREATE TABLE wyckoff_accumulation (symbol TEXT, scan_date TEXT, signal_type TEXT,
+                                               accumulation_score INTEGER);
+            INSERT INTO daily_ohlc VALUES ('A', '2026-11-25', 7.5), ('B', '2026-11-25', 9.0), ('C', '2026-11-25', 3.0);
+            INSERT INTO wyckoff_accumulation VALUES ('A', '2026-11-25', 'READY', 75),
+                ('B', '2026-11-25', 'NONE', 20), ('C', '2026-11-25', 'EXTREME', 90);
+        """)
+        c.commit()
+        c.close()
+        conn = rpt.ReadOnlyConnection(_connect(path))
+        sec = rpt._wyckoff_v1_section(conn, {"A": "Alpha"}, "2026-11-25", "2026-11-25")
+        assert [r["Symbol"] for r in sec["rows"]] == ["C", "A"]  # score desc from the query
+        assert sec["rows"][1]["Signal"] == "READY" and sec["rows"][1]["Company"] == "Alpha"
+        assert sec["rows"][1]["Price"] == 7.5
+        assert sec["columns"] == ["Symbol", "Company", "Signal", "Score", "Price"]
+
+
+def test_pdf_renders_wide_tables_landscape_and_text():
+    with tempfile.TemporaryDirectory() as d:
+        cols = [(f"Col {i} long heading", [f"c{i}"]) for i in range(20)]
+        rows = [{f"c{i}": f"{1234.5 * i:,.2f} value text" for i in range(20)} for _ in range(30)]
+        sec = rpt._section("Patterns", "Volatility Intelligence", "Wide", rows, "synthetic", spec=cols)
+        path, pages, size = rpt.render_pdf(os.path.join(d, "wide.pdf"), "2026-11-25", [sec],
+                                           generated_at="2026-11-26 06:00 UTC")
+        assert pages >= 2 and size < 1024 * 1024

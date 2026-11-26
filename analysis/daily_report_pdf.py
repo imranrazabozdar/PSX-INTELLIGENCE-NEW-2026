@@ -2,6 +2,14 @@
 
 FIRE Engine content is excluded on purpose (no fire_scan, no FIRE-tagged rows).
 
+Headings, table titles, column labels, row order and default filters follow the app's
+Streamlit tabs (streamlit_app.py and vol_engine_ui.py). Defaults mirror the app:
+  - Wyckoff v1: WATCH / READY / EXTREME rows only.
+  - Candlestick and IHS / Double Bottom / Head & Shoulders tables: rows dated within the
+    last 14 days of the session (the app's "Show Historical Signals" is off by default).
+  - Volatility tables: liquidity = Highly Liquid + Liquid + Moderate Liquidity.
+  - Wyckoff x Volatility: "Wyckoff signals only" (WATCH / READY / EXTREME, not stale).
+
 READ-ONLY: every query goes through ReadOnlyConnection, which accepts only a single
 SELECT or PRAGMA statement and refuses everything else.
 
@@ -20,7 +28,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -28,30 +36,77 @@ if ROOT not in sys.path:
 
 # Top-level headings, in report order. Only these three app tabs are in the PDF.
 GROUP_ORDER = ("Chart Patterns", "Patterns", "Breakouts")
+RECENT_DAYS = 14  # the app's RECENT_SIGNAL_DAYS
+LIQUIDITY_DEFAULT = ("Highly Liquid", "Liquid", "Moderate Liquidity")
+WYCKOFF_SIGNALS = ("WATCH", "READY", "EXTREME")
+DATE_KEYS = ("pattern_date", "signal_date", "date")
+FIRE_TOKEN = "FIRE"
+MAX_CELL = 300
+
 # Chart Patterns tab: these four Bulkowski patterns only, each as a CONFIRMED and a FORMING table.
 CHART_PATTERN_NAMES = ("CUP_WITH_HANDLE", "HIGH_TIGHT_FLAG_PSX", "PIPE_BOTTOM_1D", "BROADENING_BOTTOM")
 CHART_STATES = ("CONFIRMED", "FORMING")
-# Same columns as the app's Chart Patterns tab: (label, candidate field names).
 CHART_COLUMNS = [
     ("Symbol", ["symbol"]), ("Pattern", ["pattern"]), ("State", ["state"]), ("Signal Date", ["signal_date"]),
     ("RVOL", ["rvol"]), ("Median20 PKR", ["median20_pkr"]), ("Clear_Runway %", ["clear_runway_pct"]),
     ("Runway flag", ["runway_flag"]), ("Suggested Stop", ["suggested_stop"]),
     ("Breadth %", ["universe_breadth_pct"]),
 ]
+
 PHASE_D_SUB = "Phase D Breakout & Shelf Tracker"
 PHASE_D_COLUMNS = [
-    ("symbol", ["symbol"]), ("stage", ["status"]), ("price", ["price"]), ("day %", ["day %"]),
-    ("RVOL", ["rvol"]), ("shelf ceiling", ["ceiling"]), ("day", ["day"]), ("turnover", ["turnover"]),
-    ("setup grade", ["setup_grade"]), ("price tier", ["price_tier"]),
+    ("Symbol", ["symbol"]), ("Stage / Action Status", ["status"]), ("Price", ["price"]), ("Day %", ["day_pct"]),
+    ("RVOL", ["rvol"]), ("Shelf Ceiling", ["ceiling"]), ("Day", ["day"]), ("Turnover", ["turnover"]),
+    ("Setup Grade", ["setup_grade"]), ("Price Tier", ["price_tier"]),
 ]
-WYCKOFF2_SUB = "Wyckoff Institutional Accumulation 2.0 (RESEARCH)"
-WYCKOFF2_COLUMNS = [
-    ("symbol", ["symbol"]), ("price", ["close"]), ("day %", ["chg_pct"]),
-    ("original score", ["orig_score"]), ("original class", ["orig_class"]), ("enhanced class", ["enh_class"]),
-]
-WYCKOFF_SIGNALS = ("WATCH", "READY", "EXTREME")
+
 MARKET_BEHAVIOUR_SUB = "Market Behaviour"
 MARKET_BEHAVIOUR_TITLE = "Wyckoff Institutional Accumulation"
+WYCKOFF_V1_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Signal", ["signal"]),
+                      ("Score", ["score"]), ("Price", ["price"])]
+
+LONG_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Action", ["action"]), ("Date", ["date"]),
+                ("Stop", ["stop"]), ("Target", ["target"]), ("R:R", ["rr"])]
+SHORT_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Action", ["action"]),
+                 ("Entry", ["entry"]), ("Stop-Loss (Risk)", ["stop"]), ("Target (Reward)", ["target"]),
+                 ("Date", ["date"])]
+STRUCTURAL_SUB = "Structural Patterns"
+STRUCTURAL_TITLE = "Chart Patterns (IHS, Double Bottom & Head/Shoulders Top)"
+STRUCTURAL_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Pattern", ["pattern"]),
+                      ("Action", ["action"]), ("Entry", ["entry"]), ("Stop-Loss (Risk)", ["stop"]),
+                      ("Target (Reward)", ["target"]), ("R:R", ["rr"]), ("Date", ["date"])]
+ADV_PATTERN_LABELS = {"INVERSE_HS": "Inverse Head & Shoulders", "DOUBLE_BOTTOM": "Double Bottom",
+                      "HEAD_SHOULDERS_TOP": "Head & Shoulders Top"}
+
+VOL_SUB = "Volatility Intelligence"
+EARLY_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Price", ["price"]),
+                 ("Last Candle", ["last_candle"]), ("Compression", ["compression"]),
+                 ("BBW pct (100d)", ["bbw_pct"]), ("ATR pct (100d)", ["atr_pct"]), ("Squeeze days", ["squeeze_d"])]
+EXPANSION_COLUMNS = [("Rank", ["rank"]), ("Symbol", ["symbol"]), ("Company", ["company"]), ("Price", ["price"]),
+                     ("Last Candle", ["last_candle"]), ("Compression", ["compression"]), ("Evidence", ["evidence"]),
+                     ("Expansion", ["expansion"]), ("BBW pct (100d)", ["bbw_pct"]), ("ATR pct (100d)", ["atr_pct"]),
+                     ("Rel. Volume", ["rel_vol"]), ("Break Level", ["break_level"]), ("Support", ["support"]),
+                     ("Resistance", ["resistance"]), ("Stage", ["stage"]), ("History", ["history"]),
+                     ("Liquidity", ["liquidity"])]
+WYCKOFF_VOL_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Price", ["price"]),
+                       ("Last Candle", ["last_candle"]), ("Stale", ["stale"]), ("Wyckoff Score", ["wyckoff_score"]),
+                       ("Wyckoff", ["wyckoff"]), ("4h BB Compression", ["bb4h"]), ("Supply Exhaustion", ["supply_exh"]),
+                       ("Absorption", ["absorption"]), ("OBV Divergence", ["obv_div"]),
+                       ("Compression", ["compression"]), ("Bull", ["bull"]), ("Bear", ["bear"]),
+                       ("Expansion Bull", ["expansion_bull"]), ("Expansion Bear", ["expansion_bear"]),
+                       ("Stage", ["stage"]), ("Confluence", ["confluence"]), ("Conflict", ["conflict"]),
+                       ("History", ["history"]), ("Liquidity", ["liquidity"])]
+VALIDATION_COLUMNS = [("Setup", ["setup"]), ("N", ["n"]), ("Sufficient", ["sufficient"]),
+                      ("P(up 10d)%", ["p_up"]), ("Mean 10d%", ["mean10"]), ("Median 10d%", ["median10"]),
+                      ("Long target-first%", ["long_tf"]), ("Long expectancy%", ["long_exp"]), ("Long PF", ["long_pf"]),
+                      ("Short target-first%", ["short_tf"]), ("Short expectancy%", ["short_exp"]),
+                      ("OOS n", ["oos_n"]), ("OOS mean 10d%", ["oos_mean10"]),
+                      ("OOS long expectancy%", ["oos_long_exp"])]
+
+WYCKOFF2_SUB = "Wyckoff Institutional Accumulation 2.0 (RESEARCH)"
+WYCKOFF2_COLUMNS = [("Symbol", ["symbol"]), ("Company", ["company"]), ("Price", ["price"]), ("Day %", ["day"]),
+                    ("Original Score", ["orig_score"]), ("Original Class", ["orig_class"]),
+                    ("Enhanced Class", ["enh_class"])]
 
 
 def _dir(d):
@@ -67,8 +122,20 @@ def _not_hst(rows):
     return [r for r in rows if str(r.get("pattern_type", "")).upper() != "HEAD_SHOULDERS_TOP"]
 
 
+def _is_hst(rows):
+    return [r for r in rows if str(r.get("pattern_type", "")).upper() == "HEAD_SHOULDERS_TOP"]
+
+
+def _liq_ok(r):
+    return r.get("liquidity") in LIQUIDITY_DEFAULT
+
+
+def _is_stale(r):
+    return bool(r.get("stale"))
+
+
 def _vol_early(rows):
-    out = [r for r in rows if not r.get("stale")
+    out = [r for r in rows if not _is_stale(r) and _liq_ok(r)
            and (r.get("stage") in (1, 2) or (r.get("compression_score") or 0) >= 50)]
     return sorted(out, key=lambda r: -(r.get("compression_score") or 0))
 
@@ -77,7 +144,7 @@ def _vol_expansion(sgn):
     k = "bull" if sgn > 0 else "bear"
 
     def f(rows):
-        out = [r for r in rows if not r.get("stale")
+        out = [r for r in rows if not _is_stale(r) and _liq_ok(r)
                and (r.get(f"{k}_score") or 0) >= 40
                and (r.get("stage", 0) > 0 or (r.get("compression_score") or 0) >= 40)
                and not (r.get("stage") == 5 and r.get("stage_dir") == sgn)]
@@ -90,50 +157,53 @@ def _vol_expansion(sgn):
 def _wyckoff_signal_only(rows):
     field = next((k for k in ("wyckoff_signal", "signal") if any(k in r for r in rows)), None)
     if field is None:
-        return rows
-    return [r for r in rows if str(r.get(field, "")).upper() in WYCKOFF_SIGNALS]
+        return []
+    return [r for r in rows if str(r.get(field, "")).upper() in WYCKOFF_SIGNALS and not _is_stale(r)]
 
 
-# Patterns tab, in the app's order: (sub-heading, [(tab title, analysis_cache key, row transform, field)]).
-# Transforms filter one side of a direction-split cache list. Titles are the app's section names.
-PATTERN_TABS = [
-    ("Long-Side (Bullish)", [
-        ("OBV+MFI Setup with ATR Contraction", "obv_mfi_scan", None, None),
-        ("Bullish Engulfing", "bullish_engulfing_scan", None, None),
-        ("Morning Star", "morning_star_scan", None, None),
-        ("Bullish Three-Line Strike", "three_line_strike_scan", None, None),
-        ("MHarris 5-Bar Reversal (Bullish)", "mharris_scan", _dir("BULL"), None),
-        ("Engulfing + Star Confirmed Reversal (Bullish)", "engulfing_star_scan", _dir("BULL"), None),
-        ("MACD+EMA200 Trend Resumption (Bullish)", "macdema_scan", _dir("BULL"), None),
-        ("Level Break Out (Resistance Breakout)", "level_breakout_scan", _dir("BULL"), None),
-        ("GP-Evolved Formula (Long Bias)", "gp_evolved_scan", _dir("BULL"), None),
-    ]),
-    ("Short-Side (Bearish)", [
-        ("Bearish Engulfing", "bearish_engulfing_scan", None, None),
-        ("Evening Star", "evening_star_scan", None, None),
-        ("MHarris 5-Bar Reversal (Bearish)", "mharris_scan", _dir("BEAR"), None),
-        ("Engulfing + Star Confirmed Reversal (Bearish)", "engulfing_star_scan", _dir("BEAR"), None),
-        ("Regression-Channel Triangle Squeeze", "triangle_regression_scan", None, None),
-        ("Level Break Out (Support Breakdown)", "level_breakout_scan", _dir("BEAR"), None),
-        ("MACD+EMA200 Trend Resumption (Bearish)", "macdema_scan", _dir("BEAR"), None),
-        ("GP-Evolved Formula (Short Bias)", "gp_evolved_scan", _dir("BEAR"), None),
-    ]),
-    ("Structural Patterns", [
-        ("Chart Patterns (IHS, Double Bottom)", "advanced_pattern_scan", _not_hst, None),
-        ("Head & Shoulders Top", "hstop_scan", None, None),
-    ]),
-    ("Volatility Intelligence", [
-        ("Early Warning", "volatility_engine_scan", _vol_early, None),
-        ("Bullish Expansion", "volatility_engine_scan", _vol_expansion(1), None),
-        ("Bearish Expansion", "volatility_engine_scan", _vol_expansion(-1), None),
-        ("Wyckoff x Volatility", "volatility_wyckoff_combined", _wyckoff_signal_only, None),
-        ("Alerts", "volatility_engine_scan", None, "alerts"),
-        ("Historical Validation", "volatility_engine_stats", None, None),
-    ]),
+# Patterns > Long-Side and Short-Side candlestick and scan tables, in the app's order.
+# (title, analysis_cache key, row transform, side, app empty-state text)
+LONG_TABS = [
+    ("OBV+MFI Setup with ATR Contraction", "obv_mfi_scan", None, "BULL",
+     "No symbol currently shows an OBV+MFI setup with ATR contraction on its latest completed daily candles."),
+    ("Bullish Engulfing", "bullish_engulfing_scan", None, "BULL",
+     "No symbol currently shows Bullish Engulfing geometry on its latest completed daily candles."),
+    ("Morning Star", "morning_star_scan", None, "BULL",
+     "No symbol currently shows a Morning Star completing on its latest stored daily session."),
+    ("Bullish Three-Line Strike", "three_line_strike_scan", None, "BULL",
+     "No symbol currently shows a Bullish Three-Line Strike on its latest completed 4-candle window."),
+    ("MHarris 5-Bar Reversal (Bullish)", "mharris_scan", _dir("BULL"), "BULL",
+     "No symbol currently shows a Bullish 5-bar reversal on its latest completed daily candles."),
+    ("Engulfing + Star Confirmed Reversal (Bullish)", "engulfing_star_scan", _dir("BULL"), "BULL",
+     "No symbol currently shows a Bullish Engulfing+Star reversal on its latest completed daily candles."),
+    ("MACD+EMA200 Trend Resumption (Bullish)", "macdema_scan", _dir("BULL"), "BULL",
+     "No symbol currently shows a Bullish MACD+EMA200 trend-resumption on its latest completed daily candles."),
+    ("Level Break Out (Resistance Breakout)", "level_breakout_scan", _dir("BULL"), "BULL",
+     "No symbol currently shows a resistance breakout on its latest completed daily candles."),
+    ("GP-Evolved Formula (Long Bias)", "gp_evolved_scan", _dir("BULL"), "BULL",
+     "No symbol currently shows a GP-Evolved Formula long signal on its latest completed daily candles."),
 ]
-SUMMARY_KEYS = ("signal_type", "grade", "pattern", "state", "classification", "status")
-FIRE_TOKEN = "FIRE"
-MAX_CELL = 48
+SHORT_TABS = [
+    ("Bearish Engulfing", "bearish_engulfing_scan", None, "BEAR",
+     "No symbol currently shows Bearish Engulfing geometry on its latest completed daily candles."),
+    ("Evening Star", "evening_star_scan", None, "BEAR",
+     "No symbol currently shows an Evening Star completing on its latest stored daily session."),
+    ("MHarris 5-Bar Reversal (Bearish)", "mharris_scan", _dir("BEAR"), "BEAR",
+     "No symbol currently shows a Bearish 5-bar reversal on its latest completed daily candles."),
+    ("Engulfing + Star Confirmed Reversal (Bearish)", "engulfing_star_scan", _dir("BEAR"), "BEAR",
+     "No symbol currently shows a Bearish Engulfing+Star reversal on its latest completed daily candles."),
+    ("Regression-Channel Triangle Squeeze", "triangle_regression_scan", None, "BEAR",
+     "No symbol currently shows a Regression-Channel Triangle Squeeze on its latest completed daily candles."),
+    ("Level Break Out (Support Breakdown)", "level_breakout_scan", _dir("BEAR"), "BEAR",
+     "No symbol currently shows a support breakdown on its latest completed daily candles."),
+    ("MACD+EMA200 Trend Resumption (Bearish)", "macdema_scan", _dir("BEAR"), "BEAR",
+     "No symbol currently shows a Bearish MACD+EMA200 trend-resumption on its latest completed daily candles."),
+    ("GP-Evolved Formula (Short Bias)", "gp_evolved_scan", _dir("BEAR"), "BEAR",
+     "No symbol currently shows a GP-Evolved Formula short signal on its latest completed daily candles."),
+]
+
+_SUBS = {"—": "-", "–": "-", "→": "->", "≥": ">=", "≤": "<=", "×": "x",
+         "’": "'", "‘": "'", "“": '"', "”": '"', "…": "...", "₨": "Rs", "•": "-"}
 
 
 class ReadOnlyError(PermissionError):
@@ -200,8 +270,29 @@ def _is_fire(row):
     return False
 
 
+def _first(r, keys):
+    for k in keys:
+        if r.get(k) not in (None, ""):
+            return r[k]
+    return None
+
+
+def _recent(rows, keys, session, days=RECENT_DAYS):
+    """The app's default: keep rows dated within `days` of the session. A row with no or an
+    unparsable date is kept, as the app keeps it."""
+    if not session:
+        return rows
+    cutoff = (datetime.strptime(session, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
+    out = []
+    for r in rows:
+        d = str(_first(r, keys) or "")[:10]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or d >= cutoff:
+            out.append(r)
+    return out
+
+
 def _project(rows, spec):
-    """Keep only the app's columns. spec is [(label, [candidate fields])]; the first present field wins."""
+    """Keep only the table's columns. spec is [(label, [candidate keys])]; the first present key wins."""
     cols = [label for label, _ in spec]
     out = []
     for r in rows:
@@ -209,9 +300,20 @@ def _project(rows, spec):
     return cols, out
 
 
-def _section(group, sub, title, rows, source, note=None, date=None, spec=None, checklist=None, summary=None):
+def _count_line(rows, key, label):
+    if not rows:
+        return f"{label}: none"
+    counts = {}
+    for r in rows:
+        v = str(r.get(key, "") or "-")
+        counts[v] = counts.get(v, 0) + 1
+    return f"{label}: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+
+
+def _section(group, sub, title, rows, source, note=None, date=None, spec=None, checklist=None, summary=None,
+             empty=None):
     kept = [r for r in rows if not _is_fire(r)]
-    empty_text = f"No rows for {date}" if date else "No rows for this section."
+    empty_text = empty or (f"No rows for {date}" if date else "No rows for this section.")
     if spec is not None:
         cols, out = _project(kept, spec)
     else:
@@ -221,17 +323,8 @@ def _section(group, sub, title, rows, source, note=None, date=None, spec=None, c
                 if k not in cols:
                     cols.append(k)
         out = kept
-    if summary is None:
-        summary = []
-        for key in SUMMARY_KEYS:
-            if key in cols:
-                counts = {}
-                for r in kept:
-                    v = str(r.get(key, "") or "-")
-                    counts[v] = counts.get(v, 0) + 1
-                summary.append(f"{key}: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     return {"group": group, "sub": sub, "title": title, "source": source, "columns": cols,
-            "rows": out, "summary": summary, "note": note, "excluded_fire": len(rows) - len(kept),
+            "rows": out, "summary": summary or [], "note": note, "excluded_fire": len(rows) - len(kept),
             "empty_text": empty_text, "checklist": checklist or []}
 
 
@@ -248,17 +341,232 @@ def heading_tree(sections):
     return tree
 
 
-def _pattern_section(conn, sub, title, key, transform, field, session):
-    run_at, rows, meta = _cache_rows(conn, key, field)
+def _company_names(names):
+    return names or {}
+
+
+def _candle_rows(rows, names, side):
+    """Display rows for a candlestick or scan table. Missing geometry shows '-', never an invented value."""
+    out = []
+    for r in rows:
+        sym = r.get("symbol")
+        out.append({
+            "symbol": sym, "company": names.get(sym) or "", "action": _action(r, side),
+            "date": _first(r, DATE_KEYS), "entry": _first(r, ("entry_price", "entry")),
+            "stop": _first(r, ("stop_loss", "stop")), "target": _first(r, ("target_1", "target")),
+            "rr": _rr(r),
+        })
+    return out
+
+
+def _action(r, side):
+    cls = str(r.get("classification") or "").upper()
+    word = "BUY SIGNAL" if side == "BULL" else "SHORT SIGNAL"
+    if not cls or ("VALID" in cls and "INVALID" not in cls):
+        return word
+    return "WAIT (No Setup)"
+
+
+def _rr(r):
+    v = _first(r, ("risk_reward_measured", "rr"))
+    try:
+        return f"{float(v):.1f}x"
+    except (TypeError, ValueError):
+        return None
+
+
+def _candle_section(conn, names, session, sub, title, key, transform, side, empty, short):
+    spec = SHORT_COLUMNS if short else LONG_COLUMNS
+    run_at, rows, meta = _cache_rows(conn, key)
     if meta is None:
-        note = f"cache key '{key}' is not in analysis_cache: no data to show"
-    else:
-        note = f"cached at {run_at}" if run_at else "cached (no run time stored)"
-        if transform is not None:
-            rows = transform(rows)
-        if not rows and (meta.get("message") or meta.get("reason")):
-            note += f". App message: {meta.get('message') or meta.get('reason')}"
-    return _section("Patterns", sub, title, rows, f"analysis_cache '{key}'", note, date=session)
+        return _section("Patterns", sub, title, [], f"analysis_cache '{key}'",
+                        f"cache key '{key}' is not in analysis_cache: no data to show", spec=spec, empty=empty)
+    if transform is not None:
+        rows = transform(rows)
+    rows = _recent([r for r in rows if not _is_fire(r)], DATE_KEYS, session)
+    disp = _candle_rows(rows, names, side)
+    note = f"cached at {run_at}" if run_at else "cached (no run time stored)"
+    if not disp and (meta.get("message") or meta.get("reason")):
+        note += f". App message: {meta.get('message') or meta.get('reason')}"
+    return _section("Patterns", sub, title, disp, f"analysis_cache '{key}'", note, spec=spec, empty=empty,
+                    summary=[_count_line(disp, "action", "Action")])
+
+
+def _wyckoff_v1_section(conn, names, session_date, session):
+    wd = session_date
+    if wd is None:
+        w = _rows(conn, "SELECT MAX(scan_date) AS d FROM wyckoff_accumulation")
+        wd = w[0]["d"] if w else None
+    wd = str(wd)[:10] if wd else None
+    raw = _rows(conn, "SELECT * FROM wyckoff_accumulation WHERE scan_date = ? "
+                      "ORDER BY accumulation_score DESC", (wd,)) if wd else []
+    prices = {}
+    if wd:
+        for r in _rows(conn, "SELECT symbol, close FROM daily_ohlc WHERE substr(trade_date,1,10) = ?", (wd,)):
+            prices[r["symbol"]] = r["close"]
+    hits = [r for r in raw if str(r.get("signal_type", "")).upper() in WYCKOFF_SIGNALS]
+    disp = [{"symbol": r.get("symbol"), "company": names.get(r.get("symbol")) or "",
+             "signal": str(r.get("signal_type")).upper(), "score": r.get("accumulation_score"),
+             "price": prices.get(r.get("symbol"))} for r in hits]
+    return _section("Patterns", MARKET_BEHAVIOUR_SUB, f"{MARKET_BEHAVIOUR_TITLE} (scan {wd or 'none'})", disp,
+                    "wyckoff_accumulation (scan_date)",
+                    note="WATCH = score 60-69, READY = 70-84, EXTREME = 85+. A pattern-strength score, "
+                         "not a probability or profitability claim.",
+                    spec=WYCKOFF_V1_COLUMNS, date=wd or "none",
+                    empty="No WATCH/READY/EXTREME setups in the most recent completed daily batch.",
+                    summary=[_count_line(disp, "signal", "Signal")])
+
+
+def _structural_section(conn, names, session):
+    _, adv, _ = _cache_rows(conn, "advanced_pattern_scan")
+    _, hst, _ = _cache_rows(conn, "hstop_scan")
+    rows = _not_hst(adv) + hst
+    rows = _recent([r for r in rows if not _is_fire(r)], ("signal_date",), session)
+    rows.sort(key=lambda r: (str(r.get("signal_date") or ""), str(r.get("symbol") or "")), reverse=True)
+    disp = []
+    for r in rows:
+        sym = r.get("symbol")
+        is_hst = str(r.get("pattern_type", "")).upper() == "HEAD_SHOULDERS_TOP"
+        disp.append({
+            "symbol": sym, "company": names.get(sym) or "",
+            "pattern": ADV_PATTERN_LABELS.get(r.get("pattern_type"), str(r.get("pattern_type") or "")),
+            "action": "SELL SIGNAL" if is_hst else "BUY SIGNAL",
+            "entry": r.get("entry_price"), "stop": r.get("stop_loss"), "target": r.get("target_1"),
+            "rr": _rr(r), "date": r.get("signal_date"),
+        })
+    return _section("Patterns", STRUCTURAL_SUB, STRUCTURAL_TITLE, disp,
+                    "advanced_pattern_scan + hstop_scan (analysis_cache)",
+                    note=f"Only signals dated within the last {RECENT_DAYS} days, as the app shows by default.",
+                    spec=STRUCTURAL_COLUMNS,
+                    empty="No Inverse Head & Shoulders, Double Bottom, or Head & Shoulders Top signals right now.",
+                    summary=[_count_line(disp, "action", "Action")])
+
+
+def _hist_cell(h, direction):
+    if not h or not h.get("available"):
+        return "INSUFFICIENT HISTORICAL EVIDENCE"
+    p = h.get("p_up_10d") if direction > 0 else h.get("p_down_10d")
+    ci = h.get("p_up_10d_ci") if direction > 0 else h.get("p_down_10d_ci")
+    word = "up" if direction > 0 else "down"
+    return f"{p}% {word} in 10d [{ci[0]}-{ci[1]}], n={h.get('n')}"
+
+
+def _vol_sections(conn, names, session):
+    run_at, vrows, vmeta = _cache_rows(conn, "volatility_engine_scan")
+    fresh = [r for r in vrows if not _is_stale(r)]
+    cov = (f"Session {session} · {len(fresh)} stocks with a current candle · "
+           f"{len(vrows) - len(fresh)} stale. Liquidity filter: Highly Liquid, Liquid, Moderate Liquidity.")
+    sec = []
+
+    def mk(title, columns, disp, empty, note=cov, summary=None):
+        src = "analysis_cache 'volatility_engine_scan'"
+        if vmeta is None:
+            return _section("Patterns", VOL_SUB, title, [], src,
+                            "cache key 'volatility_engine_scan' is not in analysis_cache: no data to show",
+                            spec=columns, empty=empty)
+        return _section("Patterns", VOL_SUB, title, disp, src, note, spec=columns, empty=empty,
+                        summary=summary)
+
+    early = _vol_early(vrows)
+    sec.append(mk("Early Warning", EARLY_COLUMNS, [{
+        "symbol": r.get("symbol"), "company": names.get(r.get("symbol")) or "", "price": r.get("close"),
+        "last_candle": _first(r, ("last_bar_date", "date")), "compression": r.get("compression_score"),
+        "bbw_pct": r.get("bbw_pct100"), "atr_pct": r.get("atr_pct100"), "squeeze_d": r.get("squeeze_run"),
+    } for r in early], "No symbol currently shows an early-warning compression setup."))
+
+    for title, sgn, empty in (
+            ("Bullish Expansion", 1, "No symbol currently shows a bullish volatility expansion."),
+            ("Bearish Expansion", -1, "No symbol currently shows a bearish volatility expansion.")):
+        k = "bull" if sgn > 0 else "bear"
+        rows = _vol_expansion(sgn)(vrows)
+        disp = [{
+            "rank": i + 1, "symbol": r.get("symbol"), "company": names.get(r.get("symbol")) or "",
+            "price": r.get("close"), "last_candle": _first(r, ("last_bar_date", "date")),
+            "compression": r.get("compression_score"), "evidence": r.get(f"{k}_score"),
+            "expansion": r.get(f"{k}_expansion_score"), "bbw_pct": r.get("bbw_pct100"),
+            "atr_pct": r.get("atr_pct100"), "rel_vol": r.get("rv20"),
+            "break_level": r.get("break_level") or (r.get("box_hi") if sgn > 0 else r.get("box_lo")),
+            "support": r.get("box_lo"), "resistance": r.get("box_hi"), "stage": r.get("stage_detail"),
+            "history": _hist_cell(r.get("hist"), sgn), "liquidity": r.get("liquidity"),
+        } for i, r in enumerate(rows)]
+        sec.append(mk(title, EXPANSION_COLUMNS, disp, empty))
+
+    _, wrows, wmeta = _cache_rows(conn, "volatility_wyckoff_combined")
+    wv = _wyckoff_signal_only(wrows)
+    wdisp = [{
+        "symbol": r.get("symbol"), "company": names.get(r.get("symbol")) or "", "price": r.get("close"),
+        "last_candle": r.get("last_bar_date"), "stale": "Yes" if _is_stale(r) else "No",
+        "wyckoff_score": r.get("wyckoff_score"), "wyckoff": r.get("wyckoff_signal"),
+        "bb4h": r.get("wy_bb4h_compression"), "supply_exh": r.get("wy_supply_exhaustion"),
+        "absorption": r.get("wy_absorption"), "obv_div": r.get("wy_obv_divergence"),
+        "compression": r.get("compression_score"), "bull": r.get("bull_score"), "bear": r.get("bear_score"),
+        "expansion_bull": r.get("bull_expansion_score"), "expansion_bear": r.get("bear_expansion_score"),
+        "stage": r.get("stage_detail"), "confluence": r.get("confluence"), "conflict": r.get("conflict"),
+        "history": (r.get("hist") or {}).get("label") or "INSUFFICIENT HISTORICAL EVIDENCE",
+        "liquidity": r.get("liquidity"),
+    } for r in wv]
+    sec.append(_section("Patterns", VOL_SUB, "Wyckoff x Volatility",
+                        wdisp, "analysis_cache 'volatility_wyckoff_combined'",
+                        note="Shows: Wyckoff signals only (WATCH/READY/EXTREME, not stale). Wyckoff's score and "
+                             "class are the existing engine's output; the volatility scores are separate.",
+                        spec=WYCKOFF_VOL_COLUMNS,
+                        empty="No stock matches this view today: no WATCH/READY/EXTREME Wyckoff signal."))
+
+    alerts = [a for a in (vmeta or {}).get("alerts") or [] if isinstance(a, dict)]
+    akeys = []
+    for a in alerts:
+        for k in a:
+            if k not in akeys:
+                akeys.append(k)
+    aspec = [(k.replace("_", " ").title(), [k]) for k in akeys]
+    sec.append(_section("Patterns", VOL_SUB, "Alerts", alerts, "analysis_cache 'volatility_engine_scan' (alerts)",
+                        note="Only condition CHANGES since the previous daily run are listed.",
+                        spec=aspec or None,
+                        empty="No new alerts: no symbol's condition changed since the previous run."))
+
+    _, _, smeta = _cache_rows(conn, "volatility_engine_stats")
+    sdisp = _validation_rows(smeta) if smeta and smeta.get("status") == "ok" else []
+    snote = None
+    if smeta and smeta.get("status") == "ok":
+        snote = (f"Run {str(smeta.get('run_at'))[:16]} UTC · {smeta.get('universe')} symbols · "
+                 f"{smeta.get('data_from')} to {smeta.get('data_to')} · out-of-sample after "
+                 f"{(smeta.get('splits') or {}).get('validation_to')} · cost "
+                 f"{(smeta.get('assumptions') or {}).get('cost_round_trip_pct')}% round trip")
+    sec.append(_section("Patterns", VOL_SUB, "Historical Validation", sdisp,
+                        "analysis_cache 'volatility_engine_stats'", snote, spec=VALIDATION_COLUMNS,
+                        empty=(smeta or {}).get("reason") or "Not run yet."))
+    return sec
+
+
+def _validation_rows(stats):
+    out = []
+    by_split = stats.get("by_split") or {}
+    for k, g in (stats.get("groups") or {}).items():
+        g = g or {}
+        o = (by_split.get(k) or {}).get("oos") or {}
+        la = g.get("long_atr") or {}
+        sa = g.get("short_atr") or {}
+        out.append({"setup": k, "n": g.get("n"), "sufficient": g.get("sufficient"), "p_up": g.get("p_up_10d"),
+                    "mean10": g.get("mean_10d"), "median10": g.get("median_10d"),
+                    "long_tf": la.get("target_first_pct"), "long_exp": la.get("expectancy"),
+                    "long_pf": la.get("profit_factor"), "short_tf": sa.get("target_first_pct"),
+                    "short_exp": sa.get("expectancy"), "oos_n": o.get("n"), "oos_mean10": o.get("mean_10d"),
+                    "oos_long_exp": (o.get("long_atr") or {}).get("expectancy")})
+    return out
+
+
+def _wyckoff2_section(conn, names):
+    run_at, rows, meta = _cache_rows(conn, "wyckoff2_research_scan")
+    disp = [{"symbol": r.get("symbol"), "company": names.get(r.get("symbol")) or "", "price": r.get("close"),
+             "day": r.get("chg_pct"), "orig_score": r.get("orig_score"), "orig_class": r.get("orig_class"),
+             "enh_class": r.get("enh_class")} for r in rows]
+    note = (f"cached at {run_at}" if meta is not None else
+            "cache key 'wyckoff2_research_scan' is not in analysis_cache: no data to show")
+    return _section("Patterns", WYCKOFF2_SUB, "Enhanced-class table (research)", disp,
+                    "analysis_cache 'wyckoff2_research_scan'",
+                    note=note + ". EXPERIMENTAL / NOT PRODUCTION: research scores are heuristics (0-100), not probabilities.",
+                    spec=WYCKOFF2_COLUMNS,
+                    empty="No symbol currently shows an enhanced Wyckoff 2.0 class in the research scan.")
 
 
 def _breakouts_section(conn, session_date):
@@ -273,8 +581,8 @@ def _breakouts_section(conn, session_date):
     kept = [r for r in pd_rows if not _is_fire(r)]
     hits = pdt.sort_hits(kept)
     n = pdt.counts(kept)
-    summary = [f"Shelf breakouts: {n['SHELF_BREAKOUT']}", f"SOS ignitions: {n['SOS_IGNITION']}",
-               f"Active shelves: {n['ACTIVE_SHELF']}"]
+    summary = [f"Shelf Breakouts: {n['SHELF_BREAKOUT']}", f"SOS Ignitions: {n['SOS_IGNITION']}",
+               f"Active Shelves: {n['ACTIVE_SHELF']}"]
     checklist = []
     for h in hits:
         dates, verdict = pdt.watch(h, pd_date)
@@ -285,23 +593,48 @@ def _breakouts_section(conn, session_date):
             checklist.append(f"   Cancel level: {line}")
     recs = [{
         "symbol": h["symbol"], "status": pdt.TIERS[pdt.tier(h)][0], "price": h.get("close"),
-        "day %": h.get("pct_change"), "rvol": h.get("rvol"), "ceiling": h.get("base_or_shelf_high"),
+        "day_pct": h.get("pct_change"), "rvol": h.get("rvol"), "ceiling": h.get("base_or_shelf_high"),
         "day": f"{int(h.get('shelf_days') or 0)}/{pdt.MAX_SHELF_DAY}",
         "turnover": pdt.fmt_turnover(h.get("turnover_pkr")),
         "setup_grade": h.get("setup_grade") or "", "price_tier": h.get("price_tier") or "",
     } for h in hits]
+    note = (f"Last completed scan: {pd_date or 'none'} · {len(recs)} stock(s), closest to an entry first: "
+            "breakouts today, shelves in their final days (9-12), shelves still building (3-8), then fresh "
+            "ignitions.")
     return _section("Breakouts", PHASE_D_SUB, f"Phase D breakouts and shelves (session {pd_date or 'none'})",
-                    recs, "phase_d_signals (scan_date)", date=pd_date or "none", spec=PHASE_D_COLUMNS,
-                    checklist=checklist, summary=summary)
+                    recs, "phase_d_signals (scan_date)", note=note, date=pd_date or "none", spec=PHASE_D_COLUMNS,
+                    checklist=checklist, summary=summary,
+                    empty=f"No symbol currently shows a shelf breakout, SOS ignition or active shelf for {pd_date or 'none'}.")
 
 
-def collect_sections(conn, root_dir=ROOT, session_date=None):
+def load_company_names():
+    """{SYMBOL: official name} from the PSX symbol directory the app uses. Empty on any failure:
+    the Company column then stays blank rather than guessing."""
+    try:
+        backend = os.path.join(ROOT, "backend")
+        if backend not in sys.path:
+            sys.path.insert(0, backend)
+        import names as _names
+        m = _names.load() or {}
+        return {k: (v or {}).get("name") or "" for k, v in m.items()}
+    except Exception:
+        return {}
+
+
+def report_filename(session_date):
+    return f"PSX_Daily_Report_{session_date}.pdf"
+
+
+def collect_sections(conn, root_dir=ROOT, session_date=None, names=None):
     """Read every section through the guarded connection. Returns (session_date, sections).
 
     session_date (YYYY-MM-DD) pins the report to that session instead of MAX(...) for the
     header, the file name, phase_d_signals and wyckoff_accumulation. None keeps the default.
+    names maps SYMBOL -> company name; None loads the PSX directory (see load_company_names).
     """
     conn = conn if isinstance(conn, ReadOnlyConnection) else ReadOnlyConnection(conn)
+    if names is None:
+        names = load_company_names()
     if session_date is not None:
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", session_date):
             raise ValueError(f"--session-date must be YYYY-MM-DD, got {session_date!r}")
@@ -313,8 +646,8 @@ def collect_sections(conn, root_dir=ROOT, session_date=None):
         raise RuntimeError("daily_ohlc has no trade_date; cannot name the report")
     sections = []
 
-    # Chart Patterns: the same Bulkowski scan the Streamlit view uses (shared helper), four patterns
-    # only, one CONFIRMED and one FORMING table, sorted as the app sorts them (Signal Date desc, Symbol).
+    # Chart Patterns tab: the Bulkowski scan (shared helper), four patterns only, one CONFIRMED and
+    # one FORMING table, sorted as the app sorts them (Signal Date desc, Symbol).
     from pattern_scanner.chart_scan import scan_chart_patterns
     cp = scan_chart_patterns(conn, root_dir)
     for state in CHART_STATES:
@@ -325,29 +658,21 @@ def collect_sections(conn, root_dir=ROOT, session_date=None):
         cp_rows.sort(key=lambda s: str(s.get("signal_date", "")), reverse=True)
         sections.append(_section("Chart Patterns", state, "Chart Patterns (Bulkowski, last 250 daily bars)",
                                  cp_rows, "pattern_scanner.chart_scan.scan_chart_patterns (daily_ohlc)",
-                                 date=session, spec=CHART_COLUMNS))
+                                 date=session, spec=CHART_COLUMNS,
+                                 empty=f"No symbol currently shows a {state} chart pattern."))
 
-    # Patterns: sub-headings and tables in the app's order.
-    for sub, tables in PATTERN_TABS:
-        for title, key, transform, field in tables:
-            sections.append(_pattern_section(conn, sub, title, key, transform, field, session))
-    # Wyckoff 2.0 research has its own sub-heading, outside Long-Side.
-    run_at, w2rows, meta = _cache_rows(conn, "wyckoff2_research_scan")
-    w2_note = (f"cached at {run_at}" if meta is not None else
-               "cache key 'wyckoff2_research_scan' is not in analysis_cache: no data to show")
-    sections.append(_section("Patterns", WYCKOFF2_SUB, "Enhanced-class table (research)", w2rows,
-                             "analysis_cache 'wyckoff2_research_scan'", w2_note, date=session,
-                             spec=WYCKOFF2_COLUMNS))
-    # Market Behaviour: Wyckoff v1 from wyckoff_accumulation for the session date.
-    wd = session_date
-    if wd is None:
-        w = _rows(conn, "SELECT MAX(scan_date) AS d FROM wyckoff_accumulation")
-        wd = w[0]["d"] if w else None
-    wrows = _rows(conn, "SELECT * FROM wyckoff_accumulation WHERE scan_date = ? "
-                        "ORDER BY accumulation_score DESC", (wd,)) if wd else []
-    sections.append(_section("Patterns", MARKET_BEHAVIOUR_SUB,
-                             f"{MARKET_BEHAVIOUR_TITLE} (scan {wd or 'none'})",
-                             wrows, "wyckoff_accumulation (scan_date)", date=wd or "none"))
+    # Patterns, in the app's order: Market Behaviour, Long-Side, Short-Side, Structural, Volatility,
+    # then Wyckoff 2.0 research.
+    sections.append(_wyckoff_v1_section(conn, names, session_date, session))
+    for title, key, transform, side, empty in LONG_TABS:
+        sections.append(_candle_section(conn, names, session, "Long-Side (Bullish)", title, key, transform,
+                                        side, empty, short=False))
+    for title, key, transform, side, empty in SHORT_TABS:
+        sections.append(_candle_section(conn, names, session, "Short-Side (Bearish)", title, key, transform,
+                                        side, empty, short=True))
+    sections.append(_structural_section(conn, names, session))
+    sections.extend(_vol_sections(conn, names, session))
+    sections.append(_wyckoff2_section(conn, names))
 
     # Breakouts: Phase D summary, table and per-stock checklist.
     sections.append(_breakouts_section(conn, session_date))
@@ -357,21 +682,33 @@ def collect_sections(conn, root_dir=ROOT, session_date=None):
     return session, sections
 
 
-def report_filename(session_date):
-    return f"PSX_Daily_Report_{session_date}.pdf"
+def _safe(s):
+    for k, v in _SUBS.items():
+        s = s.replace(k, v)
+    return s.encode("latin-1", "replace").decode("latin-1")
 
 
 def _cell(v):
+    """Display text for one table cell, as the app formats it: 2 decimals with thousands separators,
+    fixed-point only (never scientific notation), Yes/No for booleans, '-' for a missing value."""
     if v is None:
-        s = ""
-    elif isinstance(v, float):
-        s = f"{v:.4g}"
-    else:
-        s = str(v)
-    s = s.replace("\n", " ")
+        return "-"
+    if isinstance(v, bool):
+        return "Yes" if v else "No"
+    if isinstance(v, int):
+        return f"{v:,}"
+    if isinstance(v, float):
+        if v != v or v in (float("inf"), float("-inf")):
+            return "-"
+        if v != 0 and abs(v) < 0.01:
+            return f"{v:.6f}"
+        return f"{v:,.2f}"
+    s = str(v).replace("\n", " ").strip()
+    if not s:
+        return "-"
     if len(s) > MAX_CELL:
-        s = s[:MAX_CELL - 1] + "~"
-    return s.encode("latin-1", "replace").decode("latin-1")
+        s = s[:MAX_CELL - 3] + "..."
+    return _safe(s)
 
 
 def render_pdf(path, session_date, sections, generated_at=None):
@@ -393,6 +730,8 @@ def render_pdf(path, session_date, sections, generated_at=None):
     small = ParagraphStyle("small", parent=ss["Normal"], fontSize=8, leading=10)
     tiny = ParagraphStyle("tiny", parent=ss["Normal"], fontSize=6.5, leading=8)
     mono = ParagraphStyle("mono", parent=ss["Normal"], fontSize=7, leading=9)
+    cell = ParagraphStyle("cell", parent=ss["Normal"], fontName="Helvetica", fontSize=6.5, leading=8)
+    hcell = ParagraphStyle("hcell", parent=cell, fontName="Helvetica-Bold", textColor=colors.white)
     dark = colors.HexColor("#1f2d3d")
     band = colors.HexColor("#eef2f6")
     header_text = f"PSX Daily Patterns Report  |  Session {session_date}  |  Generated {generated_at}"
@@ -401,21 +740,21 @@ def render_pdf(path, session_date, sections, generated_at=None):
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#555555"))
-        canvas.drawString(28, page[1] - 18, header_text)
+        canvas.drawString(28, page[1] - 18, _safe(header_text))
         canvas.drawRightString(page[0] - 28, 14, f"Page {doc.page}")
         canvas.restoreState()
 
     story = [Spacer(1, 60), Paragraph("PSX Daily Patterns Report", h1), Spacer(1, 8),
-             Paragraph(f"<b>Session date:</b> {session_date}", small),
-             Paragraph(f"<b>Generated:</b> {generated_at}", small),
+             Paragraph(f"<b>Session date:</b> {_esc(session_date)}", small),
+             Paragraph(f"<b>Generated:</b> {_esc(generated_at)}", small),
              Paragraph("Covers Chart Patterns, Patterns and Breakouts. FIRE Engine content is excluded.", small),
              Spacer(1, 18), Paragraph("Contents", h2)]
     for g, subs in heading_tree(sections):
         story.append(Paragraph(f"<b>{_esc(g)}</b>", small))
         for sub, tables in subs:
-            story.append(Paragraph(f"&nbsp;&nbsp;{_esc(sub)}", tiny))
+            story.append(Paragraph(f"&nbsp;&nbsp;{_esc(_safe(sub))}", tiny))
             for title, n in tables:
-                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{_esc(title)} ({n} rows)", tiny))
+                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{_esc(_safe(title))} ({n} rows)", tiny))
     story.append(PageBreak())
 
     current_group = current_sub = None
@@ -427,31 +766,34 @@ def render_pdf(path, session_date, sections, generated_at=None):
             story.append(Paragraph(_esc(s["group"]), grp))
         if s["sub"] != current_sub:
             current_sub = s["sub"]
-            story.append(Paragraph(_esc(s["sub"]), h2))
-        story.append(Paragraph(_esc(s["title"]), ttl))
-        summary = " | ".join(s["summary"]) if s["summary"] else "no rows"
-        story.append(Paragraph(f"<b>Total rows:</b> {len(s['rows'])}. {_esc(summary)}", small))
-        story.append(Paragraph(_esc(f"Source: {s['source']}" + (f". {s['note']}" if s.get("note") else "")), tiny))
+            story.append(Paragraph(_esc(_safe(s["sub"])), h2))
+        story.append(Paragraph(_esc(_safe(s["title"])), ttl))
+        summary = " | ".join(s["summary"]) if s["summary"] else ""
+        line = f"<b>Total rows:</b> {len(s['rows'])}."
+        if summary:
+            line += " " + _esc(_safe(summary))
+        story.append(Paragraph(line, small))
+        if s.get("note"):
+            story.append(Paragraph(_esc(_safe(s["note"])), tiny))
+        story.append(Paragraph(_esc(_safe(f"Source: {s['source']}")), tiny))
         story.append(Spacer(1, 6))
-        if s["rows"]:
+        if s["rows"] and s["columns"]:
             cols = s["columns"]
-            data = [[_cell(c) for c in cols]]
+            data = [[Paragraph(_esc(_safe(c)), hcell) for c in cols]]
             for r in s["rows"]:
-                data.append([_cell(r.get(c)) for c in cols])
+                data.append([Paragraph(_esc(_cell(r.get(c))), cell) for c in cols])
             weights = []
             for c in cols:
-                longest = max([len(str(_cell(r.get(c)))) for r in s["rows"][:200]] + [len(c)])
-                weights.append(min(max(longest, 4), 30))
+                longest = max([len(_cell(r.get(c))) for r in s["rows"][:300]] + [min(len(c), 14)])
+                weights.append(min(max(longest, 6), 40))
             total = float(sum(weights))
-            widths = [max(width * w / total, 22) for w in weights]
+            widths = [max(width * w / total, 28) for w in weights]
             scale = width / sum(widths)
             widths = [w * scale for w in widths]
             t = Table(data, colWidths=widths, repeatRows=1)
             style = [("FONT", (0, 0), (-1, -1), "Helvetica", 6.5),
-                     ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 6.5),
                      ("BACKGROUND", (0, 0), (-1, 0), dark),
-                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                      ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
                      ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2)]
             for i in range(1, len(data)):
@@ -460,9 +802,9 @@ def render_pdf(path, session_date, sections, generated_at=None):
             t.setStyle(TableStyle(style))
             story.append(t)
         else:
-            story.append(Paragraph(_esc(s["empty_text"]), small))
+            story.append(Paragraph(_esc(_safe(s["empty_text"])), small))
         for line in s.get("checklist") or []:
-            story.append(Paragraph(_esc(line), mono))
+            story.append(Paragraph(_esc(_safe(line)), mono))
         story.append(Spacer(1, 14))
 
     doc = SimpleDocTemplate(path, pagesize=page, leftMargin=28, rightMargin=28, topMargin=32, bottomMargin=28,
@@ -475,8 +817,8 @@ def render_pdf(path, session_date, sections, generated_at=None):
     return path, pages, size
 
 
-def build_report(conn, out_dir=None, root_dir=ROOT, session_date=None):
-    session, sections = collect_sections(conn, root_dir, session_date)
+def build_report(conn, out_dir=None, root_dir=ROOT, session_date=None, names=None):
+    session, sections = collect_sections(conn, root_dir, session_date, names=names)
     out_dir = out_dir or os.path.join(root_dir, "out")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, report_filename(session))
